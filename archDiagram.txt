@@ -1,0 +1,23 @@
+[ User Browser ]
+        |
+   HTTPS (443)
+        |
+[ CloudFront ]
+        |
+[ Application Load Balancer ]
+        |
+---------------------------------
+|           Private Subnets       |
+|                                 |
+|  [ EC2 ASG - Backend API ]      |
+|     - Health checks             |
+|     - Metrics ingestion         |
+|     - Incident logic            |
+|                                 |
+---------------------------------
+        |
+[ RDS (Postgres) ]
+        |
+[ CloudWatch Logs & Metrics ]
+        |
+[ Alarms + Dashboards ]
