@@ -1,9 +1,9 @@
 # VigilWatch - Serverless Uptime Monitoring Dashboard
 
-## 🚀 Overview
+## Overview
 VigilWatch is a fully serverless uptime and incident monitoring platform that performs synthetic HTTP checks against configured endpoints, detects failures, records incidents, and visualizes system health in near real-time.
 
-## ✨ Features
+## Features
 - **Endpoint Monitoring**: HTTP/HTTPS endpoint health checks
 - **Uptime Calculation**: Automatic uptime percentage tracking
 - **Incident Management**: Failure detection and resolution tracking
@@ -12,26 +12,39 @@ VigilWatch is a fully serverless uptime and incident monitoring platform that pe
 - **Alert System**: Email notifications via SNS
 - **Historical Data**: 30-day incident history
 
-## 🏗️ Architecture
+## Architecture
 
-[ User Browser ]
+[ User / Client ]
 |
-HTTPS (443)
+| HTTPS
+v
+[ Amazon API Gateway ]
 |
-[ CloudFront + ACM SSL ]
+v
+[ Lambda: api_handler ]
 |
-[ S3 Static Website ]
+v
+[ DynamoDB: monitored_endpoints ]
+
+(Scheduled Monitoring)
+[ Amazon EventBridge ]
 |
-[ API Gateway ]
+v
+[ Lambda: uptime_checker ]
 |
-[ Lambda Functions ]
+v
+[ External Websites / APIs ]
 |
-[ DynamoDB Tables ]
+v
+[ DynamoDB Updates ]
 |
-[ CloudWatch + SNS ]
+v
+[ Amazon SNS Notifications ]
+
+(All logs and metrics → Amazon CloudWatch)
 
 
-## 🔧 AWS Services Used
+## AWS Services Used
 | Service | Purpose |
 |---------|---------|
 | **Lambda** | Serverless compute for monitoring logic |
@@ -44,9 +57,19 @@ HTTPS (443)
 | **SNS** | Alert notifications |
 | **EventBridge** | Scheduled monitoring triggers |
 
+## Security Design
+
+- **IAM Least Privilege**:  
+  Lambda functions only have permissions required for DynamoDB, SNS, and CloudWatch.
+- **HTTPS Everywhere**:  
+  API Gateway enforces HTTPS by default.
+- **No Public Databases**:  
+  DynamoDB is accessed only via IAM-authenticated Lambdas.
+- **No VPC Required**:  
+  AWS-managed networking reduces attack surface and cost.
 
 
-## 🚀 Deployment
+## Deployment
 
 ### Prerequisites
 - AWS CLI configured with credentials
@@ -55,23 +78,19 @@ HTTPS (443)
 
 ### Step-by-Step Deployment
 
-1. **Clone and Setup**
+### Step-by-Step Deployment
+
 ```bash
-git clone <your-repo>
+# Clone the repository
+git clone https://github.com/lesego-rabotapi/VigilWatch.git
 cd VigilWatch
 
+# Initialize Terraform
 cd terraform
 terraform init
 
+# Review the execution plan
 terraform plan
 
-terraform apply -auto-approve
-
-# Update frontend with API URL
-API_URL=$(terraform output -raw api_gateway_url)
-sed -i "s|YOUR_API_URL|$API_URL|" .../frontend/index.html
-
-# Upload to the S3
-aws s3 sync .../frontend/ s3://vigilwatch-frontend-$(terraform output -raw aws_account_id)/
-
-echo "Dashboard URL: https://$(terraform output -raw cloudfront_distribution_id).cloudfront.net"
+# Deploy infrastructure
+terraform apply
