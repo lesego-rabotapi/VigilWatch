@@ -5,7 +5,7 @@ from boto3.dynamodb.conditions import Key
 dynamodb = boto3.resource("dynamodb")
 table = dynamodb.Table("vigilwatch-endpoints")
 
-def lambda_handler(event, context):
+def api_handler(event, context):
     params = event.get("queryStringParameters") or {}
     endpoint = params.get("endpoint")
 

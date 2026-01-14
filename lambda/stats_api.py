@@ -4,7 +4,7 @@ import json
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table('uptime_checks')
 
-def lambda_handler(event, context):
+def stats(event, context):
     response = table.scan(Limit=10)
     return {
         "statusCode": 200,

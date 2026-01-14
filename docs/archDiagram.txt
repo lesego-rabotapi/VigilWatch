@@ -1,0 +1,38 @@
+[ User / Browser ]
+        |
+        | HTTPS (API Request)
+        v
+[ Amazon API Gateway ]
+        |
+        | Invoke
+        v
+[ Lambda: api_handler ]
+        |
+        | Write / Read
+        v
+[ DynamoDB: monitored_endpoints ]
+
+(Event-driven monitoring)
+[ Amazon EventBridge (Schedule) ]
+        |
+        | Trigger
+        v
+[ Lambda: uptime_checker ]
+        |
+        | HTTP Checks
+        v
+[ External Websites / APIs ]
+        |
+        | Results
+        v
+[ DynamoDB Updates ]
+        |
+        | Alerts
+        v
+[ Amazon SNS ]
+        |
+        v
+[ Notifications (Email/SMS - optional) ]
+
+(Monitoring & Logs)
+All Lambdas → Amazon CloudWatch Logs & Metrics

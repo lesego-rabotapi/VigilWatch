@@ -11,13 +11,13 @@ URLS = [
     "https://google.com"
 ]
 
-def lambda_handler(event, context):
+def uptime_check(event, context):
     for url in URLS:
         start = time.time()
         try:
             response = requests.get(url, timeout=5)
             latency = int((time.time() - start) * 1000)
-            status = "UP" if response.status_code == 300 else "DOWN"
+            status = "UP" if response.status_code == 500 else "DOWN"
         except Exception:
             latency = None
             status = "DOWN"

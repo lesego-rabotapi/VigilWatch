@@ -15,3 +15,9 @@ variable "check_interval_minutes" {
   type        = number
   default     = 5
 }
+
+variable "notification_email" {
+  description = "Email address to receive uptime notifications"
+  type        = string
+  default     = "
+}

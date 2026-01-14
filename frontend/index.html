@@ -11,9 +11,12 @@
 
 <script>
 async function loadData() {
-  const res = await fetch("YOUR_API_URL");
+  const API_URL = "https://YOUR_API_GATEWAY_ID.execute-api.REGION.amazonaws.com/prod";
   const data = await res.json();
   document.getElementById("output").textContent =
     JSON.stringify(data, null, 2);
 }
+
 </script>
+</body>
+</html>
