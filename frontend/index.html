@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>VigilWatch</title>
+</head>
+<body>
+<h1>VigilWatch</h1>
+<button onclick="loadData()">Load Status</button>
+<pre id="output"></pre>
+
+<script>
+async function loadData() {
+  const res = await fetch("YOUR_API_URL");
+  const data = await res.json();
+  document.getElementById("output").textContent =
+    JSON.stringify(data, null, 2);
+}
+</script>

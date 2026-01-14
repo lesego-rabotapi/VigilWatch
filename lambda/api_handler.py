@@ -1,0 +1,26 @@
+import json
+import boto3
+from boto3.dynamodb.conditions import Key
+
+dynamodb = boto3.resource("dynamodb")
+table = dynamodb.Table("vigilwatch-endpoints")
+
+def lambda_handler(event, context):
+    params = event.get("queryStringParameters") or {}
+    endpoint = params.get("endpoint")
+
+    if not endpoint:
+        return {
+            "statusCode": 400,
+            "body": json.dumps({"error": "endpoint query parameter required"})
+        }
+
+    response = table.query(
+        KeyConditionExpression=Key("endpoint").eq(endpoint)
+    )
+
+    return {
+        "statusCode": 200,
+        "headers": {"Content-Type": "application/json"},
+        "body": json.dumps(response["Items"])
+    }
