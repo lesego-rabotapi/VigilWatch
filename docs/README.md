@@ -94,3 +94,8 @@ terraform plan
 
 # Deploy infrastructure
 terraform apply
+
+After deployment, Terraform will output:
+-API Gateway URL
+-DynamoDB table name
+

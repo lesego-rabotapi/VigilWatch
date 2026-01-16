@@ -1,15 +1,19 @@
 import requests
-import time
 import boto3
+import logging
+import os
 from datetime import datetime
 
-dynamodb = boto3.resource("dynamodb")
-table = dynamodb.Table("vigilwatch-uptime")
 
-URLS = [
-    "https://example.com",
-    "https://google.com"
-]
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+cloudwatch = boto3.client("cloudwatch")
+
+dynamodb = boto3.resource("dynamodb")
+table = dynamodb.Table(os.environ["TABLE_NAME"])
+
+URLS = [...]
 
 def uptime_check(event, context):
     for url in URLS:
@@ -38,3 +42,20 @@ def get_registered_endpoints():
     registry = dynamodb.Table("vigilwatch-registered-endpoints")
     response = registry.scan()
     return [item["endpoint"] for item in response["Items"]]
+
+
+status_value = 1 if status_code == 200 else 0
+cloudwatch.put_metric_data(
+    Namespace="VigilWatch",
+    MetricData=[
+        {
+            "MetricName": "EndpointStatus",
+            "Dimensions": [
+                {"Name": "Endpoint", "Value": url}
+            ],
+            "Timestamp": datetime.utcnow(),
+            "Value": status_value,
+            "Unit": "Count"
+        }
+    ]
+)
