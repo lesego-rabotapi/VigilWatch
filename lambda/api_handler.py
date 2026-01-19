@@ -9,6 +9,12 @@ def api_handler(event, context):
     params = event.get("queryStringParameters") or {}
     endpoint = params.get("endpoint")
 
+    if "body" not in event:
+        return {
+            "statusCode": 400,
+            "body": json.dumps({"error": "Missing request body"})
+        }
+
     if not endpoint:
         return {
             "statusCode": 400,

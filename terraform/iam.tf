@@ -11,7 +11,7 @@ resource "aws_iam_role" "lambda_role" {
       Action = "sts:AssumeRole"
     }]
   })
-
+}
 
 resource "aws_iam_role_policy" "lambda_policy" {
   role = aws_iam_role.lambda_role.id

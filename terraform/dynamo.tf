@@ -1,11 +1,11 @@
 resource "aws_dynamodb_table" "uptime_table" {
   name         = "uptime_checks"
   billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "target_url"
+  hash_key     = "endpoint_id"
   range_key    = "timestamp"
 
   attribute {
-    name = "target_url"
+    name = "endpoint_id"
     type = "S"
   }
 
