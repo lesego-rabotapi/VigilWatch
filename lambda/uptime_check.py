@@ -1,5 +1,6 @@
 import requests
 import boto3
+from boto3.dynamodb.conditions import Key
 import logging
 import os
 import time
@@ -33,13 +34,8 @@ def uptime_check(event, context):
             status = "DOWN"
             status_value = 0
 
-        table.put_item(
-            Item={
-                "url": url,
-                "timestamp": datetime.utcnow().isoformat(),
-                "status": status,
-                "latency_ms": latency
-            }
+        response = table.query(
+            KeyConditionExpression=Key("endpoint").eq(url)
         )
 
         cloudwatch.put_metric_data(

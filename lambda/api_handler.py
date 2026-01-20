@@ -30,3 +30,4 @@ def api_handler(event, context):
         "headers": {"Content-Type": "application/json"},
         "body": json.dumps(response["Items"])
     }
+
