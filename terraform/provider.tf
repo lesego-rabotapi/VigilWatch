@@ -12,3 +12,9 @@ terraform {
 provider "aws" {
   region = var.aws_region
 }
+
+variable "aws_region" {
+  description = "AWS region to deploy VigilWatch into"
+  type        = string
+  default     = "af-south-1"
+}

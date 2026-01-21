@@ -1,8 +1,9 @@
-variable "aws_region" {
-  description = "Region to deploy all resources"
+variable "vpc_cidr" {
+  description = "CIDR block for the main VPC"
   type        = string
-  default     = "af-south-1"
+  default     = "10.0.0.0/16"
 }
+
 
 variable "project_name" {
   description = "Project name used as a prefix for resources"
