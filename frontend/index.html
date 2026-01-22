@@ -1,24 +1,136 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>VigilWatch</title>
-    
-
+  <meta charset="UTF-8" />
+  <title>VigilWatch – Uptime Monitor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-<h1>VigilWatch Dash</h1>
-<button onclick="loadData()">Load Status</button>
-<pre id="output"></pre>
+  <header class="header">
+    <div class="brand">
+      <div class="logo">VW</div>
+      <div>
+        <h1>VigilWatch</h1>
+        <p>Real-time endpoint monitoring</p>
+      </div>
+    </div>
+    <div class="system-status">
+      <span class="dot ok"></span>
+      <span>System Operational</span>
+    </div>
+  </header>
 
-<script>
-async function loadData() {
-  const API_URL = "https://xihi7lu6jh.execute-api.af-south-1.amazonaws.com/prod";
-  const data = await res.json();
-  document.getElementById("output").textContent =
-    JSON.stringify(data, null, 2);
-}
+  <main class="main">
+    <!--URL Input-->
+    <section class="card">
+      <h2>Monitor a Website</h2>
+      <p>Enter an HTTP/HTTPS URL to start synthetic checks.</p>
 
-</script>
+      <form id="monitor-form" class="form">
+        <input
+          id="endpoint-url"
+          type="url"
+          placeholder="https://example.com"
+          required
+        />
+        <button id="start-button" type="submit">Start Monitoring</button>
+      </form>
+
+      <p class="hint">Read-only, non-destructive HTTP checks only.</p>
+      <p id="input-error" class="error"></p>
+    </section>
+
+
+    <section class="card">
+      <h2>Current Status</h2>
+      <p id="status-empty" class="muted">
+        No data yet. Start monitoring to see live metrics.
+      </p>
+
+      <div id="status-grid" class="grid hidden">
+        <div class="metric">
+          <div class="label">Status</div>
+          <div id="status-pill" class="pill pill-unknown">Unknown</div>
+        </div>
+        <div class="metric">
+          <div class="label">Uptime (30 days)</div>
+          <div id="metric-uptime" class="value">–</div>
+        </div>
+        <div class="metric">
+          <div class="label">Latest Latency</div>
+          <div id="metric-latency" class="value">–</div>
+        </div>
+        <div class="metric">
+          <div class="label">Last Check</div>
+          <div id="metric-last-check" class="value">–</div>
+        </div>
+      </div>
+    </section>
+
+
+    <!--Latency-->
+    <section class="card">
+      <div class="row">
+        <h2>Latency Trend</h2>
+        <span id="endpoint-label" class="muted small">No endpoint selected</span>
+      </div>
+
+      <p id="latency-empty" class="muted">
+        Recent response times will appear here once monitoring starts.
+      </p>
+
+      <div id="latency-panel" class="hidden">
+        <div class="chart" id="latency-bars"></div>
+        <p id="latency-range" class="muted small"></p>
+      </div>
+    </section>
+
+
+    <!--Incidents-->
+    <section class="card">
+      <h2>Incidents (last 30 days)</h2>
+      <p id="incidents-empty" class="muted">
+        No incidents yet for this endpoint.
+      </p>
+
+      <div id="incidents-panel" class="hidden">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Start</th>
+              <th>End</th>
+              <th>Duration</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="incidents-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+
+    
+
+    <!--SNS-->
+    <section class="card">
+      <h2>Alerts & Notifications</h2>
+      <p class="muted small">
+        Email alerts are sent via Amazon SNS when an endpoint goes down.
+      </p>
+      <p class="muted small">
+        Last alert: <span id="alert-last">No alerts sent yet</span>
+      </p>
+      <p class="muted small">
+        Safety: VigilWatch only performs HTTP GET requests and never modifies your systems.
+      </p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    VigilWatch · Serverless uptime & incident monitoring
+  </footer>
+
+  <script src="app.js"></script>
 </body>
 </html>
