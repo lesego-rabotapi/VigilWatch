@@ -2,8 +2,11 @@ name: VigilWatch Pipeline
 
 on:
   push:
-    branches: [ "main" ]
+    branches: "main"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 env:
   AWS_REGION: af-south-1
@@ -79,7 +82,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Configure git for GitHub Actions
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+
       - name: Create Git Tag
         run: |
           git tag v1.${{ github.run_number }}
           git push origin v1.${{ github.run_number }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
