@@ -1,36 +1,24 @@
-<!-- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>VigilWatch</title>
-    <p>
-      Monitoring demo endpoint: <strong>https://google.com</strong>
-    </p>
+    
 
 </head>
 <body>
-<h1>VigilWatch</h1>
+<h1>VigilWatch Dash</h1>
 <button onclick="loadData()">Load Status</button>
 <pre id="output"></pre>
 
 <script>
 async function loadData() {
-  const API_URL = "https://YOUR_API_GATEWAY_ID.execute-api.REGION.amazonaws.com/prod";
+  const API_URL = "https://xihi7lu6jh.execute-api.af-south-1.amazonaws.com/prod";
   const data = await res.json();
   document.getElementById("output").textContent =
     JSON.stringify(data, null, 2);
 }
 
 </script>
-</body>
-</html> -->
-
-<!DOCTYPE html>
-<html>
-<head>
-  <title>VigilWatch</title>
-</head>
-<body>
-  <h1>VigilWatch Dashboard</h1>
 </body>
 </html>

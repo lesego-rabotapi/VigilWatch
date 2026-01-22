@@ -1,5 +1,5 @@
 resource "aws_dynamodb_table_item" "demo_endpoint" {
-  table_name = aws_dynamodb_table.uptime_table.name
+  table_name = aws_dynamodb_table.uptime_table.name  # Changed from uptime to uptime_table
   hash_key   = "endpoint_id"
   range_key  = "timestamp"
 
