@@ -34,7 +34,7 @@ jobs:
   deploy:
     name: Deploy Infrastructure
     needs: test
-    runs-on: ubuntu-latest    
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
@@ -76,6 +76,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Create Git Tag
         run: |
           git tag v1.${{ github.run_number }}
