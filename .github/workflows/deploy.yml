@@ -35,6 +35,7 @@ jobs:
     name: Deploy Infrastructure
     needs: test
     runs-on: ubuntu-latest
+    
 
     steps:
       - name: Checkout code
@@ -43,8 +44,8 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.VIGILWATCH_KEYS }}
-          aws-secret-access-key: ${{ secrets.VIGILWATCH_KEYS }}
+          aws-access-key-id: ${{ secrets.VIGILWATCH_KEYS_ID }}
+          aws-secret-access-key: ${{ secrets.VIGILWATCH_KEYS_SECRET }}
           aws-region: ${{ env.AWS_REGION }}
 
       # - name: Package Lambda functions
