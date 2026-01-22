@@ -34,9 +34,7 @@ jobs:
   deploy:
     name: Deploy Infrastructure
     needs: test
-    runs-on: ubuntu-latest
-    if: ${{ secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' }}
-    
+    runs-on: ubuntu-latest    
 
     steps:
       - name: Checkout code
