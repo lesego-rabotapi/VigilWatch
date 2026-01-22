@@ -24,7 +24,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pytest
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install boto3 requests pytest
 
       - name: Run tests
         run: pytest tests/
@@ -45,14 +47,16 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Package Lambda functions
-        run: |
-          cd lambda
-          zip uptime_checker.zip uptime_checker.py
-          zip register_endpoint.zip register_endpoint.py
-
+      # - name: Package Lambda functions
+      #   run: |
+      #     cd lambda
+      #     zip uptime_checker.zip uptime_check.py
+      #     zip register_endpoint.zip register_endpoint.py
+      
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.5
 
       - name: Terraform Init
         working-directory: terraform

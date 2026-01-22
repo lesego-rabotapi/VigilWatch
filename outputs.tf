@@ -20,7 +20,7 @@ output "dynamodb_table_name" {
 
 output "sns_topic_arn" {
   description = "SNS topic ARN for downtime alerts"
-  value       = aws_sns_topic.alerts.arn
+  value       = aws_sns_topic.alerts. arn
 }
 
 output "api_gateway_id" {
