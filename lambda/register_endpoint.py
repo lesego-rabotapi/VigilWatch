@@ -1,31 +1,62 @@
 import json
-import boto3
-import uuid
 from datetime import datetime
 
-dynamodb = boto3.resource('dynamodb')
-table = dynamodb.Table('uptime_checks')
+import boto3
+
+TABLE_NAME = "uptime_checks"
+
+
+def _get_table():
+    dynamodb = boto3.resource("dynamodb")
+    return dynamodb.Table(TABLE_NAME)
+
 
 def lambda_handler(event, context):
-    try:
-        body = json.loads(event. get('body', '{}')) if isinstance(event.get('body'), str) else event
-        url = body.get('endpoint') or body.get('url', 'https://example.com')
-        
-        table.put_item(Item={
-            'endpoint_id': str(uuid.uuid4()),
-            'timestamp': datetime.utcnow().isoformat(),
-            'url': url,
-            'status':  'REGISTERED'
-        })
-        
+    """
+    Register a new endpoint to monitor.
+    """
+    table = _get_table()
+
+    if "body" in event:
+        body = json.loads(event["body"]) if isinstance(event["body"], str) else event["body"]
+    else:
+        body = event
+
+    url = body.get("endpoint") or body.get("url")
+    if not url:
         return {
-            'statusCode': 201,
-            'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
-            'body': json.dumps({'message': 'Endpoint registered', 'url': url})
+            "statusCode": 400,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*",
+            },
+            "body": json.dumps({"message": "Missing 'endpoint' or 'url' field"}),
         }
-    except Exception as e:
-        return {
-            'statusCode': 500,
-            'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
-            'body': json.dumps({'error': str(e)})
+
+    endpoint_id = body.get("endpoint_id") or datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
+
+    table.put_item(
+        Item={
+            "endpoint_id": endpoint_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "endpoint": url,
+            "method": body.get("method", "GET"),
+            "expected_status": body.get("expected_status", 200),
+            "enabled": True,
         }
+    )
+
+    return {
+        "statusCode": 201,
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+        },
+        "body": json.dumps(
+            {
+                "message": "Endpoint registered successfully",
+                "endpoint_id": endpoint_id,
+                "url": url,
+            }
+        ),
+    }
