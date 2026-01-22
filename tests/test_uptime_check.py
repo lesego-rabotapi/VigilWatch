@@ -20,7 +20,7 @@ def test_lambda_handler_returns_200():
         'body': json.dumps({'message': 'Success', 'data': []})
     }
     
-    # Basic structure test
+    # Basic test
     assert 'statusCode' in response
     assert 'headers' in response
     assert 'body' in response

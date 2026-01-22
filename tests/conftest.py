@@ -2,12 +2,10 @@ import os
 import sys
 import types
 
-# Set a dummy region so boto3 doesn't conflict, even if something slips through
 os.environ.setdefault("AWS_REGION", "af-south-1")
 os.environ.setdefault("AWS_DEFAULT_REGION", "af-south-1")
 
-# Optionally provides fake boto3 for safety
-# (This prevents any real client/resource calls from working.)
+
 if "boto3" not in sys.modules:
     fake_boto3 = types.ModuleType("boto3")
 
