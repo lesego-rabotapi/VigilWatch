@@ -1,13 +1,9 @@
 import json
 import os
 from datetime import datetime
-from decimal import Decimal  # NEW
 from urllib import request as urllib_request, error as urllib_error
 
-import boto3
-
-TABLE_NAME = os.environ.get("DYNAMODB_TABLE", "uptime_checks")
-SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN")
+import boto3 
 
 CORS_HEADERS = {
     "Content-Type": "application/json",
@@ -17,128 +13,62 @@ CORS_HEADERS = {
 }
 
 
-def _get_clients():
-    dynamodb = boto3.resource("dynamodb")
-    cloudwatch = boto3.client("cloudwatch")
-    sns = boto3.client("sns")
-    table = dynamodb.Table(TABLE_NAME)
-    return table, cloudwatch, sns
-
-
-def _to_plain(obj):
-    """
-    Recursively convert DynamoDB Decimals to int/float so json.dumps works.
-    """
-    if isinstance(obj, list):
-        return [_to_plain(v) for v in obj]
-    if isinstance(obj, dict):
-        return {k: _to_plain(v) for k, v in obj.items()}
-    if isinstance(obj, Decimal):
-        return int(obj) if obj % 1 == 0 else float(obj)
-    return obj
-
-
 def lambda_handler(event, context):
     """
-    Periodic uptime check Lambda.
-    Always returns CORS headers, even on error.
+    Extremely simple uptime check:
+    - Reads ?url=... from queryStringParameters
+    - Performs a single GET with 5s timeout
+    - Returns status code and success flag
+    - No DynamoDB, no SNS, no Decimals
     """
     try:
-        table, cloudwatch, sns = _get_clients()
+        qs = event.get("queryStringParameters") or {}
+        url = qs.get("url")
+        if not url:
+            return {
+                "statusCode": 400,
+                "headers": CORS_HEADERS,
+                "body": json.dumps({"message": "Missing 'url' query parameter"}),
+            }
 
-        response = table.scan()
-        items = response.get("Items", [])
+        expected_status = 200
+        started_at = datetime.utcnow().isoformat()
 
-        results = []
-
-        for item in items:
-            # Skip disabled checks
-            if not item.get("enabled", True):
-                continue
-
-            endpoint = item.get("endpoint")
-            if not endpoint:
-                print(f"Skipping item without endpoint: {json.dumps(_to_plain(item))}")
-                continue
-
-            method = item.get("method", "GET")
-            expected_status = int(item.get("expected_status", 200))
-
-            try:
-                if method != "GET":
-                    raise ValueError(f"Unsupported method: {method}")
-
-                req = urllib_request.Request(endpoint, method="GET")
-                with urllib_request.urlopen(req, timeout=5) as resp:
-                    actual_status = resp.getcode()
+        try:
+            req = urllib_request.Request(url, method="GET")
+            with urllib_request.urlopen(req, timeout=5) as resp:
+                actual_status = resp.getcode()
                 success = actual_status == expected_status
+        except urllib_error.HTTPError as e:
+            actual_status = e.code
+            success = actual_status == expected_status
+        except Exception as e:
+            actual_status = "error"
+            success = False
 
-            except urllib_error.HTTPError as e:
-                actual_status = e.code
-                success = actual_status == expected_status
-
-            except Exception:
-                success = False
-                actual_status = "timeout"
-
-            cloudwatch.put_metric_data(
-                Namespace="VigilWatch",
-                MetricData=[
-                    {
-                        "MetricName": "EndpointUp",
-                        "Dimensions": [
-                            {"Name": "Endpoint", "Value": endpoint},
-                        ],
-                        "Value": 1 if success else 0,
-                        "Unit": "Count",
-                    }
-                ],
-            )
-
-            if not success and SNS_TOPIC_ARN:
-                sns.publish(
-                    TopicArn=SNS_TOPIC_ARN,
-                    Subject="Uptime check failed",
-                    Message=json.dumps(
-                        _to_plain(
-                            {
-                                "endpoint": endpoint,
-                                "expected_status": expected_status,
-                                "actual_status": actual_status,
-                                "timestamp": datetime.utcnow().isoformat(),
-                            }
-                        ),
-                        indent=2,
-                    ),
-                )
-
-            results.append(
+        body = {
+            "status": "completed",
+            "checked": 1,
+            "results": [
                 {
-                    "endpoint": endpoint,
+                    "endpoint": url,
                     "expected_status": expected_status,
                     "actual_status": actual_status,
                     "success": success,
+                    "timestamp": started_at,
                 }
-            )
-
-        # Convert any Decimals in results before returning
-        plain_body = _to_plain(
-            {
-                "status": "completed",
-                "checked": len(results),
-                "results": results,
-            }
-        )
+            ],
+        }
 
         return {
             "statusCode": 200,
             "headers": CORS_HEADERS,
-            "body": json.dumps(plain_body),
+            "body": json.dumps(body),
         }
 
     except Exception as e:
-        # Ensure CORS headers even on unexpected failure
-        print("Error in uptime_check:", repr(e))
+        # Last-resort error
+        print("Error in simple uptime_check:", repr(e))
         return {
             "statusCode": 500,
             "headers": CORS_HEADERS,
