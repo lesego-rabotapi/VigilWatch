@@ -1,16 +1,20 @@
-resource "aws_api_gateway_rest_api" "uptime_api" {
-  name        = "uptime-api"
-  description = "VigilWatch Uptime Monitoring API"
+resource "aws_api_gateway_deployment" "uptime_api" {
+  rest_api_id = aws_api_gateway_rest_api.uptime_api.id
+
+  depends_on = [
+    aws_api_gateway_integration.get_checks_lambda,
+    aws_api_gateway_integration.post_register_lambda,
+    aws_api_gateway_integration.options_checks,
+    aws_api_gateway_integration.options_register,
+  ]
 }
 
-# API Gateway Resource for /checks
 resource "aws_api_gateway_resource" "checks" {
   rest_api_id = aws_api_gateway_rest_api.uptime_api.id
   parent_id   = aws_api_gateway_rest_api.uptime_api.root_resource_id
   path_part   = "checks"
 }
 
-# GET method for /checks
 resource "aws_api_gateway_method" "get_checks" {
   rest_api_id   = aws_api_gateway_rest_api.uptime_api.id
   resource_id   = aws_api_gateway_resource.checks.id
@@ -18,7 +22,6 @@ resource "aws_api_gateway_method" "get_checks" {
   authorization = "NONE"
 }
 
-# Lambda integration for GET /checks
 resource "aws_api_gateway_integration" "get_checks_lambda" {
   rest_api_id             = aws_api_gateway_rest_api.uptime_api.id
   resource_id             = aws_api_gateway_resource.checks.id
@@ -28,14 +31,12 @@ resource "aws_api_gateway_integration" "get_checks_lambda" {
   uri                     = aws_lambda_function.uptime_check.invoke_arn
 }
 
-# API Gateway Resource for /register
 resource "aws_api_gateway_resource" "register" {
   rest_api_id = aws_api_gateway_rest_api.uptime_api.id
   parent_id   = aws_api_gateway_rest_api.uptime_api.root_resource_id
   path_part   = "register"
 }
 
-# POST method for /register
 resource "aws_api_gateway_method" "post_register" {
   rest_api_id   = aws_api_gateway_rest_api.uptime_api.id
   resource_id   = aws_api_gateway_resource.register.id
@@ -43,7 +44,51 @@ resource "aws_api_gateway_method" "post_register" {
   authorization = "NONE"
 }
 
-# Lambda integration for POST /register
+# CORS Configuration for /register
+resource "aws_api_gateway_method" "options_register" {
+  rest_api_id   = aws_api_gateway_rest_api.uptime_api.id
+  resource_id   = aws_api_gateway_resource.register.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "options_register" {
+  rest_api_id = aws_api_gateway_rest_api.uptime_api.id
+  resource_id = aws_api_gateway_resource.register.id
+  http_method = aws_api_gateway_method.options_register.http_method
+  type        = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "options_register_200" {
+  rest_api_id = aws_api_gateway_rest_api.uptime_api.id
+  resource_id = aws_api_gateway_resource.register.id
+  http_method = aws_api_gateway_method.options_register.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "options_register" {
+  rest_api_id = aws_api_gateway_rest_api.uptime_api.id
+  resource_id = aws_api_gateway_resource.register.id
+  http_method = aws_api_gateway_method.options_register.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
 resource "aws_api_gateway_integration" "post_register_lambda" {
   rest_api_id             = aws_api_gateway_rest_api.uptime_api.id
   resource_id             = aws_api_gateway_resource.register.id
@@ -53,7 +98,6 @@ resource "aws_api_gateway_integration" "post_register_lambda" {
   uri                     = aws_lambda_function.register_endpoint.invoke_arn
 }
 
-# CORS Configuration for /checks
 resource "aws_api_gateway_method" "options_checks" {
   rest_api_id   = aws_api_gateway_rest_api.uptime_api.id
   resource_id   = aws_api_gateway_resource.checks.id
