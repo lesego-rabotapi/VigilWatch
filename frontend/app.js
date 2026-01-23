@@ -211,10 +211,10 @@ function fetchInitial(url) {
 }
 
 function fetchPoll(url) {
-  // GET /status?url=...
   const encoded = encodeURIComponent(url);
-  return fetch(`${API_BASE}/status?url=${encoded}`).then(checkResponseJson);
+  return fetch(`${API_BASE}/checks?url=${encoded}`).then(checkResponseJson);
 }
+
 
 function checkResponseJson(res) {
   if (!res.ok) {
