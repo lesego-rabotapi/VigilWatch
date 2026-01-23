@@ -35,7 +35,7 @@ jobs:
         run: pytest tests/
 
   deploy:
-    name: Deploy Infrastructure
+    name: Deploy Infrastructure and Frontend
     needs: test
     runs-on: ubuntu-latest
 
@@ -50,12 +50,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # - name: Package Lambda functions
-      #   run: |
-      #     cd lambda
-      #     zip uptime_checker.zip uptime_check.py
-      #     zip register_endpoint.zip register_endpoint.py
-      
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -72,6 +66,40 @@ jobs:
       - name: Terraform Apply
         working-directory: terraform
         run: terraform apply -auto-approve
+
+      # Sync frontend assets to the S3 website bucket created by Terraform
+      - name: Sync frontend to S3
+        run: |
+          # Get bucket name from Terraform outputs
+          FRONTEND_BUCKET=$(terraform -chdir=terraform output -raw frontend_s3_bucket_name)
+          echo "Syncing frontend/ to bucket: ${FRONTEND_BUCKET}"
+
+          aws s3 sync frontend/ "s3://${FRONTEND_BUCKET}" \
+            --delete \
+            --cache-control "no-cache"
+
+      # Invalidate CloudFront cache so new frontend is visible immediately
+      - name: Invalidate CloudFront cache
+        run: |
+          # Get CloudFront distribution URL from Terraform output
+          CF_URL=$(terraform -chdir=terraform output -raw cloudfront_distribution_url)
+          # CF_URL is like "https://dhef1albmj76g.cloudfront.net"
+          CF_DOMAIN=${CF_URL#https://}
+
+          echo "Looking up CloudFront distribution for domain: ${CF_DOMAIN}"
+
+          DIST_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?DomainName=='${CF_DOMAIN}'].Id | [0]" \
+            --output text)
+
+          if [ "$DIST_ID" = "None" ] || [ -z "$DIST_ID" ]; then
+            echo "Could not find CloudFront distribution for ${CF_DOMAIN}, skipping invalidation."
+          else
+            echo "Invalidating CloudFront distribution: ${DIST_ID}"
+            aws cloudfront create-invalidation \
+              --distribution-id "${DIST_ID}" \
+              --paths "/*"
+          fi
 
   release:
     name: Version Release
