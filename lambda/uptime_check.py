@@ -46,7 +46,6 @@ def lambda_handler(event, context):
 
         
         try:
-            # For now, only support GET (the UI only configures GET checks)
             if method != "GET":
                 raise ValueError(f"Unsupported method: {method}")
 
@@ -56,12 +55,10 @@ def lambda_handler(event, context):
             success = actual_status == expected_status
 
         except urllib_error.HTTPError as e:
-            # HTTP error from the endpoint itself
             actual_status = e.code
             success = actual_status == expected_status
 
         except Exception:
-            # Timeout or other network error
             success = False
             actual_status = "timeout"
 
