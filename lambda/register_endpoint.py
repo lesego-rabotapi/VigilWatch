@@ -5,7 +5,6 @@ import boto3
 
 TABLE_NAME = "uptime_checks"
 
-# Reuse a single headers dict so every response is consistent
 CORS_HEADERS = {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
@@ -31,7 +30,7 @@ def lambda_handler(event, context):
     if not url:
         return {
             "statusCode": 400,
-            "headers": CORS_HEADERS,  # changed
+            "headers": CORS_HEADERS,
             "body": json.dumps({"message": "Missing 'endpoint' or 'url' field"}),
         }
 

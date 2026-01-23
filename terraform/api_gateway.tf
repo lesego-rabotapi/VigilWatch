@@ -3,6 +3,7 @@ resource "aws_api_gateway_rest_api" "uptime_api" {
   description = "VigilWatch Uptime Monitoring API"
 }
 
+# /checks
 resource "aws_api_gateway_resource" "checks" {
   rest_api_id = aws_api_gateway_rest_api.uptime_api.id
   parent_id   = aws_api_gateway_rest_api.uptime_api.root_resource_id
@@ -70,6 +71,7 @@ resource "aws_api_gateway_integration_response" "options_checks" {
   }
 }
 
+# /register
 resource "aws_api_gateway_resource" "register" {
   rest_api_id = aws_api_gateway_rest_api.uptime_api.id
   parent_id   = aws_api_gateway_rest_api.uptime_api.root_resource_id
@@ -92,6 +94,7 @@ resource "aws_api_gateway_integration" "post_register_lambda" {
   uri                     = aws_lambda_function.register_endpoint.invoke_arn
 }
 
+# CORS OPTIONS /register
 resource "aws_api_gateway_method" "options_register" {
   rest_api_id   = aws_api_gateway_rest_api.uptime_api.id
   resource_id   = aws_api_gateway_resource.register.id
@@ -136,30 +139,7 @@ resource "aws_api_gateway_integration_response" "options_register" {
   }
 }
 
-#Deply + Stage
-
-resource "aws_api_gateway_stage" "prod" {
-  deployment_id = aws_api_gateway_deployment.uptime_api.id
-  rest_api_id   = aws_api_gateway_rest_api.uptime_api.id
-  stage_name    = "prod"
-}
-
-
-resource "aws_lambda_permission" "api_gateway_uptime_checker" {
-  statement_id_prefix = "AllowExecutionFromAPIGatewayChecks"  # CHANGED
-  action              = "lambda:InvokeFunction"
-  function_name       = aws_lambda_function.uptime_check.function_name
-  principal           = "apigateway.amazonaws.com"
-  source_arn          = "${aws_api_gateway_rest_api.uptime_api.execution_arn}/*/*"
-}
-
-resource "aws_lambda_permission" "api_gateway_register" {
-  statement_id_prefix = "AllowExecutionFromAPIGatewayRegister"  # CHANGED
-  action              = "lambda:InvokeFunction"
-  function_name       = aws_lambda_function.register_endpoint.function_name
-  principal           = "apigateway.amazonaws.com"
-  source_arn          = "${aws_api_gateway_rest_api.uptime_api.execution_arn}/*/*"
-}
+# Stage & deployment
 
 resource "aws_api_gateway_deployment" "uptime_api" {
   rest_api_id = aws_api_gateway_rest_api.uptime_api.id
@@ -170,4 +150,28 @@ resource "aws_api_gateway_deployment" "uptime_api" {
     aws_api_gateway_integration.options_checks,
     aws_api_gateway_integration.options_register,
   ]
+}
+
+resource "aws_api_gateway_stage" "prod" {
+  deployment_id = aws_api_gateway_deployment.uptime_api.id
+  rest_api_id   = aws_api_gateway_rest_api.uptime_api.id
+  stage_name    = "prod"
+}
+
+# Lambda permissions
+
+resource "aws_lambda_permission" "api_gateway_uptime_checker" {
+  statement_id_prefix = "AllowExecutionFromAPIGatewayChecks"
+  action              = "lambda:InvokeFunction"
+  function_name       = aws_lambda_function.uptime_check.function_name
+  principal           = "apigateway.amazonaws.com"
+  source_arn          = "${aws_api_gateway_rest_api.uptime_api.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "api_gateway_register" {
+  statement_id_prefix = "AllowExecutionFromAPIGatewayRegister"
+  action              = "lambda:InvokeFunction"
+  function_name       = aws_lambda_function.register_endpoint.function_name
+  principal           = "apigateway.amazonaws.com"
+  source_arn          = "${aws_api_gateway_rest_api.uptime_api.execution_arn}/*/*"
 }
