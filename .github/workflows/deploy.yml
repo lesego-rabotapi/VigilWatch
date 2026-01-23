@@ -67,7 +67,6 @@ jobs:
         working-directory: terraform
         run: terraform apply -auto-approve
 
-      # Sync frontend assets to the S3 website bucket created by Terraform
       - name: Sync frontend to S3
         run: |
           # Get bucket name from Terraform outputs
@@ -78,7 +77,6 @@ jobs:
             --delete \
             --cache-control "no-cache"
 
-      # Invalidate CloudFront cache so new frontend is visible immediately
       - name: Invalidate CloudFront cache
         run: |
           # Get CloudFront distribution URL from Terraform output

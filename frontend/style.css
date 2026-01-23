@@ -46,16 +46,10 @@ body {
   gap: 10px;
 }
 
-.logo {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: radial-gradient(circle at 30% 0, #42f5ff, #007d8c);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  color: #020309;
+.logo img {
+  display: block;
+  width: 40px;
+  height: auto;
 }
 
 .brand h1 {
