@@ -142,21 +142,6 @@ resource "aws_api_gateway_integration_response" "options_checks" {
   }
 }
 
-# Deployment
-resource "aws_api_gateway_deployment" "uptime_api" {
-  rest_api_id = aws_api_gateway_rest_api.uptime_api.id
-
-  depends_on = [
-    aws_api_gateway_integration.get_checks_lambda,
-    aws_api_gateway_integration.post_register_lambda,
-    aws_api_gateway_integration.options_checks
-  ]
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
 # Stage
 resource "aws_api_gateway_stage" "prod" {
   deployment_id = aws_api_gateway_deployment.uptime_api.id
