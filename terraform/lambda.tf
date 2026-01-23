@@ -1,7 +1,7 @@
 # Package uptime_check lambda from the Python source
 data "archive_file" "uptime_check_zip" {
   type        = "zip"
-  source_file = "../lambda/uptime_check.py"
+  source_dir  = "../lambda/uptime_check_deps"  # NEW
   output_path = "../lambda/uptime_check.zip"
 }
 
