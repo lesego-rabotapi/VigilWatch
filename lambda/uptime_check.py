@@ -1,9 +1,10 @@
 import json
 import os
 from datetime import datetime
-
 import boto3
 import requests
+
+
 
 TABLE_NAME = os.environ.get("DYNAMODB_TABLE", "uptime_checks")
 SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN")
@@ -17,7 +18,7 @@ CORS_HEADERS = {
 
 
 def _get_clients():
-    """Create AWS clients/resources lazily to avoid side effects at import time."""
+
     dynamodb = boto3.resource("dynamodb")
     cloudwatch = boto3.client("cloudwatch")
     sns = boto3.client("sns")
@@ -102,3 +103,4 @@ def lambda_handler(event, context):
             }
         ),
     }
+
