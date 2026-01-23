@@ -5,6 +5,14 @@ import boto3
 
 TABLE_NAME = "uptime_checks"
 
+# Reuse a single headers dict so every response is consistent
+CORS_HEADERS = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+}
+
 
 def _get_table():
     dynamodb = boto3.resource("dynamodb")
@@ -12,7 +20,6 @@ def _get_table():
 
 
 def lambda_handler(event, context):
-    
     table = _get_table()
 
     if "body" in event:
@@ -24,10 +31,7 @@ def lambda_handler(event, context):
     if not url:
         return {
             "statusCode": 400,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-            },
+            "headers": CORS_HEADERS,  # changed
             "body": json.dumps({"message": "Missing 'endpoint' or 'url' field"}),
         }
 
@@ -46,10 +50,7 @@ def lambda_handler(event, context):
 
     return {
         "statusCode": 201,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-        },
+        "headers": CORS_HEADERS,
         "body": json.dumps(
             {
                 "message": "Endpoint registered successfully",

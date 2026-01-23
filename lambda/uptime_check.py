@@ -8,6 +8,13 @@ import requests
 TABLE_NAME = os.environ.get("DYNAMODB_TABLE", "uptime_checks")
 SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN")
 
+CORS_HEADERS = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+}
+
 
 def _get_clients():
     """Create AWS clients/resources lazily to avoid side effects at import time."""
@@ -86,10 +93,7 @@ def lambda_handler(event, context):
 
     return {
         "statusCode": 200,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-        },
+        "headers": CORS_HEADERS,
         "body": json.dumps(
             {
                 "status": "completed",
