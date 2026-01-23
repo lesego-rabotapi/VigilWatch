@@ -12,9 +12,7 @@ def _get_table():
 
 
 def lambda_handler(event, context):
-    """
-    Register a new endpoint to monitor.
-    """
+    
     table = _get_table()
 
     if "body" in event:

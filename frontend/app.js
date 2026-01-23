@@ -200,8 +200,7 @@ function fmt(iso) {
 //backend calls
 
 function fetchInitial(url) {
-
-  return fetch(`${API_BASE}/monitor`, {
+  return fetch(`${API_BASE}/register`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -214,7 +213,6 @@ function fetchPoll(url) {
   const encoded = encodeURIComponent(url);
   return fetch(`${API_BASE}/checks?url=${encoded}`).then(checkResponseJson);
 }
-
 
 function checkResponseJson(res) {
   if (!res.ok) {
