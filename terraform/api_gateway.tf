@@ -138,6 +138,29 @@ resource "aws_api_gateway_integration_response" "options_register" {
 
 #Deply + Stage
 
+resource "aws_api_gateway_stage" "prod" {
+  deployment_id = aws_api_gateway_deployment.uptime_api.id
+  rest_api_id   = aws_api_gateway_rest_api.uptime_api.id
+  stage_name    = "prod"
+}
+
+
+resource "aws_lambda_permission" "api_gateway_uptime_checker" {
+  statement_id_prefix = "AllowExecutionFromAPIGatewayChecks"  # CHANGED
+  action              = "lambda:InvokeFunction"
+  function_name       = aws_lambda_function.uptime_check.function_name
+  principal           = "apigateway.amazonaws.com"
+  source_arn          = "${aws_api_gateway_rest_api.uptime_api.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "api_gateway_register" {
+  statement_id_prefix = "AllowExecutionFromAPIGatewayRegister"  # CHANGED
+  action              = "lambda:InvokeFunction"
+  function_name       = aws_lambda_function.register_endpoint.function_name
+  principal           = "apigateway.amazonaws.com"
+  source_arn          = "${aws_api_gateway_rest_api.uptime_api.execution_arn}/*/*"
+}
+
 resource "aws_api_gateway_deployment" "uptime_api" {
   rest_api_id = aws_api_gateway_rest_api.uptime_api.id
 
@@ -147,27 +170,4 @@ resource "aws_api_gateway_deployment" "uptime_api" {
     aws_api_gateway_integration.options_checks,
     aws_api_gateway_integration.options_register,
   ]
-}
-
-resource "aws_api_gateway_stage" "prod" {
-  deployment_id = aws_api_gateway_deployment.uptime_api.id
-  rest_api_id   = aws_api_gateway_rest_api.uptime_api.id
-  stage_name    = "prod"
-}
-
-
-resource "aws_lambda_permission" "api_gateway_uptime_checker" {
-  statement_id  = "AllowExecutionFromAPIGatewayChecks"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.uptime_check.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.uptime_api.execution_arn}/*/*"
-}
-
-resource "aws_lambda_permission" "api_gateway_register" {
-  statement_id  = "AllowExecutionFromAPIGatewayRegister"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.register_endpoint.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.uptime_api.execution_arn}/*/*"
 }

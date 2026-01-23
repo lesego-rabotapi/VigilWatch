@@ -1,14 +1,12 @@
 import json
 import os
 from datetime import datetime
+from urllib import request as urllib_request, error as urllib_error
+
 import boto3
-import requests
-
-
 
 TABLE_NAME = os.environ.get("DYNAMODB_TABLE", "uptime_checks")
 SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN")
-
 CORS_HEADERS = {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
@@ -45,14 +43,28 @@ def lambda_handler(event, context):
         method = item.get("method", "GET")
         expected_status = int(item.get("expected_status", 200))
 
+
+        
         try:
-            r = requests.request(method, endpoint, timeout=5)
-            success = r.status_code == expected_status
-            actual_status = r.status_code
+            # For now, only support GET (the UI only configures GET checks)
+            if method != "GET":
+                raise ValueError(f"Unsupported method: {method}")
+
+            req = urllib_request.Request(endpoint, method="GET")
+            with urllib_request.urlopen(req, timeout=5) as resp:
+                actual_status = resp.getcode()
+            success = actual_status == expected_status
+
+        except urllib_error.HTTPError as e:
+            # HTTP error from the endpoint itself
+            actual_status = e.code
+            success = actual_status == expected_status
+
         except Exception:
+            # Timeout or other network error
             success = False
-            r = None
             actual_status = "timeout"
+
 
         cloudwatch.put_metric_data(
             Namespace="VigilWatch",
