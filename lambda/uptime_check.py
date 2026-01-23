@@ -41,11 +41,18 @@ def lambda_handler(event, context):
             if not item.get("enabled", True):
                 continue
 
-            endpoint = item["endpoint"]
+            # Safely handle items that don't have an 'endpoint' key
+            endpoint = item.get("endpoint")
+            if not endpoint:
+                # Skip malformed items instead of crashing the whole Lambda
+                print(f"Skipping item without endpoint: {json.dumps(item)}")
+                continue
+
             method = item.get("method", "GET")
             expected_status = int(item.get("expected_status", 200))
 
             try:
+                # For now, only support GET (UI only does GET checks)
                 if method != "GET":
                     raise ValueError(f"Unsupported method: {method}")
 
