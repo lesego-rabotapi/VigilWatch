@@ -38,13 +38,13 @@ def lambda_handler(event, context):
         results = []
 
         for item in items:
+            # Skip disabled checks
             if not item.get("enabled", True):
                 continue
 
-            # Safely handle items that don't have an 'endpoint' key
+            # SAFELY get endpoint; skip malformed items
             endpoint = item.get("endpoint")
             if not endpoint:
-                # Skip malformed items instead of crashing the whole Lambda
                 print(f"Skipping item without endpoint: {json.dumps(item)}")
                 continue
 
