@@ -2,7 +2,7 @@ name: VigilWatch Pipeline
 
 on:
   push:
-    branches: "main"
+    branches: [ "main" ]
   workflow_dispatch:
 
 permissions:
@@ -35,7 +35,7 @@ jobs:
         run: pytest tests/
 
   deploy:
-    name: Deploy Infrastructure and Frontend
+    name: Deploy Infrastructure
     needs: test
     runs-on: ubuntu-latest
 
@@ -49,7 +49,7 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-
+      
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -67,38 +67,6 @@ jobs:
         working-directory: terraform
         run: terraform apply -auto-approve
 
-      - name: Sync frontend to S3
-        run: |
-          # Get bucket name from Terraform outputs
-          FRONTEND_BUCKET=$(terraform -chdir=terraform output -raw frontend_s3_bucket_name)
-          echo "Syncing frontend/ to bucket: ${FRONTEND_BUCKET}"
-
-          aws s3 sync frontend/ "s3://${FRONTEND_BUCKET}" \
-            --delete \
-            --cache-control "no-cache"
-
-      - name: Invalidate CloudFront cache
-        run: |
-          # Get CloudFront distribution URL from Terraform output
-          CF_URL=$(terraform -chdir=terraform output -raw cloudfront_distribution_url)
-          # CF_URL is like "https://dhef1albmj76g.cloudfront.net"
-          CF_DOMAIN=${CF_URL#https://}
-
-          echo "Looking up CloudFront distribution for domain: ${CF_DOMAIN}"
-
-          DIST_ID=$(aws cloudfront list-distributions \
-            --query "DistributionList.Items[?DomainName=='${CF_DOMAIN}'].Id | [0]" \
-            --output text)
-
-          if [ "$DIST_ID" = "None" ] || [ -z "$DIST_ID" ]; then
-            echo "Could not find CloudFront distribution for ${CF_DOMAIN}, skipping invalidation."
-          else
-            echo "Invalidating CloudFront distribution: ${DIST_ID}"
-            aws cloudfront create-invalidation \
-              --distribution-id "${DIST_ID}" \
-              --paths "/*"
-          fi
-
   release:
     name: Version Release
     needs: deploy
@@ -108,19 +76,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Configure git for GitHub Actions
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-
       - name: Create Git Tag
         run: |
           git tag v1.${{ github.run_number }}
           git push origin v1.${{ github.run_number }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
