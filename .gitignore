@@ -31,6 +31,9 @@ htmlcov/
 # Node
 node_modules/
 
+# Planning notes (kept local)
+as-a-senior-cloud-proud-meerkat.md
+
 # Editors / OS
 .vscode/
 .idea/
