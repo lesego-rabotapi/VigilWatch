@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vigilwatch/contract/checks_response.schema.json",
+  "title": "VigilWatch dashboard payload (POST /register, GET /checks)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "endpoint_id",
+    "url",
+    "status",
+    "uptime_30d",
+    "latest_latency_ms",
+    "last_check",
+    "last_alert_sent",
+    "recent_latencies",
+    "incidents"
+  ],
+  "properties": {
+    "endpoint_id": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+    "url": { "type": "string", "pattern": "^https?://" },
+    "status": { "enum": ["UP", "DEGRADED", "DOWN", "UNKNOWN"] },
+    "uptime_30d": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+    "latest_latency_ms": { "type": ["integer", "null"], "minimum": 0 },
+    "last_check": { "$ref": "#/$defs/timestampOrNull" },
+    "last_alert_sent": { "$ref": "#/$defs/timestampOrNull" },
+    "recent_latencies": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ms", "status", "checked_at"],
+        "properties": {
+          "ms": { "type": ["integer", "null"], "minimum": 0 },
+          "status": { "enum": ["UP", "DEGRADED", "DOWN"] },
+          "checked_at": { "$ref": "#/$defs/timestamp" }
+        }
+      }
+    },
+    "incidents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["start_time", "end_time", "duration", "duration_s", "resolved"],
+        "properties": {
+          "start_time": { "$ref": "#/$defs/timestamp" },
+          "end_time": { "$ref": "#/$defs/timestampOrNull" },
+          "duration": { "type": ["string", "null"] },
+          "duration_s": { "type": ["integer", "null"], "minimum": 0 },
+          "resolved": { "type": "boolean" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "timestamp": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$" },
+    "timestampOrNull": {
+      "anyOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }]
+    }
+  }
+}
