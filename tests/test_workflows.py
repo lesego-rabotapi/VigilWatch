@@ -60,7 +60,12 @@ def test_ci_python_gate(ci):
 def test_ci_terraform_gate(ci):
     _, wf = ci
     text = "\n".join(steps_text(j) for j in wf["jobs"].values())
-    for cmd in ("terraform fmt -check", "init -backend=false", "terraform validate", "terraform test"):
+    for cmd in (
+        "terraform fmt -check",
+        "init -backend=false",
+        "terraform validate",
+        "terraform test",
+    ):
         assert cmd in text, cmd
 
 
@@ -129,7 +134,9 @@ def test_post_deploy_smoke_and_cache_invalidation(deploy):
 
 def test_only_release_job_can_write_contents(deploy):
     _, wf = deploy
-    writers = [n for n, j in wf["jobs"].items() if j.get("permissions", {}).get("contents") == "write"]
+    writers = [
+        n for n, j in wf["jobs"].items() if j.get("permissions", {}).get("contents") == "write"
+    ]
     assert writers == ["release"]
     assert "apply" in wf["jobs"]["release"]["needs"]
 
