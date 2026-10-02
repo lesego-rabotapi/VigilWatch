@@ -1,38 +1,27 @@
 [ User / Browser ]
-        |
-        | HTTPS (API Request)
-        v
-[ Amazon API Gateway ]
-        |
-        | Invoke
-        v
-[ Lambda: api_handler ]
-        |
-        | Write / Read
-        v
-[ DynamoDB: monitored_endpoints ]
+   |                                   |
+   | HTTPS (static files)              | HTTPS (API, CORS = dashboard origin)
+   v                                   v
+[ CloudFront ]                   [ API Gateway HTTP API, $default stage, throttled ]
+   | OAC (signed)                      |                         |
+   v                                   | POST /register          | GET /checks
+[ S3 bucket (private) ]                v                         v
+  index.html, view.js,          [ Lambda: register_endpoint ]  [ Lambda: get_checks ]
+  app.js, style.css,                   |    first check            | read-only
+  config.js (generated)                v                           v
+                                [ DynamoDB: endpoints ] <------> [ DynamoDB: history ]
+                                       ^                              ^
+                                       | scan / update                | checks, rollups, incidents
+                                       |                              |
+[ EventBridge rate(5 minutes) ] --> [ Lambda: uptime_check ] ---------+
+                                       |        |
+                                       |        +--> HTTP GET --> [ Monitored websites / APIs ]
+                                       |
+                                       +--> [ SNS topic ] --> email (DOWN / RECOVERED)
+                                       |
+                                       +--(failed run)--> [ SQS dead-letter queue ]
 
-(Event-driven monitoring)
-[ Amazon EventBridge (Schedule) ]
-        |
-        | Trigger
-        v
-[ Lambda: uptime_checker ]
-        |
-        | HTTP Checks
-        v
-[ External Websites / APIs ]
-        |
-        | Results
-        v
-[ DynamoDB Updates ]
-        |
-        | Alerts
-        v
-[ Amazon SNS ]
-        |
-        v
-[ Notifications (Email/SMS - optional) ]
-
-(Monitoring & Logs)
-All Lambdas → Amazon CloudWatch Logs & Metrics
+[ CloudWatch ]
+  Logs: one group per function + API access logs (14 days)
+  Metrics: EMF, namespace VigilWatch, dimension Service
+  Alarms: checker-errors, checker-not-running, checker-dlq, api-5xx  --> SNS topic
