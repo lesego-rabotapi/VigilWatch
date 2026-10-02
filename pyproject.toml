@@ -1,0 +1,31 @@
+[project]
+name = "vigilwatch"
+version = "2.0.0"
+description = "Serverless uptime monitoring on the AWS always-free tier"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["lambda", "tests", "scripts"]
+extend-exclude = [".venv", "terraform", "frontend"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "N"]
+# Domain exception names (UnsafeURL, BadRequest, ...) read better without an Error suffix.
+ignore = ["N818"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S104", "S105", "S106", "S310", "S603", "S607"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["common", "uptime_check", "register_endpoint", "get_checks"]
+
+[tool.coverage.run]
+source = ["lambda"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = true

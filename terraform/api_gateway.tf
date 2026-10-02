@@ -1,60 +1,78 @@
-resource "aws_apigatewayv2_api" "vigilwatch" {
-  name          = "vigilwatch-http"
+# HTTP API (v2): cheaper than REST, native CORS, no OPTIONS mock plumbing.
+
+locals {
+  api_routes = {
+    "POST /register" = "register_endpoint"
+    "GET /checks"    = "get_checks"
+  }
+  api_functions = toset(values(local.api_routes))
+}
+
+resource "aws_apigatewayv2_api" "http" {
+  name          = "${var.project_name}-http"
   protocol_type = "HTTP"
 
+  # The single source of CORS headers (the functions do not set any).
   cors_configuration {
-    allow_origins = ["https://your-frontend.example.com", "http://localhost:3000"]
-    allow_headers = ["Content-Type", "Authorization"]
+    allow_origins = concat(["https://${aws_cloudfront_distribution.frontend.domain_name}"], var.extra_cors_origins)
     allow_methods = ["GET", "POST", "OPTIONS"]
+    allow_headers = ["content-type"]
     max_age       = 3600
   }
 }
 
-resource "aws_apigatewayv2_integration" "register" {
-  api_id                 = aws_apigatewayv2_api.vigilwatch.id
+resource "aws_apigatewayv2_integration" "api" {
+  for_each = local.api_functions
+
+  api_id                 = aws_apigatewayv2_api.http.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_function.register.invoke_arn
+  integration_uri        = aws_lambda_function.fn[each.key].invoke_arn
   payload_format_version = "2.0"
 }
 
-resource "aws_apigatewayv2_route" "register" {
-  api_id    = aws_apigatewayv2_api.vigilwatch.id
-  route_key = "POST /register"
-  target    = "integrations/${aws_apigatewayv2_integration.register.id}"
+resource "aws_apigatewayv2_route" "route" {
+  for_each = local.api_routes
+
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = each.key
+  target    = "integrations/${aws_apigatewayv2_integration.api[each.value].id}"
 }
 
-resource "aws_apigatewayv2_integration" "checks" {
-  api_id                 = aws_apigatewayv2_api.vigilwatch.id
-  integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_function.checks.invoke_arn
-  payload_format_version = "2.0"
+resource "aws_cloudwatch_log_group" "api_access" {
+  name              = "/aws/apigateway/${var.project_name}-http"
+  retention_in_days = var.log_retention_days
 }
 
-resource "aws_apigatewayv2_route" "checks" {
-  api_id    = aws_apigatewayv2_api.vigilwatch.id
-  route_key = "GET /checks"
-  target    = "integrations/${aws_apigatewayv2_integration.checks.id}"
-}
-
-resource "aws_apigatewayv2_stage" "prod" {
-  api_id      = aws_apigatewayv2_api.vigilwatch.id
-  name        = "prod"
+resource "aws_apigatewayv2_stage" "default" {
+  api_id      = aws_apigatewayv2_api.http.id
+  name        = "$default"
   auto_deploy = true
+
+  default_route_settings {
+    throttling_rate_limit    = var.api_throttle_rate
+    throttling_burst_limit   = var.api_throttle_burst
+    detailed_metrics_enabled = false
+  }
+
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.api_access.arn
+    format = jsonencode({
+      requestId = "$context.requestId"
+      ip        = "$context.identity.sourceIp"
+      route     = "$context.routeKey"
+      status    = "$context.status"
+      latencyMs = "$context.responseLatency"
+      error     = "$context.integrationErrorMessage"
+    })
+  }
 }
 
-# Permissions for API Gateway to invoke Lambda
-resource "aws_lambda_permission" "apigw_register" {
-  statement_id  = "AllowInvokeRegister"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.register.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_apigatewayv2_api.vigilwatch.execution_arn}/*/*"
-}
+resource "aws_lambda_permission" "api_invoke" {
+  for_each = local.api_functions
 
-resource "aws_lambda_permission" "apigw_checks" {
-  statement_id  = "AllowInvokeChecks"
+  statement_id  = "AllowHttpApiInvoke"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.checks.function_name
+  function_name = aws_lambda_function.fn[each.key].function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_apigatewayv2_api.vigilwatch.execution_arn}/*/*"
+  source_arn    = "${aws_apigatewayv2_api.http.execution_arn}/*/*"
 }

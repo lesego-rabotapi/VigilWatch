@@ -1,38 +1,60 @@
 import os
-import sys
-import types
 
-os.environ.setdefault("AWS_REGION", "af-south-1")
-os.environ.setdefault("AWS_DEFAULT_REGION", "af-south-1")
+import boto3
+import pytest
+from moto import mock_aws
+
+# Fake credentials so no test can ever reach a real AWS account.
+os.environ["AWS_ACCESS_KEY_ID"] = "testing"
+os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
+os.environ["AWS_SECURITY_TOKEN"] = "testing"
+os.environ["AWS_SESSION_TOKEN"] = "testing"
+os.environ["AWS_DEFAULT_REGION"] = "af-south-1"
+os.environ["AWS_REGION"] = "af-south-1"
+os.environ["ENDPOINTS_TABLE"] = "vigilwatch-endpoints"
+os.environ["HISTORY_TABLE"] = "vigilwatch-history"
 
 
-if "boto3" not in sys.modules:
-    fake_boto3 = types.ModuleType("boto3")
+@pytest.fixture
+def aws():
+    with mock_aws():
+        yield
 
-    def _fake_resource(*args, **kwargs):
-        class FakeTable:
-            def scan(self, *a, **k):
-                return {"Items": []}
 
-            def put_item(self, *a, **k):
-                return {}
+def _create_table(name, key_schema, attributes):
+    boto3.client("dynamodb").create_table(
+        TableName=name,
+        KeySchema=key_schema,
+        AttributeDefinitions=attributes,
+        BillingMode="PROVISIONED",
+        ProvisionedThroughput={"ReadCapacityUnits": 5, "WriteCapacityUnits": 5},
+    )
 
-        class FakeDynamo:
-            def Table(self, name):
-                return FakeTable()
 
-        return FakeDynamo()
+@pytest.fixture
+def tables(aws):
+    """Tables mirroring terraform/dynamo.tf."""
+    _create_table(
+        os.environ["ENDPOINTS_TABLE"],
+        [{"AttributeName": "endpoint_id", "KeyType": "HASH"}],
+        [{"AttributeName": "endpoint_id", "AttributeType": "S"}],
+    )
+    _create_table(
+        os.environ["HISTORY_TABLE"],
+        [
+            {"AttributeName": "endpoint_id", "KeyType": "HASH"},
+            {"AttributeName": "sk", "KeyType": "RANGE"},
+        ],
+        [
+            {"AttributeName": "endpoint_id", "AttributeType": "S"},
+            {"AttributeName": "sk", "AttributeType": "S"},
+        ],
+    )
+    yield
 
-    def _fake_client(*args, **kwargs):
-        class FakeClient:
-            def put_metric_data(self, *a, **k):
-                return {}
 
-            def publish(self, *a, **k):
-                return {}
-
-        return FakeClient()
-
-    fake_boto3.resource = _fake_resource
-    fake_boto3.client = _fake_client
-    sys.modules["boto3"] = fake_boto3
+@pytest.fixture
+def sns_topic(aws, monkeypatch):
+    arn = boto3.client("sns").create_topic(Name="vigilwatch-alerts")["TopicArn"]
+    monkeypatch.setenv("SNS_TOPIC_ARN", arn)
+    return arn

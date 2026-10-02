@@ -1,82 +1,150 @@
-name: VigilWatch Pipeline
+name: Deploy
+
+# Repository configuration required (Settings -> Secrets and variables -> Variables):
+#   AWS_DEPLOY_ROLE_ARN  output deploy_role_arn of terraform/bootstrap
+#   TF_STATE_BUCKET      output state_bucket of terraform/bootstrap
+#   NOTIFICATION_EMAIL   optional alert recipient
+# and an Environment named "production" with required reviewers (the approval gate).
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false # never interrupt a running apply
 
 env:
   AWS_REGION: af-south-1
+  TF_VERSION: "1.14.3"
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
 
 jobs:
-  test:
-    name: Run Tests
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  plan:
+    name: Terraform plan
+    needs: [ci]
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: terraform
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install boto3 requests pytest
-
-      - name: Run tests
-        run: pytest tests/
-
-  deploy:
-    name: Deploy Infrastructure
-    needs: test
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-      
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.8.5
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - name: terraform init
+        run: >
+          terraform init
+          -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+          -backend-config="key=vigilwatch/prod.tfstate"
+          -backend-config="region=${{ env.AWS_REGION }}"
+          -backend-config="encrypt=true"
+          -backend-config="use_lockfile=true"
+      - name: terraform plan
+        run: terraform plan -out=tfplan -var "notification_email=${{ vars.NOTIFICATION_EMAIL }}"
+      - name: Plan summary
+        run: |
+          {
+            echo '### Terraform plan'
+            echo '```'
+            terraform show -no-color tfplan | tail -n 200
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      # The saved plan references the Lambda bundle built during plan, so ship both.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: |
+            terraform/tfplan
+            terraform/.build/
+          retention-days: 5
+          include-hidden-files: true
 
-      - name: Terraform Init
+  apply:
+    name: Terraform apply (approval required)
+    needs: [plan]
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.outputs.outputs.dashboard_url }}
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
         working-directory: terraform
-        run: terraform init
-
-      - name: Terraform Plan
-        working-directory: terraform
-        run: terraform plan
-
-      - name: Terraform Apply
-        working-directory: terraform
-        run: terraform apply -auto-approve
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: terraform
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - name: terraform init
+        run: >
+          terraform init
+          -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+          -backend-config="key=vigilwatch/prod.tfstate"
+          -backend-config="region=${{ env.AWS_REGION }}"
+          -backend-config="encrypt=true"
+          -backend-config="use_lockfile=true"
+      - name: terraform apply (exactly the reviewed plan)
+        run: terraform apply tfplan
+      - name: Read outputs
+        id: outputs
+        run: |
+          echo "dashboard_url=$(terraform output -raw dashboard_url)" >> "$GITHUB_OUTPUT"
+          echo "api_base_url=$(terraform output -raw api_base_url)" >> "$GITHUB_OUTPUT"
+          echo "distribution_id=$(terraform output -raw cloudfront_distribution_id)" >> "$GITHUB_OUTPUT"
+      - name: Invalidate CloudFront cache
+        run: >
+          aws cloudfront create-invalidation
+          --distribution-id "${{ steps.outputs.outputs.distribution_id }}"
+          --paths "/*"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Post-deploy smoke test
+        working-directory: .
+        env:
+          API_URL: ${{ steps.outputs.outputs.api_base_url }}
+          DASHBOARD_URL: ${{ steps.outputs.outputs.dashboard_url }}
+        run: |
+          pip install -r requirements-dev.txt
+          pytest -m e2e tests/e2e -v
 
   release:
-    name: Version Release
-    needs: deploy
+    name: Tag release
+    needs: [apply]
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: write
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Create Git Tag
+      - uses: actions/checkout@v4
+      - name: Create and push tag
         run: |
-          git tag v1.${{ github.run_number }}
-          git push origin v1.${{ github.run_number }}
+          git tag "v2.${{ github.run_number }}"
+          git push origin "v2.${{ github.run_number }}"

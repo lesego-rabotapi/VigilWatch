@@ -1,149 +1,91 @@
+"""Scheduled uptime checker (EventBridge -> Lambda).
+
+Probes every enabled endpoint in parallel, then persists results serially
+(boto3 resources are not thread-safe). Endpoint downtime is data, not an
+error; the invocation only fails when VigilWatch itself could not process an
+endpoint, so the Lambda Errors alarm means "the monitor is broken".
+"""
+
 import json
-import os
-from datetime import datetime
-from urllib import request as urllib_request, error as urllib_error
+import logging
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 
-import boto3 
+from common.checker import Settings, apply_result, make_publisher, probe
+from common.repo import Repo
+from common.status import DEGRADED, DOWN, UP
 
-CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Api-Key",
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-}
-
-
-def _get_clients():
-    dynamodb = boto3.resource("dynamodb")
-    cloudwatch = boto3.client("cloudwatch")
-    sns = boto3.client("sns")
-    table = dynamodb.Table(TABLE_NAME)
-    return table, cloudwatch, sns
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 
-def _to_plain(obj):
-    """
-    Recursively convert DynamoDB Decimals to int/float so json.dumps works.
-    """
-    if isinstance(obj, list):
-        return [_to_plain(v) for v in obj]
-    if isinstance(obj, dict):
-        return {k: _to_plain(v) for k, v in obj.items()}
-    if isinstance(obj, Decimal):
-        return int(obj) if obj % 1 == 0 else float(obj)
-    return obj
+def utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
+def _emf(summary: dict, latencies: list[float], now: datetime) -> str:
+    values = {
+        "ChecksRun": summary["checked"],
+        "EndpointsDown": summary["down"],
+        "EndpointsDegraded": summary["degraded"],
+    }
+    if latencies:
+        values["AvgLatencyMs"] = round(sum(latencies) / len(latencies), 1)
+    units = {"AvgLatencyMs": "Milliseconds"}
+    return json.dumps(
+        {
+            "_aws": {
+                "Timestamp": int(now.timestamp() * 1000),
+                "CloudWatchMetrics": [
+                    {
+                        "Namespace": "VigilWatch",
+                        # A single low-cardinality dimension keeps this at a fixed
+                        # number of custom metrics, whatever is being monitored.
+                        "Dimensions": [["Service"]],
+                        "Metrics": [
+                            {"Name": name, "Unit": units.get(name, "Count")} for name in values
+                        ],
+                    }
+                ],
+            },
+            "Service": "uptime-check",
+            **values,
+        }
+    )
 
 
 def lambda_handler(event, context):
-    """
-    Extremely simple uptime check:
-    - Reads ?url=... from queryStringParameters
-    - Performs a single GET with 5s timeout
-    - Returns status code and success flag
-    - No DynamoDB, no SNS, no Decimals
-    """
-    try:
-        table, cloudwatch, sns = _get_clients()
+    settings = Settings.from_env()
+    repo = Repo()
+    publish = make_publisher()
+    now = utcnow()
 
-        response = table.scan()
-        items = response.get("Items", [])
-
-        results = []
-
-        for item in items:
-            # Skip disabled checks
-            if not item.get("enabled", True):
-                continue
-
-            endpoint = item.get("endpoint")
-            if not endpoint:
-                print(f"Skipping item without endpoint: {json.dumps(_to_plain(item))}")
-                continue
-
-            method = item.get("method", "GET")
-            expected_status = int(item.get("expected_status", 200))
-
-            try:
-                if method != "GET":
-                    raise ValueError(f"Unsupported method: {method}")
-
-                req = urllib_request.Request(endpoint, method="GET")
-                with urllib_request.urlopen(req, timeout=5) as resp:
-                    actual_status = resp.getcode()
-                success = actual_status == expected_status
-
-            except urllib_error.HTTPError as e:
-                actual_status = e.code
-                success = actual_status == expected_status
-
-            except Exception:
-                success = False
-                actual_status = "timeout"
-
-            cloudwatch.put_metric_data(
-                Namespace="VigilWatch",
-                MetricData=[
-                    {
-                        "MetricName": "EndpointUp",
-                        "Dimensions": [
-                            {"Name": "Endpoint", "Value": endpoint},
-                        ],
-                        "Value": 1 if success else 0,
-                        "Unit": "Count",
-                    }
-                ],
+    endpoints = [e for e in repo.list_enabled_endpoints() if e.get("url")]
+    results = []
+    if endpoints:
+        workers = max(1, min(settings.max_workers, len(endpoints)))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            results = list(
+                pool.map(lambda e: probe(e["url"], timeout=settings.timeout_s), endpoints)
             )
 
-            if not success and SNS_TOPIC_ARN:
-                sns.publish(
-                    TopicArn=SNS_TOPIC_ARN,
-                    Subject="Uptime check failed",
-                    Message=json.dumps(
-                        _to_plain(
-                            {
-                                "endpoint": endpoint,
-                                "expected_status": expected_status,
-                                "actual_status": actual_status,
-                                "timestamp": datetime.utcnow().isoformat(),
-                            }
-                        ),
-                        indent=2,
-                    ),
-                )
+    summary = {"checked": len(endpoints), "up": 0, "degraded": 0, "down": 0, "errors": 0}
+    counter = {UP: "up", DEGRADED: "degraded", DOWN: "down"}
+    for endpoint, result in zip(endpoints, results, strict=True):
+        try:
+            status = apply_result(endpoint, result, repo, publish, now, settings)
+        except Exception:
+            summary["errors"] += 1
+            logger.exception("failed to process endpoint %s", endpoint.get("endpoint_id"))
+            continue
+        summary[counter[status]] += 1
 
-            results.append(
-                {
-                    "endpoint": url,
-                    "expected_status": expected_status,
-                    "actual_status": actual_status,
-                    "success": success,
-                }
-            )
+    latencies = [r.latency_ms for r in results if r.latency_ms is not None]
+    print(_emf(summary, latencies, now))
+    logger.info("run complete %s", json.dumps(summary))
 
-        # Convert any Decimals in results before returning
-        plain_body = _to_plain(
-            {
-                "status": "completed",
-                "checked": len(results),
-                "results": results,
-            }
+    if summary["errors"]:
+        raise RuntimeError(
+            f"{summary['errors']} of {summary['checked']} endpoints failed internally"
         )
-
-        return {
-            "statusCode": 500,
-            "headers": CORS_HEADERS,
-            "body": json.dumps(plain_body),
-        }
-
-def checks(event, context):
-    try:
-        items = [{"repo": "lesego-rabotapi/VigilWatch", "score": Decimal("0.95")}]
-        body = json.dumps(to_json_safe(items))
-        return {"statusCode": 200, "headers": CORS_HEADERS, "body": body}
-    except Exception as e:
-        # Last-resort error
-        print("Error in simple uptime_check:", repr(e))
-        return {
-            "statusCode": 500,
-            "headers": CORS_HEADERS,
-            "body": json.dumps({"error": str(e)}),
-        }
+    return summary
