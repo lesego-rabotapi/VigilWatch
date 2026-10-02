@@ -1,60 +1,68 @@
-import json
-from datetime import datetime
+"""POST /register - start monitoring a URL.
 
-import boto3
+Body: {"url": "https://example.com", "expected_status": 200}
+201 with the dashboard payload (after an immediate first check) for a new URL,
+200 for a URL that is already monitored.
+"""
 
-TABLE_NAME = "uptime_checks"
+import logging
+import os
+from datetime import UTC, datetime
 
-CORS_HEADERS = {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-}
+from common.checker import Settings, apply_result, make_publisher, probe
+from common.http import BadRequest, error, json_body, response
+from common.repo import EndpointLimitReached, Repo
+from common.urlguard import UnresolvableHost, UnsafeURL, default_resolver, endpoint_id, validate
+from common.view import build_view
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+resolver = default_resolver
 
 
-def _get_table():
-    dynamodb = boto3.resource("dynamodb")
-    return dynamodb.Table(TABLE_NAME)
+def utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
+def _expected_status(body: dict) -> int:
+    value = body.get("expected_status", 200)
+    if isinstance(value, bool) or not isinstance(value, int) or not 100 <= value <= 599:
+        raise BadRequest("expected_status must be an integer HTTP status (100-599)")
+    return value
 
 
 def lambda_handler(event, context):
-    table = _get_table()
+    try:
+        body = json_body(event)
+        raw_url = body.get("url") or body.get("endpoint")
+        if not isinstance(raw_url, str) or not raw_url.strip():
+            raise BadRequest("'url' is required")
+        expected_status = _expected_status(body)
+        url = validate(raw_url, resolver=resolver)
+    except UnresolvableHost:
+        return error(400, "Could not resolve that host name")
+    except (BadRequest, UnsafeURL) as exc:
+        return error(400, str(exc))
 
-    if "body" in event:
-        body = json.loads(event["body"]) if isinstance(event["body"], str) else event["body"]
-    else:
-        body = event
+    repo = Repo()
+    now = utcnow()
+    max_endpoints = int(os.environ.get("MAX_ENDPOINTS", "10"))
+    try:
+        endpoint, created = repo.put_endpoint(
+            endpoint_id(url), url, now, expected_status=expected_status, max_endpoints=max_endpoints
+        )
+    except EndpointLimitReached:
+        return error(429, f"Monitoring limit reached ({max_endpoints} endpoints)")
 
-    url = body.get("endpoint") or body.get("url")
-    if not url:
-        return {
-            "statusCode": 400,
-            "headers": CORS_HEADERS,
-            "body": json.dumps({"message": "Missing 'endpoint' or 'url' field"}),
-        }
+    if created:
+        settings = Settings.from_env()
+        try:
+            result = probe(url, timeout=settings.timeout_s)
+            apply_result(endpoint, result, repo, make_publisher(), now, settings)
+            endpoint = repo.get_endpoint(endpoint["endpoint_id"])
+        except Exception:
+            # Registration succeeded; the scheduled checker will pick it up.
+            logger.exception("first check failed for %s", url)
 
-    endpoint_id = body.get("endpoint_id") or datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
-
-    table.put_item(
-        Item={
-            "endpoint_id": endpoint_id,
-            "timestamp": datetime.utcnow().isoformat(),
-            "endpoint": url,
-            "method": body.get("method", "GET"),
-            "expected_status": body.get("expected_status", 200),
-            "enabled": True,
-        }
-    )
-
-    return {
-        "statusCode": 201,
-        "headers": CORS_HEADERS,
-        "body": json.dumps(
-            {
-                "message": "Endpoint registered successfully",
-                "endpoint_id": endpoint_id,
-                "url": url,
-            }
-        ),
-    }
+    return response(201 if created else 200, build_view(repo, endpoint, now))
