@@ -117,7 +117,12 @@ def test_incident_open_and_close(repo):
     end = NOW + timedelta(minutes=15)
     repo.open_incident("a", start)
     [open_inc] = repo.incidents("a")
-    assert open_inc == {"start_time": iso(start), "end_time": None, "resolved": False, "duration_s": None}
+    assert open_inc == {
+        "start_time": iso(start),
+        "end_time": None,
+        "resolved": False,
+        "duration_s": None,
+    }
 
     repo.close_incident("a", iso(start), end)
     [closed] = repo.incidents("a")

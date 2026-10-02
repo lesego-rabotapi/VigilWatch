@@ -227,7 +227,9 @@ class Repo:
         duration = int((end - parse_iso(start_iso)).total_seconds())
         self.history.update_item(
             Key={"endpoint_id": endpoint_id, "sk": f"I#{start_iso}"},
-            UpdateExpression="SET resolved = :t, end_time = :end, duration_s = :d, expires_at = :exp",
+            UpdateExpression=(
+                "SET resolved = :t, end_time = :end, duration_s = :d, expires_at = :exp"
+            ),
             ExpressionAttributeValues={
                 ":t": True,
                 ":end": iso(end),

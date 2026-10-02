@@ -59,7 +59,10 @@ def probe(
     except UnsafeURL as exc:
         return CheckResult(status_code=None, latency_ms=None, error=str(exc))
 
-    request = urllib.request.Request(url, method="GET", headers={"User-Agent": USER_AGENT})
+    # Scheme is restricted to http/https by the validator above.
+    request = urllib.request.Request(  # noqa: S310
+        url, method="GET", headers={"User-Agent": USER_AGENT}
+    )
     started = time.perf_counter()
     try:
         with _OPENER.open(request, timeout=timeout) as response:
@@ -68,7 +71,9 @@ def probe(
         status_code = exc.code
     except (urllib.error.URLError, OSError, ValueError) as exc:
         reason = getattr(exc, "reason", exc)
-        return CheckResult(status_code=None, latency_ms=None, error=str(reason) or type(exc).__name__)
+        return CheckResult(
+            status_code=None, latency_ms=None, error=str(reason) or type(exc).__name__
+        )
     return CheckResult(status_code=status_code, latency_ms=(time.perf_counter() - started) * 1000)
 
 

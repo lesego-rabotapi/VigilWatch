@@ -30,9 +30,7 @@ MUST_BE_IGNORED = [
 
 
 def _git(*args):
-    return subprocess.run(
-        ["git", *args], cwd=ROOT, capture_output=True, text=True, check=False
-    )
+    return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=False)
 
 
 def _tracked_files():
@@ -61,7 +59,4 @@ def test_gitignore_covers(path):
 
 def test_provider_lock_file_is_not_ignored():
     _tracked_files()
-    assert (
-        _git("check-ignore", "-q", "--no-index", "terraform/.terraform.lock.hcl").returncode
-        == 1
-    )
+    assert _git("check-ignore", "-q", "--no-index", "terraform/.terraform.lock.hcl").returncode == 1

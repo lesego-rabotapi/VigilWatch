@@ -73,7 +73,13 @@ def test_get_checks_matches_contract(seeded):
     assert body["status"] == "UP"
     assert body["uptime_30d"] == pytest.approx(60.0)  # 3 of 5 (DEGRADED counts as up)
     assert body["latest_latency_ms"] == 90
-    assert [p["status"] for p in body["recent_latencies"]] == ["UP", "DEGRADED", "DOWN", "DOWN", "UP"]
+    assert [p["status"] for p in body["recent_latencies"]] == [
+        "UP",
+        "DEGRADED",
+        "DOWN",
+        "DOWN",
+        "UP",
+    ]
     assert body["recent_latencies"][3]["ms"] is None
     [incident] = body["incidents"]
     assert incident == {
