@@ -1,25 +1,38 @@
-
 # Terraform
-. terraform/
-*.tfstate
-*. tfstate.backup
-*.tfvars
-.terraform.lock.hcl
-
-# Local . terraform directories
 **/.terraform/*
-
-# Crash log files
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
 crash.log
 crash.*.log
-
-# Override files
 override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
+# The provider lock file IS committed so every run uses the same provider builds.
+!.terraform.lock.hcl
 
-# Sensitive data
-*.tfvars. json
-secrets.tfvars
+# Build output (Lambda bundles are produced by terraform archive_file)
+.build/
+*.zip
 
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Node
+node_modules/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
