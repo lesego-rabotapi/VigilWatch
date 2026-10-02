@@ -76,7 +76,8 @@ def test_record_check_writes_raw_row_with_ttl_and_daily_rollup(repo):
 
     day = rows["D#2026-10-02"]
     assert day["total"] == 2 and day["up"] == 1
-    assert day["expires_at"] == int((NOW + timedelta(days=31)).timestamp())
+    # Expiry slides forward with the latest write to that day.
+    assert day["expires_at"] == int((NOW + timedelta(minutes=5, days=31)).timestamp())
 
 
 def test_degraded_counts_as_up_in_rollup(repo):
