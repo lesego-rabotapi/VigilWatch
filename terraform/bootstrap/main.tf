@@ -149,9 +149,26 @@ resource "aws_iam_role_policy" "deploy" {
         Effect = "Allow"
         Action = [
           "dynamodb:*", "lambda:*", "apigateway:*", "events:*", "sns:*", "sqs:*",
-          "logs:*", "cloudwatch:*", "cloudfront:*", "s3:*",
+          "logs:*", "cloudwatch:*", "cloudfront:*",
         ]
         Resource = "*"
+      },
+      {
+        # S3 only on the dashboard bucket; never the state bucket's settings.
+        Sid    = "FrontendBucketOnly"
+        Effect = "Allow"
+        Action = [
+          "s3:CreateBucket", "s3:DeleteBucket", "s3:ListBucket",
+          "s3:GetBucket*", "s3:PutBucket*", "s3:DeleteBucketPolicy",
+          "s3:GetEncryptionConfiguration", "s3:PutEncryptionConfiguration",
+          "s3:GetLifecycleConfiguration", "s3:GetReplicationConfiguration",
+          "s3:GetAccelerateConfiguration", "s3:GetAnalyticsConfiguration",
+          "s3:GetObject", "s3:GetObjectTagging", "s3:PutObject", "s3:DeleteObject",
+        ]
+        Resource = [
+          "arn:aws:s3:::${var.project_name}-frontend-${data.aws_caller_identity.current.account_id}",
+          "arn:aws:s3:::${var.project_name}-frontend-${data.aws_caller_identity.current.account_id}/*",
+        ]
       },
       {
         Sid    = "OwnRolesOnly"
