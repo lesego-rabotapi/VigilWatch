@@ -6,6 +6,56 @@ mock_provider "aws" {
     target = data.aws_caller_identity.current
     values = { account_id = "123456789012" }
   }
+
+  # The provider validates ARN syntax, so mocked ARNs must look real.
+  mock_resource "aws_iam_role" {
+    defaults = { arn = "arn:aws:iam::123456789012:role/mock" }
+  }
+  mock_resource "aws_cloudwatch_log_group" {
+    defaults = { arn = "arn:aws:logs:af-south-1:123456789012:log-group:mock" }
+  }
+  mock_resource "aws_lambda_function" {
+    defaults = {
+      arn        = "arn:aws:lambda:af-south-1:123456789012:function:mock"
+      invoke_arn = "arn:aws:apigateway:af-south-1:lambda:path/2015-03-31/functions/arn:aws:lambda:af-south-1:123456789012:function:mock/invocations"
+    }
+  }
+  mock_resource "aws_sqs_queue" {
+    defaults = {
+      arn = "arn:aws:sqs:af-south-1:123456789012:mock"
+      url = "https://sqs.af-south-1.amazonaws.com/123456789012/mock"
+    }
+  }
+  mock_resource "aws_sns_topic" {
+    defaults = { arn = "arn:aws:sns:af-south-1:123456789012:mock" }
+  }
+  mock_resource "aws_dynamodb_table" {
+    defaults = { arn = "arn:aws:dynamodb:af-south-1:123456789012:table/mock" }
+  }
+  mock_resource "aws_cloudwatch_event_rule" {
+    defaults = { arn = "arn:aws:events:af-south-1:123456789012:rule/mock" }
+  }
+  mock_resource "aws_s3_bucket" {
+    defaults = {
+      arn                         = "arn:aws:s3:::mock"
+      bucket_regional_domain_name = "mock.s3.af-south-1.amazonaws.com"
+    }
+  }
+  mock_resource "aws_cloudfront_distribution" {
+    defaults = {
+      arn         = "arn:aws:cloudfront::123456789012:distribution/EMOCK"
+      domain_name = "d111111abcdef8.cloudfront.net"
+    }
+  }
+  mock_resource "aws_apigatewayv2_api" {
+    defaults = {
+      execution_arn = "arn:aws:execute-api:af-south-1:123456789012:abc123"
+      api_endpoint  = "https://abc123.execute-api.af-south-1.amazonaws.com"
+    }
+  }
+  mock_resource "aws_apigatewayv2_stage" {
+    defaults = { invoke_url = "https://abc123.execute-api.af-south-1.amazonaws.com/" }
+  }
 }
 
 variables {
@@ -24,8 +74,14 @@ run "core_loop_is_wired" {
     error_message = "schedule must target the checker Lambda"
   }
   assert {
-    condition     = aws_lambda_permission.events_invoke_checker.principal == "events.amazonaws.com"
-    error_message = "EventBridge must be allowed to invoke the checker"
+    condition = (aws_lambda_permission.events_invoke_checker.principal == "events.amazonaws.com"
+      && aws_lambda_permission.events_invoke_checker.function_name == aws_lambda_function.fn["uptime_check"].function_name
+    && aws_lambda_permission.events_invoke_checker.source_arn == aws_cloudwatch_event_rule.schedule.arn)
+    error_message = "EventBridge (this rule only) must be allowed to invoke the checker"
+  }
+  assert {
+    condition     = aws_lambda_function_event_invoke_config.checker.function_name == aws_lambda_function.fn["uptime_check"].function_name
+    error_message = "async invoke config must apply to the checker"
   }
   assert {
     condition     = aws_lambda_function_event_invoke_config.checker.destination_config[0].on_failure[0].destination == aws_sqs_queue.checker_dlq.arn
@@ -53,7 +109,7 @@ run "lambdas_are_consistent" {
     error_message = "arm64 is cheaper per GB-second"
   }
   assert {
-    condition     = length(distinct([for f in aws_lambda_function.fn : f.role])) == 3
+    condition     = length(aws_iam_role.fn) == 3 && alltrue([for k, f in aws_lambda_function.fn : f.role == aws_iam_role.fn[k].arn])
     error_message = "each function needs its own role"
   }
   assert {
@@ -134,7 +190,7 @@ run "frontend_is_private_and_https" {
     error_message = "frontend bucket must not be public"
   }
   assert {
-    condition     = aws_cloudfront_distribution.frontend.origin[*].origin_access_control_id == [aws_cloudfront_origin_access_control.frontend.id]
+    condition     = alltrue([for o in aws_cloudfront_distribution.frontend.origin : o.origin_access_control_id == aws_cloudfront_origin_access_control.frontend.id])
     error_message = "CloudFront must reach S3 via OAC"
   }
   assert {
@@ -146,7 +202,7 @@ run "frontend_is_private_and_https" {
     error_message = "only CloudFront may read the bucket"
   }
   assert {
-    condition     = strcontains(aws_s3_object.config.content, aws_apigatewayv2_stage.default.invoke_url)
+    condition     = strcontains(aws_s3_object.config.content, "\"${trimsuffix(aws_apigatewayv2_stage.default.invoke_url, "/")}\"")
     error_message = "config.js must point the dashboard at the deployed API"
   }
   assert {
