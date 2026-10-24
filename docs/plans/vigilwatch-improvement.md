@@ -71,8 +71,8 @@ Lesson 5 "deploy despite failing tests" (gates stay strict); HATEOAS (two routes
 | # | Stage | Depends on | Size | Needs AWS | Status |
 |---|---|---|---|---|---|
 | 0 | Toolchain install and baseline | none | S | no | ✅ COMPLETE |
-| 1 | Land PR #4 and repo guardrails | 0 | S | no | 🔄 IN PROGRESS |
-| 2 | Requirements, design and traceability | 1 | M | no | ⏳ PENDING |
+| 1 | Land PR #4 and repo guardrails | 0 | S | no | 🔄 IN PROGRESS (1.2, 1.3 done and pushed; 1.1, 1.4 need you) |
+| 2 | Requirements, design and traceability | 1 | M | no | ✅ COMPLETE |
 | 3 | Quality foundation (taxonomy, SOLID, cold start, errors, E2E harness) | 2 | L | no | ⏳ PENDING |
 | 4 | Honest checker, alert state machine, atomic cap | 3 | M | no | ⏳ PENDING |
 | 5 | Terraform modules and environments | 3 | L | no | ⏳ PENDING |
@@ -356,3 +356,8 @@ prove that the policy, package-verification and gate-integrity checks fail when 
 | 2026-10-24 | 0.5 | `.terraform-version` is the single pin; CI and deploy workflows follow it | `tests/test_workflows.py::test_terraform_version_has_a_single_source_of_truth` |
 | 2026-10-24 | 1.2 | `plan`, `apply`, `release` skip until `AWS_DEPLOY_ROLE_ARN` is set | `tests/test_workflows.py::test_aws_jobs_are_skipped_not_failed_until_the_repository_is_configured` |
 | 2026-10-24 | 1.3 | Audit and this plan committed under `docs/` | `tests/test_docs.py` |
+| 2026-10-24 | 2.1, 2.5 | 19 user stories (`VW-001..019`) with acceptance criteria; every test layer cites the IDs it proves; matrix generated and drift-tested | `tests/test_traceability.py`, `docs/design/traceability.md` |
+| 2026-10-24 | 2.2 | `docs/openapi.yaml` (3.1) is the source of truth; JSON Schema is exported from it; handler errors validated against the `Error` schema | `tests/contract/test_openapi.py` |
+| 2026-10-24 | 2.3 | Four sequence diagrams with business-error and unexpected-error paths; all four parse and render in Mermaid 11 (checked in a browser) | `tests/test_design_docs.py` |
+| 2026-10-24 | 2.4 | 33 Gherkin scenarios (monitoring, alerting, status) run against the real handlers on moto; a threshold mutation fails 2 of them | `tests/step_defs`, `tests/features` |
+| 2026-10-24 | 2 gate | 280 tests pass, coverage 94.26%, ruff clean, no uncovered requirement | local run |
