@@ -15,6 +15,8 @@ from common.repo import Repo
 from common.status import CheckResult
 from common.urlguard import endpoint_id
 
+pytestmark = pytest.mark.req("VW-011", "VW-012")
+
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = json.loads((Path(__file__).parent / "checks_response.schema.json").read_text())
 T0 = datetime(2026, 10, 2, 12, 0, 0, tzinfo=UTC)

@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.req("VW-018")
+
 ROOT = Path(__file__).resolve().parent.parent
 
 FORBIDDEN_TRACKED = [

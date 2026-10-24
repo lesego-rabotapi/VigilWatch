@@ -5,6 +5,8 @@ import pytest
 
 from common.repo import EndpointLimitReached, Repo, iso
 
+pytestmark = pytest.mark.req("VW-001", "VW-003", "VW-007", "VW-008", "VW-009", "VW-013")
+
 NOW = datetime(2026, 10, 2, 12, 0, 0, tzinfo=UTC)
 
 

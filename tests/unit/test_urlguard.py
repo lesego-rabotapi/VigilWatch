@@ -2,6 +2,8 @@ import pytest
 
 from common.urlguard import UnresolvableHost, UnsafeURL, endpoint_id, normalize, validate
 
+pytestmark = pytest.mark.req("VW-002")
+
 DNS = {
     "example.com": ["93.184.215.14"],
     "v6.example.com": ["2606:2800:21f:cb07:6820:80da:af6b:8b2c"],

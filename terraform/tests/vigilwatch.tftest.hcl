@@ -1,3 +1,4 @@
+# req: VW-003 VW-004 VW-013 VW-015 VW-016
 # Infrastructure tests. The AWS provider is mocked: nothing is created and no
 # credentials are needed. Run: terraform init -backend=false && terraform test
 

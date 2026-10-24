@@ -1,13 +1,15 @@
 """Every requirement must be proven by at least one test, and every test reference must be real.
 
-Requirements live in docs/design/requirements.md as `### VW-nnn: title` stories. Tests cite them with
-`pytest.mark.req("VW-nnn")` (Python), `@VW-nnn` tags (Gherkin) or `req: VW-nnn` comments (JS, Terraform).
+Requirements live in docs/design/requirements.md as `### VW-nnn: title` stories.
+Tests cite them with `pytest.mark.req("VW-nnn")` (Python), `@VW-nnn` tags (Gherkin)
+or `req: VW-nnn` comments (JS, Terraform).
 """
 
 import re
 from pathlib import Path
 
 import pytest
+
 from traceability import build_matrix, load_requirements, render_matrix, scan_references
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -37,9 +39,7 @@ def test_every_requirement_is_covered_by_at_least_one_test():
 
 def test_every_reference_in_a_test_points_to_a_real_requirement():
     known = {s["id"] for s in load_requirements()}
-    unknown = {
-        ref: files for ref, files in scan_references().items() if ref not in known
-    }
+    unknown = {ref: files for ref, files in scan_references().items() if ref not in known}
     assert unknown == {}, f"tests cite unknown requirements: {unknown}"
 
 

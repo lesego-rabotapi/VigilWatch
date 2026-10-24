@@ -9,6 +9,8 @@ import pytest
 from common.checker import probe
 from common.urlguard import UnsafeURL
 
+pytestmark = pytest.mark.req("VW-002", "VW-006")
+
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802 (stdlib naming)

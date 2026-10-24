@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.req("VW-019")
+
 ROOT = Path(__file__).resolve().parent.parent
 DOCS = sorted([ROOT / "README.md", ROOT / "systemOverview.md", *(ROOT / "docs").rglob("*.md")])
 TEXT = {p: p.read_text(encoding="utf-8") for p in DOCS}

@@ -9,6 +9,8 @@ from common.repo import Repo
 from common.status import CheckResult
 from common.urlguard import UnresolvableHost, endpoint_id
 
+pytestmark = pytest.mark.req("VW-001", "VW-002", "VW-003")
+
 NOW = datetime(2026, 10, 2, 12, 0, 0, tzinfo=UTC)
 PUBLIC = {
     "example.com": ["93.184.215.14"],

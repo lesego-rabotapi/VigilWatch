@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+pytestmark = pytest.mark.req("VW-017")
+
 WORKFLOWS = Path(__file__).resolve().parent.parent / ".github" / "workflows"
 
 

@@ -17,7 +17,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-pytestmark = pytest.mark.e2e
+pytestmark = [pytest.mark.req("VW-001", "VW-002", "VW-011", "VW-012"), pytest.mark.e2e]
 
 API_URL = os.environ.get("API_URL", "").rstrip("/")
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "").rstrip("/")

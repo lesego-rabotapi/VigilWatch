@@ -10,6 +10,8 @@ import uptime_check
 from common.repo import Repo, iso
 from common.status import CheckResult
 
+pytestmark = pytest.mark.req("VW-004", "VW-005", "VW-009", "VW-010", "VW-015")
+
 T0 = datetime(2026, 10, 2, 12, 0, 0, tzinfo=UTC)
 
 OK = CheckResult(status_code=200, latency_ms=120.0)

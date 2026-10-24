@@ -2,6 +2,8 @@ import pytest
 
 from common.status import DEGRADED, DOWN, UP, CheckResult, classify, counts_as_up
 
+pytestmark = pytest.mark.req("VW-005")
+
 
 @pytest.mark.parametrize(
     "result, expected",
