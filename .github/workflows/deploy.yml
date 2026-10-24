@@ -30,6 +30,7 @@ jobs:
 
   plan:
     name: Terraform plan
+    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' }}
     needs: [ci]
     runs-on: ubuntu-latest
     permissions:
@@ -78,6 +79,7 @@ jobs:
 
   apply:
     name: Terraform apply (approval required)
+    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' }}
     needs: [plan]
     runs-on: ubuntu-latest
     environment:
@@ -138,6 +140,7 @@ jobs:
 
   release:
     name: Tag release
+    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' }}
     needs: [apply]
     runs-on: ubuntu-latest
     permissions:
