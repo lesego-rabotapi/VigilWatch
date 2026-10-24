@@ -154,3 +154,17 @@ def test_actions_are_pinned_to_versions(deploy, ci):
             if ref.startswith("./"):
                 continue
             assert "@" in ref and not ref.endswith(("@main", "@master")), ref
+
+
+# ---- Toolchain pin ---------------------------------------------------------
+
+
+def test_terraform_version_has_a_single_source_of_truth():
+    pin_file = WORKFLOWS.parent.parent / ".terraform-version"
+    assert pin_file.exists(), ".terraform-version is missing"
+    pinned = pin_file.read_text(encoding="utf-8").strip()
+    assert re.fullmatch(r"\d+\.\d+\.\d+", pinned), pinned
+    for name in ("ci.yml", "deploy.yml"):
+        text = (WORKFLOWS / name).read_text(encoding="utf-8")
+        versions = re.findall(r'TF_VERSION:\s*"([\d.]+)"', text)
+        assert versions == [pinned], f"{name} pins {versions}, expected {pinned}"
