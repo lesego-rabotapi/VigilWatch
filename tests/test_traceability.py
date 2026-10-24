@@ -49,7 +49,7 @@ def test_committed_traceability_matrix_is_up_to_date():
 
 
 @pytest.mark.parametrize(
-    "layer", ["unit", "mock", "contract", "policy", "frontend", "infrastructure", "e2e"]
+    "layer", ["unit", "mock", "bdd", "contract", "policy", "frontend", "infrastructure", "e2e"]
 )
 def test_matrix_names_the_layer_of_each_covering_test(layer):
     layers = {t["layer"] for row in build_matrix() for t in row["tests"]}

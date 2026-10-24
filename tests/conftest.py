@@ -1,3 +1,4 @@
+import json
 import os
 import re
 
@@ -59,6 +60,25 @@ def sns_topic(aws, monkeypatch):
     arn = boto3.client("sns").create_topic(Name="vigilwatch-alerts")["TopicArn"]
     monkeypatch.setenv("SNS_TOPIC_ARN", arn)
     return arn
+
+
+@pytest.fixture
+def alerts(tables, sns_topic):
+    """Subscribe an SQS queue to the alert topic so published alerts can be read back."""
+    sqs = boto3.client("sqs")
+    queue_url = sqs.create_queue(QueueName="alerts")["QueueUrl"]
+    queue_arn = sqs.get_queue_attributes(QueueUrl=queue_url, AttributeNames=["QueueArn"])[
+        "Attributes"
+    ]["QueueArn"]
+    boto3.client("sns").subscribe(TopicArn=sns_topic, Protocol="sqs", Endpoint=queue_arn)
+
+    def read():
+        msgs = sqs.receive_message(QueueUrl=queue_url, MaxNumberOfMessages=10).get("Messages", [])
+        for m in msgs:
+            sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=m["ReceiptHandle"])
+        return [json.loads(m["Body"]) for m in msgs]
+
+    return read
 
 
 def pytest_bdd_apply_tag(tag, function):

@@ -3,7 +3,6 @@
 import json
 from datetime import UTC, datetime, timedelta
 
-import boto3
 import pytest
 
 import uptime_check
@@ -18,25 +17,6 @@ OK = CheckResult(status_code=200, latency_ms=120.0)
 SLOW = CheckResult(status_code=200, latency_ms=2500.0)
 FAIL = CheckResult(status_code=503, latency_ms=40.0)
 TIMEOUT = CheckResult(status_code=None, latency_ms=None, error="timed out")
-
-
-@pytest.fixture
-def alerts(tables, sns_topic):
-    """Subscribe an SQS queue to the alert topic so published alerts can be read back."""
-    sqs = boto3.client("sqs")
-    queue_url = sqs.create_queue(QueueName="alerts")["QueueUrl"]
-    queue_arn = sqs.get_queue_attributes(QueueUrl=queue_url, AttributeNames=["QueueArn"])[
-        "Attributes"
-    ]["QueueArn"]
-    boto3.client("sns").subscribe(TopicArn=sns_topic, Protocol="sqs", Endpoint=queue_arn)
-
-    def read():
-        msgs = sqs.receive_message(QueueUrl=queue_url, MaxNumberOfMessages=10).get("Messages", [])
-        for m in msgs:
-            sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=m["ReceiptHandle"])
-        return [json.loads(m["Body"]) for m in msgs]
-
-    return read
 
 
 @pytest.fixture
