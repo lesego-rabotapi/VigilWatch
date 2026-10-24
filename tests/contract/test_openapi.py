@@ -6,11 +6,11 @@ from pathlib import Path
 import jsonschema
 import pytest
 import yaml
-from export_schema import SCHEMA_PATH, build_schema, load_spec
 from openapi_spec_validator import validate
 
 import get_checks
 import register_endpoint
+from export_schema import SCHEMA_PATH, build_schema, load_spec
 
 pytestmark = pytest.mark.req("VW-011", "VW-012")
 
@@ -62,7 +62,7 @@ def test_committed_json_schema_is_exported_from_the_spec():
 def test_exported_schema_is_standalone_and_valid():
     schema = build_schema("ChecksResponse")
     jsonschema.Draft202012Validator.check_schema(schema)
-    assert "$ref" not in json.dumps(schema).replace("#/$defs/", ""), "unresolved component refs"
+    assert "#/components" not in json.dumps(schema), "unresolved component refs"
     assert schema["additionalProperties"] is False
     assert "uptime_30d" in schema["required"]
 

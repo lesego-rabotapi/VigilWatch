@@ -16,47 +16,149 @@
     "incidents"
   ],
   "properties": {
-    "endpoint_id": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
-    "url": { "type": "string", "pattern": "^https?://" },
-    "status": { "enum": ["UP", "DEGRADED", "DOWN", "UNKNOWN"] },
-    "uptime_30d": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
-    "latest_latency_ms": { "type": ["integer", "null"], "minimum": 0 },
-    "last_check": { "$ref": "#/$defs/timestampOrNull" },
-    "last_alert_sent": { "$ref": "#/$defs/timestampOrNull" },
+    "endpoint_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    },
+    "url": {
+      "type": "string",
+      "pattern": "^https?://"
+    },
+    "status": {
+      "$ref": "#/$defs/Status"
+    },
+    "uptime_30d": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Percentage over 30 days; DEGRADED counts as up. Null with no data."
+    },
+    "latest_latency_ms": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "last_check": {
+      "$ref": "#/$defs/TimestampOrNull"
+    },
+    "last_alert_sent": {
+      "$ref": "#/$defs/TimestampOrNull"
+    },
     "recent_latencies": {
       "type": "array",
       "maxItems": 20,
+      "description": "The 20 most recent checks, oldest first.",
       "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["ms", "status", "checked_at"],
-        "properties": {
-          "ms": { "type": ["integer", "null"], "minimum": 0 },
-          "status": { "enum": ["UP", "DEGRADED", "DOWN"] },
-          "checked_at": { "$ref": "#/$defs/timestamp" }
-        }
+        "$ref": "#/$defs/LatencyPoint"
       }
     },
     "incidents": {
       "type": "array",
       "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["start_time", "end_time", "duration", "duration_s", "resolved"],
-        "properties": {
-          "start_time": { "$ref": "#/$defs/timestamp" },
-          "end_time": { "$ref": "#/$defs/timestampOrNull" },
-          "duration": { "type": ["string", "null"] },
-          "duration_s": { "type": ["integer", "null"], "minimum": 0 },
-          "resolved": { "type": "boolean" }
-        }
+        "$ref": "#/$defs/Incident"
       }
     }
   },
   "$defs": {
-    "timestamp": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$" },
-    "timestampOrNull": {
-      "anyOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }]
+    "CheckStatus": {
+      "enum": [
+        "UP",
+        "DEGRADED",
+        "DOWN"
+      ]
+    },
+    "Incident": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start_time",
+        "end_time",
+        "duration",
+        "duration_s",
+        "resolved"
+      ],
+      "properties": {
+        "start_time": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "end_time": {
+          "$ref": "#/$defs/TimestampOrNull"
+        },
+        "duration": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Human-readable duration, for example \"5m 0s\"."
+        },
+        "duration_s": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "resolved": {
+          "type": "boolean"
+        }
+      }
+    },
+    "LatencyPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ms",
+        "status",
+        "checked_at"
+      ],
+      "properties": {
+        "ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Latency in milliseconds; null when there was no response."
+        },
+        "status": {
+          "$ref": "#/$defs/CheckStatus"
+        },
+        "checked_at": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      }
+    },
+    "Status": {
+      "enum": [
+        "UP",
+        "DEGRADED",
+        "DOWN",
+        "UNKNOWN"
+      ],
+      "description": "UNKNOWN until the first check has been recorded."
+    },
+    "Timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+      "description": "UTC time with second precision.",
+      "examples": [
+        "2026-10-02T12:00:00Z"
+      ]
+    },
+    "TimestampOrNull": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Timestamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   }
 }

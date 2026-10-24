@@ -16,8 +16,8 @@ Stories are in [requirements.md](requirements.md).
 | **VW-008** Show recent latency | mock | `tests/integration/test_repo.py` |
 | **VW-009** Record incidents | mock | `tests/integration/test_repo.py`<br>`tests/integration/test_uptime_check.py` |
 | **VW-010** Alert once, then confirm recovery | mock | `tests/integration/test_uptime_check.py` |
-| **VW-011** Stable dashboard payload | contract, e2e, frontend | `frontend/tests/view.test.js`<br>`tests/contract/test_checks_contract.py`<br>`tests/e2e/test_smoke.py` |
-| **VW-012** Clear errors for lookups | contract, e2e | `tests/contract/test_checks_contract.py`<br>`tests/e2e/test_smoke.py` |
+| **VW-011** Stable dashboard payload | contract, e2e, frontend | `frontend/tests/view.test.js`<br>`tests/contract/test_checks_contract.py`<br>`tests/contract/test_openapi.py`<br>`tests/e2e/test_smoke.py` |
+| **VW-012** Clear errors for lookups | contract, e2e | `tests/contract/test_checks_contract.py`<br>`tests/contract/test_openapi.py`<br>`tests/e2e/test_smoke.py` |
 | **VW-013** Bounded storage | infrastructure, mock | `terraform/tests/vigilwatch.tftest.hcl`<br>`tests/integration/test_repo.py` |
 | **VW-014** Safe, readable dashboard | frontend | `frontend/tests/view.test.js` |
 | **VW-015** Observe the monitor itself | infrastructure, mock | `terraform/tests/vigilwatch.tftest.hcl`<br>`tests/integration/test_uptime_check.py` |
