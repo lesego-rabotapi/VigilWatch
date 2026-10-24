@@ -1,4 +1,5 @@
 import os
+import re
 
 import boto3
 import pytest
@@ -58,3 +59,11 @@ def sns_topic(aws, monkeypatch):
     arn = boto3.client("sns").create_topic(Name="vigilwatch-alerts")["TopicArn"]
     monkeypatch.setenv("SNS_TOPIC_ARN", arn)
     return arn
+
+
+def pytest_bdd_apply_tag(tag, function):
+    """Gherkin tags like @VW-001 become the `req` marker; other tags behave as usual."""
+    if re.fullmatch(r"VW-\d{3}", tag):
+        pytest.mark.req(tag)(function)
+        return True
+    return None
