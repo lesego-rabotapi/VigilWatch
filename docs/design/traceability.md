@@ -24,4 +24,4 @@ Stories are in [requirements.md](requirements.md).
 | **VW-016** Least privilege and private hosting | infrastructure | `terraform/tests/vigilwatch.tftest.hcl` |
 | **VW-017** Safe, gated deployment | policy | `tests/test_workflows.py` |
 | **VW-018** Clean repository | policy | `tests/test_repo_hygiene.py` |
-| **VW-019** Honest documentation | policy | `tests/test_docs.py` |
+| **VW-019** Honest documentation | policy | `tests/test_design_docs.py`<br>`tests/test_docs.py` |
