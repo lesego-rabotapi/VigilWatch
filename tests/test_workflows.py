@@ -168,3 +168,15 @@ def test_terraform_version_has_a_single_source_of_truth():
         text = (WORKFLOWS / name).read_text(encoding="utf-8")
         versions = re.findall(r'TF_VERSION:\s*"([\d.]+)"', text)
         assert versions == [pinned], f"{name} pins {versions}, expected {pinned}"
+
+
+# ---- Unconfigured repositories ---------------------------------------------
+
+
+def test_aws_jobs_are_skipped_not_failed_until_the_repository_is_configured(deploy):
+    """A fresh merge must show 'skipped', not a red run, before bootstrap is done."""
+    _, wf = deploy
+    for name in ("plan", "apply", "release"):
+        condition = str(wf["jobs"][name].get("if", ""))
+        assert "vars.AWS_DEPLOY_ROLE_ARN" in condition, f"{name} has no configuration guard"
+        assert "!=" in condition and "''" in condition, f"{name}: {condition}"
