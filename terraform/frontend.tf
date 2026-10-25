@@ -86,3 +86,13 @@ resource "aws_s3_object" "config" {
   cache_control = "no-cache"
   content       = "window.VIGILWATCH_CONFIG = ${jsonencode({ apiBase = trimsuffix(aws_apigatewayv2_stage.default.invoke_url, "/") })};\n"
 }
+
+# Served by this deployment's own CloudFront. The checker probes it as a connectivity control: if it
+# (or an independent site) answers, the checker can see the internet, so a failing target is really failing.
+resource "aws_s3_object" "healthz" {
+  bucket        = aws_s3_bucket.frontend.id
+  key           = "healthz.txt"
+  content_type  = "text/plain"
+  cache_control = "no-store"
+  content       = "ok\n"
+}

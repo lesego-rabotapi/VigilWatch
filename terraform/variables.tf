@@ -65,6 +65,17 @@ variable "degraded_ms" {
   default     = 1000
 }
 
+variable "extra_control_urls" {
+  description = "Independent sites the checker probes to tell 'my target is down' from 'I cannot reach the internet'. This deployment's own health file is always added."
+  type        = list(string)
+  default     = ["https://www.cloudflare.com/cdn-cgi/trace"]
+
+  validation {
+    condition     = length(var.extra_control_urls) <= 4 && alltrue([for u in var.extra_control_urls : startswith(u, "https://")])
+    error_message = "extra_control_urls must hold at most 4 https:// URLs (5 controls in total with the built-in one)."
+  }
+}
+
 variable "dynamodb_capacity" {
   description = "Provisioned RCU and WCU for each of the two tables. The always-free tier covers 25 of each in total."
   type        = number

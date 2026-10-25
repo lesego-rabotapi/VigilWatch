@@ -27,4 +27,4 @@ Stories are in [requirements.md](requirements.md).
 | **VW-019** Honest documentation | policy, unit | `tests/test_design_docs.py`<br>`tests/test_docs.py`<br>`tests/test_quality_gates.py`<br>`tests/test_test_mix_cli.py`<br>`tests/unit/test_architecture.py`<br>`tests/unit/test_test_mix.py` |
 | **VW-020** Efficient warm invocations | mock, unit | `tests/mock/test_client_reuse.py`<br>`tests/unit/test_aws_cache.py` |
 | **VW-021** Traceable logs | mock, unit | `tests/mock/test_request_id_logging.py`<br>`tests/unit/test_api_errors.py`<br>`tests/unit/test_logs.py` |
-| **VW-022** An honest checker | bdd, mock, unit | `tests/features/honesty.feature`<br>`tests/mock/test_checker_honesty.py`<br>`tests/unit/test_controls.py` |
+| **VW-022** An honest checker | bdd, infrastructure, mock, unit | `terraform/tests/vigilwatch.tftest.hcl`<br>`tests/features/honesty.feature`<br>`tests/mock/test_checker_honesty.py`<br>`tests/unit/test_controls.py` |

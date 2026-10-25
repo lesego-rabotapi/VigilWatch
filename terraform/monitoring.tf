@@ -1,6 +1,6 @@
 # Alarms watch the monitor itself. Monitored-endpoint downtime is alerted
 # directly by the checker (SNS), so it is not duplicated here.
-# Four standard alarms; the free tier covers ten.
+# Five standard alarms; the free tier covers ten.
 
 locals {
   alarms = {
@@ -12,6 +12,7 @@ locals {
       statistic   = "Sum"
       period      = 300
       periods     = 1
+      datapoints  = 1
       comparison  = "GreaterThanOrEqualToThreshold"
       threshold   = 1
       missing     = "notBreaching"
@@ -24,6 +25,7 @@ locals {
       statistic   = "Sum"
       period      = 900
       periods     = 2
+      datapoints  = 2
       comparison  = "LessThanThreshold"
       threshold   = 1
       missing     = "breaching"
@@ -36,8 +38,22 @@ locals {
       statistic   = "Maximum"
       period      = 300
       periods     = 1
+      datapoints  = 1
       comparison  = "GreaterThanThreshold"
       threshold   = 0
+      missing     = "notBreaching"
+    }
+    "checker-blind" = {
+      description = "The checker cannot reach the internet: its connectivity checks failed. Targets are reported INCONCLUSIVE and no target alerts are sent until it recovers."
+      namespace   = "VigilWatch"
+      metric      = "ControlProbeFailed"
+      dimensions  = { Service = "uptime-check" }
+      statistic   = "Maximum"
+      period      = 300
+      periods     = 3
+      datapoints  = 2
+      comparison  = "GreaterThanOrEqualToThreshold"
+      threshold   = 1
       missing     = "notBreaching"
     }
     "api-5xx" = {
@@ -48,6 +64,7 @@ locals {
       statistic   = "Sum"
       period      = 300
       periods     = 1
+      datapoints  = 1
       comparison  = "GreaterThanOrEqualToThreshold"
       threshold   = 5
       missing     = "notBreaching"
@@ -66,6 +83,7 @@ resource "aws_cloudwatch_metric_alarm" "alarm" {
   statistic           = each.value.statistic
   period              = each.value.period
   evaluation_periods  = each.value.periods
+  datapoints_to_alarm = each.value.datapoints
   comparison_operator = each.value.comparison
   threshold           = each.value.threshold
   treat_missing_data  = each.value.missing

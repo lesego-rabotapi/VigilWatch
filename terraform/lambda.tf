@@ -33,6 +33,7 @@ locals {
     FAILURE_THRESHOLD = tostring(var.failure_threshold)
     DEGRADED_MS       = tostring(var.degraded_ms)
     PROBE_TIMEOUT_S   = "5"
+    CONTROL_URLS      = join(",", concat(["https://${aws_cloudfront_distribution.frontend.domain_name}/healthz.txt"], var.extra_control_urls))
   }
 }
 
