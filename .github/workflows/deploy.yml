@@ -136,7 +136,7 @@ jobs:
           DASHBOARD_URL: ${{ steps.outputs.outputs.dashboard_url }}
         run: |
           pip install -r requirements-dev.txt
-          pytest -m e2e tests/e2e -v
+          pytest -m e2e tests/e2e --env=dev -v
 
   release:
     name: Tag release

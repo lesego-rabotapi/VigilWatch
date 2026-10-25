@@ -89,6 +89,16 @@ def alerts(tables, sns_topic):
     return read
 
 
+def pytest_addoption(parser):
+    parser.addoption(
+        "--env",
+        action="store",
+        default=os.environ.get("ENV", "dev").lower(),
+        choices=["local", "dev", "prod"],
+        help="environment for e2e tests (addresses come from API_URL_<ENV>); prod is read-only",
+    )
+
+
 def pytest_bdd_apply_tag(tag, function):
     """Gherkin tags like @VW-001 become the `req` marker; other tags behave as usual."""
     if re.fullmatch(r"VW-\d{3}", tag):

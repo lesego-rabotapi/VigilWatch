@@ -128,7 +128,7 @@ Every layer has tests, and every feature in this codebase was written test-first
 | Infrastructure | `terraform test` with a mocked AWS provider | `cd terraform && terraform init -backend=false && terraform test` |
 | Frontend (rendering, XSS, config) | node:test + jsdom | `cd frontend && npm ci && npm test` |
 | Pipeline and docs policy | pytest | `pytest tests/test_workflows.py tests/test_docs.py` |
-| End-to-end smoke | pytest, against a live or local stack | `API_URL=... DASHBOARD_URL=... pytest -m e2e tests/e2e` |
+| End-to-end smoke | pytest, against a live or local stack | `pytest -m e2e tests/e2e --env=dev` (address from `API_URL_DEV`) |
 
 ```bash
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate

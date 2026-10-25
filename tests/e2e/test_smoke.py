@@ -1,17 +1,15 @@
-"""Post-deploy smoke tests against a live API (and optionally the dashboard).
+"""Post-deploy tests against a live environment, through the API only.
 
-    API_URL=https://<id>.execute-api.<region>.amazonaws.com \
-    DASHBOARD_URL=https://<id>.cloudfront.net \
-    pytest -m e2e tests/e2e
+    pytest -m e2e tests/e2e --env=dev         # needs API_URL_DEV (or API_URL) and DASHBOARD_URL_DEV
+    pytest -m e2e tests/e2e --env=local       # against `python scripts/local_api.py`
+    pytest -m e2e -m smoke --env=prod         # read-only subset; needs E2E_READONLY_URL
 
-Deselected by default (pytest.ini). Registering https://example.com is
-idempotent, so repeated deploys reuse the same endpoint slot.
+Tests marked `smoke` only read, so they may run anywhere, including production. Tests that
+modify data take the `writable` fixture, which skips them in read-only environments. The API has
+no delete route: write tests register one stable, idempotent target, so reruns create nothing new.
 """
 
 import json
-import os
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 import jsonschema
@@ -19,88 +17,56 @@ import pytest
 
 pytestmark = [pytest.mark.req("VW-001", "VW-002", "VW-011", "VW-012"), pytest.mark.e2e]
 
-API_URL = os.environ.get("API_URL", "").rstrip("/")
-DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "").rstrip("/")
 SCHEMA = json.loads(
     (Path(__file__).parents[1] / "contract" / "checks_response.schema.json").read_text()
 )
 TARGET = "https://example.com/"
 
 
-def request(method, url, body=None, headers=None):
-    data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method, headers=headers or {})
-    if data is not None:
-        req.add_header("Content-Type", "application/json")
-    try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            return resp.status, dict(resp.headers), resp.read().decode()
-    except urllib.error.HTTPError as exc:
-        return exc.code, dict(exc.headers), exc.read().decode()
+def test_register_returns_the_dashboard_payload(proxy, writable):
+    response = proxy.register(TARGET)
+    assert response.status in (200, 201), response.text
+    jsonschema.validate(response.json, SCHEMA)
+    assert response.json["url"] == TARGET
 
 
-@pytest.fixture(scope="module", autouse=True)
-def require_api():
-    if not API_URL:
-        pytest.skip("API_URL not set")
+@pytest.mark.negative
+@pytest.mark.security
+def test_a_metadata_service_address_is_refused(proxy, writable):
+    response = proxy.register("http://169.254.169.254/latest/meta-data/")
+    assert response.status == 400, response.text
+    assert response.json["code"] == "unsafe_url"
 
 
-def test_register_returns_dashboard_payload():
-    status, _, body = request("POST", f"{API_URL}/register", {"url": TARGET})
-    assert status in (200, 201), body
-    payload = json.loads(body)
-    jsonschema.validate(payload, SCHEMA)
-    assert payload["url"] == TARGET
+@pytest.mark.smoke
+def test_checks_returns_the_payload_for_a_monitored_url(proxy, monitored_url):
+    response = proxy.checks(monitored_url)
+    assert response.status == 200, response.text
+    jsonschema.validate(response.json, SCHEMA)
+    assert response.json["status"] in ("UP", "DEGRADED", "DOWN", "UNKNOWN")
 
 
-def test_checks_returns_history_for_registered_url():
-    request("POST", f"{API_URL}/register", {"url": TARGET})
-    status, _, body = request("GET", f"{API_URL}/checks?url={TARGET}")
-    assert status == 200, body
-    payload = json.loads(body)
-    jsonschema.validate(payload, SCHEMA)
-    assert payload["status"] in ("UP", "DEGRADED", "DOWN")
-    assert payload["last_check"] is not None
+@pytest.mark.smoke
+@pytest.mark.negative
+def test_an_unregistered_url_is_not_found(proxy):
+    response = proxy.checks("https://unregistered.example.org/")
+    assert response.status == 404
+    assert response.json["code"] == "not_found"
 
 
-def test_ssrf_target_is_rejected():
-    status, _, body = request(
-        "POST", f"{API_URL}/register", {"url": "http://169.254.169.254/latest/meta-data/"}
-    )
-    assert status == 400, body
+@pytest.mark.smoke
+def test_the_dashboard_is_served_with_security_headers_and_the_api_address(dashboard, proxy):
+    page = dashboard.get("/")
+    assert page.status == 200 and "VigilWatch" in page.text
+    assert page.header("content-security-policy"), "the dashboard must send a CSP"
+
+    config = dashboard.get("/config.js")
+    assert config.status == 200
+    assert proxy.base_url in config.text
 
 
-def test_unknown_url_is_404():
-    status, _, _ = request("GET", f"{API_URL}/checks?url=https://unregistered.example.org/")
-    assert status == 404
-
-
-def test_dashboard_is_served_with_security_headers_and_config():
-    if not DASHBOARD_URL:
-        pytest.skip("DASHBOARD_URL not set")
-    status, headers, body = request("GET", f"{DASHBOARD_URL}/")
-    assert status == 200
-    assert "VigilWatch" in body
-    lower = {k.lower(): v for k, v in headers.items()}
-    assert "content-security-policy" in lower
-
-    status, _, config = request("GET", f"{DASHBOARD_URL}/config.js")
-    assert status == 200
-    assert API_URL in config
-
-
-def test_cors_allows_the_dashboard_origin():
-    if not DASHBOARD_URL:
-        pytest.skip("DASHBOARD_URL not set")
-    status, headers, _ = request(
-        "OPTIONS",
-        f"{API_URL}/register",
-        headers={
-            "Origin": DASHBOARD_URL,
-            "Access-Control-Request-Method": "POST",
-            "Access-Control-Request-Headers": "content-type",
-        },
-    )
-    assert status in (200, 204)
-    lower = {k.lower(): v for k, v in headers.items()}
-    assert lower.get("access-control-allow-origin") == DASHBOARD_URL
+@pytest.mark.smoke
+def test_cors_allows_the_dashboard_origin(proxy, dashboard):
+    reply = proxy.preflight("/register", origin=dashboard.base_url)
+    assert reply.status in (200, 204)
+    assert reply.header("access-control-allow-origin") == dashboard.base_url

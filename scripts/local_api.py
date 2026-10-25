@@ -8,7 +8,8 @@ generated config.js, security headers) around the real Lambda handlers. The
 scheduled checker runs in a background thread. Probes hit the real internet.
 Also used to exercise the e2e smoke tests without an AWS account:
 
-    API_URL=http://127.0.0.1:8787 DASHBOARD_URL=http://127.0.0.1:8787 pytest -m e2e tests/e2e
+    API_URL_LOCAL=http://127.0.0.1:8787 DASHBOARD_URL_LOCAL=http://127.0.0.1:8787
+    pytest -m e2e tests/e2e --env=local
 """
 
 import argparse
