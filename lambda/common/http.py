@@ -35,7 +35,7 @@ def json_body(event: dict) -> dict:
             raise BadRequest("request body is not valid base64 UTF-8") from exc
     try:
         body = json.loads(raw)
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, RecursionError) as exc:  # deep nesting must not become a 5xx
         raise BadRequest("request body must be JSON") from exc
     if not isinstance(body, dict):
         raise BadRequest("request body must be a JSON object")
