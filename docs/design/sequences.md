@@ -49,7 +49,7 @@ sequenceDiagram
 
 ## Scheduled check
 
-Covers VW-004, VW-005, VW-006 and VW-015.
+Covers VW-004, VW-005, VW-006, VW-015 and VW-022.
 
 ```mermaid
 sequenceDiagram
@@ -57,6 +57,7 @@ sequenceDiagram
     participant K as uptime_check
     participant S as common.repo
     participant P as common.checker
+    participant C as common.controls
     participant T as Target website
     participant Q as DLQ and alarms
     E->>K: rate(5 minutes)
@@ -72,15 +73,27 @@ sequenceDiagram
             P-->>K: CheckResult
         end
     end
+    alt Business error: every target failed and none answered
+        K->>C: check_controls(control URLs)
+        alt no control answers either
+            C-->>K: blind
+            Note over K: DOWN results become INCONCLUSIVE, so nothing is counted or alerted
+        else a control answers
+            C-->>K: connected, so the failures are real
+        end
+    else at least one target answered, or no control URLs
+        Note over K: connectivity is proven or not being judged
+    end
     loop each result, one at a time
         K->>P: apply_result
         alt Unexpected error: store or update fails for this endpoint
             P-->>K: exception, logged and counted
             Note right of K: other endpoints still processed
         else Result stored
-            P-->>K: status
+            P-->>K: status, possibly INCONCLUSIVE
         end
     end
+    K->>S: record_heartbeat
     K->>K: print one EMF metrics record
     alt Unexpected error: any endpoint failed internally
         K-->>E: raise, invocation fails

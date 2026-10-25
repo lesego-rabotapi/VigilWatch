@@ -28,4 +28,4 @@ Stories are in [requirements.md](requirements.md).
 | **VW-020** Efficient warm invocations | mock, unit | `tests/mock/test_client_reuse.py`<br>`tests/unit/test_aws_cache.py` |
 | **VW-021** Traceable logs | mock, unit | `tests/mock/test_request_id_logging.py`<br>`tests/unit/test_api_errors.py`<br>`tests/unit/test_logs.py` |
 | **VW-022** An honest checker | bdd, infrastructure, mock, unit | `terraform/tests/vigilwatch.tftest.hcl`<br>`tests/features/honesty.feature`<br>`tests/mock/test_checker_honesty.py`<br>`tests/unit/test_controls.py` |
-| **VW-023** Alerts that arrive and do not nag | mock, unit | `tests/mock/test_atomic_cap.py`<br>`tests/unit/test_state_machine.py` |
+| **VW-023** Alerts that arrive and do not nag | infrastructure, mock, unit | `terraform/tests/vigilwatch.tftest.hcl`<br>`tests/mock/test_atomic_cap.py`<br>`tests/unit/test_state_machine.py` |
