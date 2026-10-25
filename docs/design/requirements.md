@@ -189,3 +189,14 @@ As an owner I want to follow one request through the logs.
 - Every log line is one JSON object with level, message, logger and time.
 - Lines written during an invocation carry that invocation's request ID, and exceptions are included on the same line.
 - The log level is configurable, and Lambda's own log handler is reformatted rather than duplicated.
+
+### VW-022: An honest checker
+
+As an owner I want VigilWatch to say "I cannot tell" when its own connection is broken, so that a monitoring fault is never reported as my website being down.
+
+**Acceptance:**
+- When every target looks down, the checker probes its control URLs. If none answers, the results are INCONCLUSIVE.
+- An INCONCLUSIVE result is recorded but is not a failure to count, does not open or close an incident, sends no alert, and is excluded from uptime. Earlier failure counts and open incidents are left as they were.
+- A target that answers correctly proves connectivity, so control URLs are not probed and failing targets in the same run are reported as DOWN.
+- With no control URLs configured the behaviour is unchanged.
+- Every completed run writes a heartbeat and emits RunsCompleted, EndpointsInconclusive and, when connectivity was checked, ControlProbeFailed.

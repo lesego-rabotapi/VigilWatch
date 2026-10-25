@@ -8,6 +8,7 @@ timeout). The failure-threshold range mirrors terraform/variables.tf.
 import math
 import os
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 
 class SettingsError(ValueError):
@@ -29,12 +30,27 @@ def _read(name: str, default, kind, low, high):
     return value
 
 
+MAX_CONTROL_URLS = 5
+
+
+def _read_urls(name: str) -> tuple[str, ...]:
+    urls = tuple(part.strip() for part in os.environ.get(name, "").split(",") if part.strip())
+    if len(urls) > MAX_CONTROL_URLS:
+        raise SettingsError(f"{name} accepts at most {MAX_CONTROL_URLS} URLs, got {len(urls)}")
+    for url in urls:
+        parts = urlsplit(url)
+        if parts.scheme not in ("http", "https") or not parts.netloc:
+            raise SettingsError(f"{name} must hold http or https URLs, got {url!r}")
+    return urls
+
+
 @dataclass(frozen=True)
 class Settings:
     degraded_ms: float = 1000
     failure_threshold: int = 2
     timeout_s: float = 5
     max_workers: int = 10
+    control_urls: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -43,4 +59,5 @@ class Settings:
             failure_threshold=_read("FAILURE_THRESHOLD", cls.failure_threshold, int, 1, 10),
             timeout_s=_read("PROBE_TIMEOUT_S", cls.timeout_s, float, 0.1, 30),
             max_workers=_read("MAX_WORKERS", cls.max_workers, int, 1, 50),
+            control_urls=_read_urls("CONTROL_URLS"),
         )

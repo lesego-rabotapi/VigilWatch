@@ -22,6 +22,8 @@ from common.urlguard import UnresolvableHost, endpoint_id, normalize
 START = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
 DEFAULT_RESULT = CheckResult(status_code=200, latency_ms=50.0)
 PUBLIC_ADDRESS = "93.184.215.14"
+CONTROL_URLS = ("https://control-1.example.com/healthz.txt", "https://control-2.example.org/")
+BLIND_RESULT = CheckResult(status_code=None, latency_ms=None, error="timed out")
 
 
 @dataclass
@@ -116,6 +118,25 @@ def _no_topic(ctx):
 @given(parsers.parse("the monitoring limit is {n:d} endpoint"))
 def _limit(ctx, n):
     ctx.monkeypatch.setenv("MAX_ENDPOINTS", str(n))
+
+
+@given("control URLs are configured")
+def _controls_configured(ctx):
+    ctx.monkeypatch.setenv("CONTROL_URLS", ",".join(CONTROL_URLS))
+
+
+@given(parsers.parse("the checker can reach the internet for {n:d} check"))
+@given(parsers.parse("the checker can reach the internet for {n:d} checks"))
+def _controls_reachable(ctx, n):
+    for url in CONTROL_URLS:
+        ctx.scripts[url].extend([DEFAULT_RESULT] * n)
+
+
+@given(parsers.parse("the checker cannot reach the internet for {n:d} check"))
+@given(parsers.parse("the checker cannot reach the internet for {n:d} checks"))
+def _controls_blind(ctx, n):
+    for url in CONTROL_URLS:
+        ctx.scripts[url].extend([BLIND_RESULT] * n)
 
 
 @given(parsers.parse('"{url}" answers with status {code:d} in {ms:d} ms'))
@@ -251,6 +272,11 @@ def _incidents(url):
 @then(parsers.parse('"{url}" has {n:d} incidents'))
 def _incident_count(ctx, url, n):
     assert len(_incidents(url)) == n
+
+
+@then(parsers.parse('the failure count of "{url}" is {n:d}'))
+def _failure_count(ctx, url, n):
+    assert Repo().get_endpoint(endpoint_id(normalize(url)))["consecutive_failures"] == n
 
 
 @then(parsers.parse('"{url}" has {n:d} open incident'))

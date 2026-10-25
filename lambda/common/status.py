@@ -5,6 +5,9 @@ from dataclasses import dataclass
 UP = "UP"
 DEGRADED = "DEGRADED"
 DOWN = "DOWN"
+# The checker could not tell: its own connectivity checks failed, so a target's failure says
+# nothing about the target. Never counted as up or down.
+INCONCLUSIVE = "INCONCLUSIVE"
 
 
 @dataclass(frozen=True)

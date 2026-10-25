@@ -69,7 +69,8 @@
       "enum": [
         "UP",
         "DEGRADED",
-        "DOWN"
+        "DOWN",
+        "INCONCLUSIVE"
       ]
     },
     "Incident": {
@@ -138,9 +139,10 @@
         "UP",
         "DEGRADED",
         "DOWN",
+        "INCONCLUSIVE",
         "UNKNOWN"
       ],
-      "description": "UNKNOWN until the first check has been recorded."
+      "description": "UNKNOWN until the first check has been recorded. INCONCLUSIVE means VigilWatch could not tell:\nits own connectivity checks failed, so the failure says nothing about the website.\n"
     },
     "Timestamp": {
       "type": "string",

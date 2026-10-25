@@ -112,10 +112,12 @@ components:
         - $ref: "#/components/schemas/Timestamp"
         - type: "null"
     Status:
-      enum: [UP, DEGRADED, DOWN, UNKNOWN]
-      description: UNKNOWN until the first check has been recorded.
+      enum: [UP, DEGRADED, DOWN, INCONCLUSIVE, UNKNOWN]
+      description: |
+        UNKNOWN until the first check has been recorded. INCONCLUSIVE means VigilWatch could not tell:
+        its own connectivity checks failed, so the failure says nothing about the website.
     CheckStatus:
-      enum: [UP, DEGRADED, DOWN]
+      enum: [UP, DEGRADED, DOWN, INCONCLUSIVE]
     LatencyPoint:
       type: object
       additionalProperties: false

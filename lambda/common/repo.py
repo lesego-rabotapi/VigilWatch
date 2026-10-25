@@ -76,6 +76,12 @@ class Repo:
     def uptime_30d(self, endpoint_id: str, now: datetime) -> float | None:
         return self._history.uptime_30d(endpoint_id, now)
 
+    def record_heartbeat(self, now: datetime, details: dict) -> None:
+        self._history.record_heartbeat(now, details)
+
+    def heartbeat(self) -> dict | None:
+        return self._history.heartbeat()
+
     # ---- incidents -------------------------------------------------------
 
     def open_incident(self, endpoint_id: str, start: datetime) -> str:

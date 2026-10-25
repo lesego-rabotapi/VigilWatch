@@ -10,8 +10,12 @@ from boto3.dynamodb.conditions import Key
 
 from common.dynamo import plain
 from common.retention import RAW_TTL, ROLLUP_TTL, UPTIME_WINDOW_DAYS
-from common.status import counts_as_up
+from common.status import INCONCLUSIVE, counts_as_up
 from common.timefmt import epoch, iso
+
+# Operational data about the checker itself lives beside the endpoint history, under a reserved id.
+SYSTEM_ID = "_system"
+HEARTBEAT_SK = "H#checker"
 
 
 class HistoryRepository:
@@ -37,6 +41,8 @@ class HistoryRepository:
         if latency_ms is not None:
             row["latency_ms"] = int(round(latency_ms))
         self.table.put_item(Item=row)
+        if status == INCONCLUSIVE:
+            return  # not evidence of up or down, so it stays out of the uptime figure
 
         self.table.update_item(
             Key={"endpoint_id": endpoint_id, "sk": f"D#{now.date().isoformat()}"},
@@ -77,3 +83,19 @@ class HistoryRepository:
             return None
         up = sum(int(r["up"]) for r in page["Items"])
         return up * 100.0 / total
+
+    def record_heartbeat(self, now: datetime, details: dict) -> None:
+        """The latest completed checker run (one item, overwritten each time)."""
+        self.table.put_item(
+            Item={
+                "endpoint_id": SYSTEM_ID,
+                "sk": HEARTBEAT_SK,
+                "last_run": iso(now),
+                "expires_at": epoch(now + ROLLUP_TTL),
+                **details,
+            }
+        )
+
+    def heartbeat(self) -> dict | None:
+        item = self.table.get_item(Key={"endpoint_id": SYSTEM_ID, "sk": HEARTBEAT_SK}).get("Item")
+        return plain(item) if item else None
