@@ -1,4 +1,11 @@
-"""The endpoint cap must hold under concurrent registrations, not just one at a time."""
+"""The endpoint cap must hold under concurrent registrations, not just one at a time.
+
+DynamoDB executes every request atomically, including a transaction and its conditions. moto does
+not lock, so two threads could both pass one condition inside the mock, which says nothing about the
+real service. The `serialised_requests` fixture therefore runs each DynamoDB request to completion
+before the next, as the service does, while leaving the gaps *between* requests open. Those gaps are
+where check-then-write races live, so the old code still fails here and the new code must not.
+"""
 
 import threading
 import time
@@ -6,6 +13,7 @@ from datetime import UTC, datetime
 
 import boto3
 import pytest
+from botocore.client import BaseClient
 
 from common.endpoints_repo import EndpointLimitReached, EndpointRepository
 
@@ -44,7 +52,22 @@ def register_concurrently(entries, cap):
 
 
 @pytest.fixture
-def slow_count(monkeypatch):
+def serialised_requests(monkeypatch):
+    """Make each DynamoDB request atomic, like the real service (see the module docstring)."""
+    lock = threading.RLock()
+    real = BaseClient._make_api_call
+
+    def locked(self, operation_name, api_params):
+        if self.meta.service_model.service_name != "dynamodb":
+            return real(self, operation_name, api_params)
+        with lock:
+            return real(self, operation_name, api_params)
+
+    monkeypatch.setattr(BaseClient, "_make_api_call", locked)
+
+
+@pytest.fixture
+def slow_count(monkeypatch, serialised_requests):
     """Widen the race window: every reader of the count sees it before anyone else writes."""
     real = EndpointRepository.count
 

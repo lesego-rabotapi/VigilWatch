@@ -91,7 +91,7 @@ API_URL=$(terraform output -raw api_base_url) DASHBOARD_URL=$(terraform output -
 | See recent checker runs | CloudWatch Logs group `/aws/lambda/vigilwatch-uptime-check` |
 | Run the checker now | `aws lambda invoke --function-name "$(terraform -chdir=terraform output -raw checker_function_name)" out.json` |
 | Disable a monitored URL | Set `enabled` to false on its item in the `endpoints` table |
-| Remove a monitored URL | Delete its item from the `endpoints` table (history expires via TTL) |
+| Remove a monitored URL | Delete its item from the `endpoints` table (history expires via TTL). The cap counter (`_system#count` in the same table) is bookkeeping: leave it alone, it repairs itself the next time a registration is rejected as over the limit |
 | Change check interval / threshold / cap | Variables `check_interval_minutes`, `failure_threshold`, `max_endpoints`, then plan/apply |
 | Inspect failed runs | `aws sqs receive-message --queue-url "$(terraform -chdir=terraform output -raw checker_dlq_url)"` |
 
