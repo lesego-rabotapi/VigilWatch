@@ -9,7 +9,7 @@ from common.state import apply_result
 from common.status import CheckResult
 from common.timefmt import iso
 
-pytestmark = pytest.mark.req("VW-009", "VW-010")
+pytestmark = pytest.mark.req("VW-009", "VW-010", "VW-023")
 
 NOW = datetime(2026, 10, 2, 12, 0, 0, tzinfo=UTC)
 START = "2026-10-02T11:50:00Z"
@@ -205,6 +205,8 @@ def test_a_real_outage_with_healthy_connectivity_is_unaffected():
 
 # NOW is 12:00; incident and alerts are timestamped relative to it.
 THIRTY, SIXTY, NINETY = "2026-10-02T11:30:00Z", "2026-10-02T11:00:00Z", "2026-10-02T10:30:00Z"
+# A long-running incident: it began before the last alert, which is what a reminder needs.
+EARLY = "2026-10-02T09:00:00Z"
 
 
 @pytest.mark.parametrize(
@@ -283,7 +285,7 @@ def test_reminders_fire_only_when_enabled_and_due(reminder_minutes, last_alert, 
     _, _, alerts, fields = run(
         FAIL,
         failures=5,
-        incident=START,
+        incident=EARLY,
         last_alert_sent=last_alert,
         reminder_minutes=reminder_minutes,
     )
@@ -294,11 +296,11 @@ def test_reminders_fire_only_when_enabled_and_due(reminder_minutes, last_alert, 
 
 def test_a_reminder_says_the_site_is_still_down_and_restarts_the_clock():
     _, _, alerts, fields = run(
-        FAIL, failures=5, incident=START, last_alert_sent=NINETY, reminder_minutes=60
+        FAIL, failures=5, incident=EARLY, last_alert_sent=NINETY, reminder_minutes=60
     )
     [(subject, payload)] = alerts.sent
     assert subject == "[VigilWatch] STILL DOWN: https://example.com/"
-    assert payload["incident_start"] == START
+    assert payload["incident_start"] == EARLY
     assert fields["last_alert_sent"] == iso(NOW)
 
 
@@ -306,7 +308,7 @@ def test_no_reminder_is_sent_for_a_healthy_check():
     _, _, alerts, _ = run(
         OK,
         failures=5,
-        incident=START,
+        incident=EARLY,
         last_alert_sent=NINETY,
         reminder_minutes=60,
         recovery_threshold=2,
@@ -318,7 +320,7 @@ def test_no_reminder_while_blind():
     _, _, alerts, _ = run(
         FAIL,
         failures=5,
-        incident=START,
+        incident=EARLY,
         last_alert_sent=NINETY,
         reminder_minutes=60,
         controls_ok=False,

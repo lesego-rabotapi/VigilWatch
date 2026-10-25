@@ -17,7 +17,7 @@ from botocore.client import BaseClient
 
 from common.endpoints_repo import EndpointLimitReached, EndpointRepository
 
-pytestmark = pytest.mark.req("VW-003")
+pytestmark = pytest.mark.req("VW-003", "VW-023")
 
 NOW = datetime(2026, 10, 2, 12, 0, 0, tzinfo=UTC)
 COUNTER_KEY = {"endpoint_id": "_system#count"}

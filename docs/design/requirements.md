@@ -200,3 +200,13 @@ As an owner I want VigilWatch to say "I cannot tell" when its own connection is 
 - A target that answers correctly proves connectivity, so control URLs are not probed and failing targets in the same run are reported as DOWN.
 - With no control URLs configured the behaviour is unchanged.
 - Every completed run writes a heartbeat and emits RunsCompleted, EndpointsInconclusive and, when connectivity was checked, ControlProbeFailed.
+
+### VW-023: Alerts that arrive and do not nag
+
+As an owner I want the DOWN email to arrive even if the first attempt failed, and I want a choice about how noisy recovery and reminders are.
+
+**Acceptance:**
+- If the DOWN alert for an open incident was not delivered, it is retried on the next failing check. An alert sent for an earlier incident does not count as delivered.
+- An incident closes only after RECOVERY_THRESHOLD consecutive healthy checks (default 1, so behaviour is unchanged); a failure in between restarts the count without raising a new alert.
+- With REMINDER_MINUTES above 0, a "still down" email is sent while the incident stays open and that long has passed since the last alert (default 0 = off).
+- The endpoint cap holds under concurrent registrations (the counter is updated in the same transaction as the endpoint).

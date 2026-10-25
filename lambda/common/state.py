@@ -1,11 +1,11 @@
 """Fold one probe result into an endpoint's health, incident and alert state."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from common.ports import CheckStore, Publisher
 from common.settings import Settings
 from common.status import DOWN, INCONCLUSIVE, CheckResult, classify
-from common.timefmt import iso
+from common.timefmt import iso, parse_iso
 
 
 def apply_result(
@@ -41,7 +41,9 @@ def apply_result(
     repo.record_check(endpoint_id, now, status, result.status_code, result.latency_ms)
 
     failures = int(endpoint.get("consecutive_failures", 0))
+    successes = int(endpoint.get("consecutive_successes", 0))
     open_start = endpoint.get("open_incident_start")
+    last_alert = endpoint.get("last_alert_sent")
     fields = {
         "status": status,
         "last_check": iso(now),
@@ -50,9 +52,9 @@ def apply_result(
         "last_error": result.error,
     }
 
-    def alert(event: str) -> None:
+    def alert(event: str, subject_label: str | None = None) -> None:
         sent = publish(
-            f"[VigilWatch] {event}: {url}",
+            f"[VigilWatch] {subject_label or event}: {url}",
             {
                 "event": event,
                 "url": url,
@@ -69,17 +71,38 @@ def apply_result(
 
     if status == DOWN:
         failures += 1
+        successes = 0
         if failures >= settings.failure_threshold and not open_start:
             open_start = repo.open_incident(endpoint_id, now)
             fields["open_incident_start"] = open_start
             alert("DOWN")
+        elif open_start:
+            if not _delivered(last_alert, open_start):
+                alert("DOWN")  # the first email never went out: try again
+            elif _reminder_due(last_alert, now, settings.reminder_minutes):
+                alert("REMINDER", "STILL DOWN")
     else:
         failures = 0
         if open_start:
-            repo.close_incident(endpoint_id, open_start, now)
-            fields["open_incident_start"] = None
-            alert("RECOVERED")
+            successes += 1
+            if successes >= settings.recovery_threshold:
+                repo.close_incident(endpoint_id, open_start, now)
+                fields["open_incident_start"] = None
+                alert("RECOVERED")
+                successes = 0
+        else:
+            successes = 0
 
     fields["consecutive_failures"] = failures
+    fields["consecutive_successes"] = successes
     repo.update_endpoint(endpoint_id, **fields)
     return status
+
+
+def _delivered(last_alert: str | None, incident_start: str) -> bool:
+    """An alert at or after the incident began counts; an older one is from a previous incident."""
+    return last_alert is not None and last_alert >= incident_start
+
+
+def _reminder_due(last_alert: str, now: datetime, minutes: int) -> bool:
+    return minutes > 0 and now - parse_iso(last_alert) >= timedelta(minutes=minutes)

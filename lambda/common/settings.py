@@ -51,6 +51,8 @@ class Settings:
     timeout_s: float = 5
     max_workers: int = 10
     control_urls: tuple[str, ...] = ()
+    recovery_threshold: int = 1
+    reminder_minutes: int = 0
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -60,4 +62,6 @@ class Settings:
             timeout_s=_read("PROBE_TIMEOUT_S", cls.timeout_s, float, 0.1, 30),
             max_workers=_read("MAX_WORKERS", cls.max_workers, int, 1, 50),
             control_urls=_read_urls("CONTROL_URLS"),
+            recovery_threshold=_read("RECOVERY_THRESHOLD", cls.recovery_threshold, int, 1, 10),
+            reminder_minutes=_read("REMINDER_MINUTES", cls.reminder_minutes, int, 0, 1440),
         )
