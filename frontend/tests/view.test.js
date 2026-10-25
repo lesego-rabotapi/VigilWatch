@@ -152,3 +152,67 @@ test("index.html loads config before the app and has no inline script", () => {
   const srcs = [...doc.querySelectorAll("script")].map((s) => s.getAttribute("src"));
   assert.deepEqual(srcs, ["config.js", "view.js", "app.js"]);
 });
+
+// ---- an honest checker: INCONCLUSIVE ------------------------------------------------------------
+
+test("an inconclusive status is shown as such, with an explanation, not as Down", () => {
+  const doc = dom();
+  view.updateView(doc, {
+    ...payload,
+    status: "INCONCLUSIVE",
+    recent_latencies: [
+      { ms: 80, status: "UP", checked_at: "2026-10-02T11:50:00Z" },
+      { ms: null, status: "INCONCLUSIVE", checked_at: "2026-10-02T11:55:00Z" },
+    ],
+  });
+  const pill = doc.getElementById("status-pill");
+  assert.equal(pill.textContent, "Inconclusive");
+  assert.ok(pill.classList.contains("pill-inconclusive"));
+  assert.ok(!pill.classList.contains("pill-down"));
+
+  const note = doc.getElementById("status-note");
+  assert.ok(!note.classList.contains("hidden"));
+  assert.match(note.textContent, /could not tell/i);
+  assert.match(note.textContent, /not counted/i);
+});
+
+test("an inconclusive bar is neither a success nor a failure colour", () => {
+  const doc = dom();
+  view.updateView(doc, {
+    ...payload,
+    recent_latencies: [{ ms: null, status: "INCONCLUSIVE", checked_at: "2026-10-02T11:55:00Z" }],
+  });
+  const [bar] = doc.querySelectorAll("#latency-bars .bar");
+  assert.ok(bar.classList.contains("na"));
+  assert.ok(!bar.classList.contains("err") && !bar.classList.contains("ok"));
+  assert.match(bar.title, /INCONCLUSIVE/);
+});
+
+for (const status of ["UP", "DEGRADED", "DOWN", "UNKNOWN"]) {
+  test(`the explanation is hidden for a ${status} status`, () => {
+    const doc = dom();
+    view.updateView(doc, { ...payload, status: "INCONCLUSIVE" });
+    view.updateView(doc, { ...payload, status });
+    const note = doc.getElementById("status-note");
+    assert.ok(note.classList.contains("hidden"));
+    assert.equal(note.textContent, "");
+  });
+}
+
+test("the page has a hidden status note and the stylesheet styles the new state", () => {
+  const doc = dom();
+  assert.ok(doc.getElementById("status-note").classList.contains("hidden"));
+  const css = fs.readFileSync(path.join(__dirname, "../style.css"), "utf8");
+  assert.match(css, /\.pill-inconclusive/);
+  assert.match(css, /\.bar\.na/);
+});
+
+test("the schema and the view agree on every status the API can send", () => {
+  const known = new Set(["UP", "DEGRADED", "DOWN", "INCONCLUSIVE", "UNKNOWN"]);
+  assert.deepEqual(new Set(schema.$defs.Status.enum), known);
+  for (const status of known) {
+    const doc = dom();
+    view.updateView(doc, { ...payload, status });
+    assert.notEqual(doc.getElementById("status-pill").textContent, "", status);
+  }
+});
