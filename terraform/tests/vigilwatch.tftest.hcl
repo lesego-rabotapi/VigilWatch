@@ -1,4 +1,4 @@
-# req: VW-003 VW-004 VW-013 VW-015 VW-016 VW-022
+# req: VW-003 VW-004 VW-013 VW-015 VW-016 VW-022 VW-023
 # Infrastructure tests. The AWS provider is mocked: nothing is created and no
 # credentials are needed. Run: terraform init -backend=false && terraform test
 
@@ -323,4 +323,42 @@ run "rejects_too_many_control_urls" {
     extra_control_urls = ["https://a.example.com/", "https://b.example.com/", "https://c.example.com/", "https://d.example.com/", "https://e.example.com/"]
   }
   expect_failures = [var.extra_control_urls]
+}
+
+run "alert_polish_is_configurable_and_off_by_default" {
+  command = apply
+
+  assert {
+    condition     = aws_lambda_function.fn["uptime_check"].environment[0].variables["RECOVERY_THRESHOLD"] == "1" && aws_lambda_function.fn["uptime_check"].environment[0].variables["REMINDER_MINUTES"] == "0"
+    error_message = "defaults must leave alert behaviour unchanged"
+  }
+}
+
+run "alert_polish_values_reach_the_checker" {
+  command = apply
+  variables {
+    recovery_threshold = 3
+    reminder_minutes   = 120
+  }
+
+  assert {
+    condition     = aws_lambda_function.fn["uptime_check"].environment[0].variables["RECOVERY_THRESHOLD"] == "3" && aws_lambda_function.fn["uptime_check"].environment[0].variables["REMINDER_MINUTES"] == "120"
+    error_message = "recovery_threshold and reminder_minutes must be passed to the checker"
+  }
+}
+
+run "rejects_out_of_range_recovery_threshold" {
+  command = plan
+  variables {
+    recovery_threshold = 11
+  }
+  expect_failures = [var.recovery_threshold]
+}
+
+run "rejects_out_of_range_reminder_minutes" {
+  command = plan
+  variables {
+    reminder_minutes = 1441
+  }
+  expect_failures = [var.reminder_minutes]
 }
