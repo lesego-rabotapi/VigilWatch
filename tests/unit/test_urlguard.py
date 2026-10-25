@@ -55,6 +55,8 @@ def test_public_urls_are_allowed(url):
         "https://example.com:99999/",
     ],
 )
+@pytest.mark.negative
+@pytest.mark.security
 def test_malformed_or_disallowed_urls_are_rejected(url):
     with pytest.raises(UnsafeURL):
         check(url)
@@ -81,11 +83,14 @@ def test_malformed_or_disallowed_urls_are_rejected(url):
         "http://2130706433/",
     ],
 )
+@pytest.mark.negative
+@pytest.mark.security
 def test_private_and_special_addresses_are_rejected(url):
     with pytest.raises(UnsafeURL):
         check(url)
 
 
+@pytest.mark.negative
 def test_unresolvable_host_is_its_own_error():
     with pytest.raises(UnresolvableHost):
         check("https://does-not-exist.invalid/")

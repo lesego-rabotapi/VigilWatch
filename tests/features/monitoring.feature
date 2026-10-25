@@ -21,7 +21,7 @@ Feature: Monitor a website
     Then the response status is 200
     And the number of monitored endpoints is 1
 
-  @VW-002
+  @VW-002 @negative @security
   Scenario Outline: Unsafe or malformed URLs are refused
     When I register "<url>"
     Then the response status is 400
@@ -39,7 +39,7 @@ Feature: Monitor a website
       | https://user:secret@example.com/          |
       | not a url                                 |
 
-  @VW-003
+  @VW-003 @negative
   Scenario: The monitoring limit is enforced
     Given the monitoring limit is 1 endpoint
     And "https://example.com" is already monitored

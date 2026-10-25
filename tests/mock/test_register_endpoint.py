@@ -105,6 +105,7 @@ def test_base64_body_is_decoded():
         {"version": "2.0", "requestContext": {"http": {"method": "POST"}}},
     ],
 )
+@pytest.mark.negative
 def test_bad_requests_are_400(event):
     status, body, _ = call(event)
     assert status == 400
@@ -121,6 +122,8 @@ def test_bad_requests_are_400(event):
         "https://admin:secret@example.com/",
     ],
 )
+@pytest.mark.negative
+@pytest.mark.security
 def test_ssrf_targets_are_rejected_and_never_stored_or_probed(url, env):
     status, body, _ = call(http_event({"url": url}))
     assert status == 400
@@ -128,6 +131,7 @@ def test_ssrf_targets_are_rejected_and_never_stored_or_probed(url, env):
     assert env == []
 
 
+@pytest.mark.negative
 def test_unresolvable_host_is_400_with_clear_message():
     status, body, _ = call(http_event({"url": "https://nope.invalid/"}))
     assert status == 400
@@ -135,6 +139,7 @@ def test_unresolvable_host_is_400_with_clear_message():
 
 
 @pytest.mark.parametrize("expected", [0, 99, 600, "200", True])
+@pytest.mark.negative
 def test_expected_status_must_be_a_valid_http_status(expected):
     status, _, _ = call(http_event({"url": "https://example.com/", "expected_status": expected}))
     assert status == 400
@@ -145,6 +150,7 @@ def test_expected_status_is_stored():
     assert Repo().get_endpoint(body["endpoint_id"])["expected_status"] == 204
 
 
+@pytest.mark.negative
 def test_endpoint_cap_returns_429(monkeypatch):
     monkeypatch.setenv("MAX_ENDPOINTS", "1")
     assert call(http_event({"url": "https://example.com/"}))[0] == 201

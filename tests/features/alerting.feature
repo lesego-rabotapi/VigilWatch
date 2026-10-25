@@ -8,7 +8,7 @@ Feature: Alerts without noise
     And alert emails are captured
     And "https://example.com" is already monitored
 
-  @VW-009
+  @VW-009 @negative
   Scenario: A single failed check does not alert
     Given the next check of "https://example.com" answers with status 503 in 40 ms
     When the scheduled check runs
@@ -36,7 +36,7 @@ Feature: Alerts without noise
     And the dashboard for "https://example.com" shows status "UP"
     And the dashboard for "https://example.com" shows a last alert time
 
-  @VW-009
+  @VW-009 @negative
   Scenario: A blip between successes never reaches the threshold
     Given the next check of "https://example.com" answers with status 503 in 40 ms
     And the next check of "https://example.com" answers with status 200 in 90 ms

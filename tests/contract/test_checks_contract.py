@@ -108,16 +108,19 @@ def test_register_response_matches_the_same_contract(tables, monkeypatch):
 
 
 @pytest.mark.parametrize("params", [None, {}, {"url": ""}])
+@pytest.mark.negative
 def test_missing_url_is_400(tables, params):
     status, body = call_get(params)
     assert status == 400
     assert body["message"]
 
 
+@pytest.mark.negative
 def test_invalid_url_is_400(tables):
     assert call_get({"url": "ftp://example.com/"})[0] == 400
 
 
+@pytest.mark.negative
 def test_unknown_endpoint_is_404(tables):
     status, body = call_get({"url": "https://never-registered.example.com/"})
     assert status == 404

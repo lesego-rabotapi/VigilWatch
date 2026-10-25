@@ -27,6 +27,8 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest --cov --cov-report=term --cov-report=xml
+      - name: Test mix summary
+        run: python scripts/test_mix.py >> "$GITHUB_STEP_SUMMARY"
 
   terraform:
     name: Terraform (fmt, validate, test, lint)

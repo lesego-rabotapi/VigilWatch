@@ -5,19 +5,19 @@ Feature: Read the status of a monitored URL
   Background:
     Given a clean monitoring service
 
-  @VW-012
+  @VW-012 @negative
   Scenario: Asking about a URL that is not monitored
     When I ask for the status of "https://never-registered.example.org/"
     Then the response status is 404
     And the error message is not empty
 
-  @VW-012
+  @VW-012 @negative
   Scenario: Asking without a URL
     When I ask for the status without a url
     Then the response status is 400
     And the error message is not empty
 
-  @VW-012
+  @VW-012 @negative
   Scenario Outline: Asking with an unusable URL
     When I ask for the status of "<url>"
     Then the response status is 400
