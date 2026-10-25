@@ -16,10 +16,10 @@ import os
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
+from common import aws
 from common.status import counts_as_up
 
 RAW_TTL = timedelta(hours=48)
@@ -56,7 +56,7 @@ def plain(value):
 
 class Repo:
     def __init__(self, endpoints_table: str | None = None, history_table: str | None = None):
-        dynamodb = boto3.resource("dynamodb")
+        dynamodb = aws.dynamodb_resource()
         self.endpoints = dynamodb.Table(endpoints_table or os.environ["ENDPOINTS_TABLE"])
         self.history = dynamodb.Table(history_table or os.environ["HISTORY_TABLE"])
 

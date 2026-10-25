@@ -7,16 +7,15 @@ endpoint, so the Lambda Errors alarm means "the monitor is broken".
 """
 
 import json
-import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 
+from common import logs
 from common.checker import Settings, apply_result, make_publisher, probe
 from common.repo import Repo
 from common.status import DEGRADED, DOWN, UP
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+logger = logs.get_logger(__name__)
 
 
 def utcnow() -> datetime:
@@ -76,13 +75,16 @@ def lambda_handler(event, context):
             status = apply_result(endpoint, result, repo, publish, now, settings)
         except Exception:
             summary["errors"] += 1
-            logger.exception("failed to process endpoint %s", endpoint.get("endpoint_id"))
+            logger.exception(
+                "failed to process endpoint",
+                extra={"fields": {"endpoint_id": endpoint.get("endpoint_id")}},
+            )
             continue
         summary[counter[status]] += 1
 
     latencies = [r.latency_ms for r in results if r.latency_ms is not None]
     print(_emf(summary, latencies, now))
-    logger.info("run complete %s", json.dumps(summary))
+    logger.info("run complete", extra={"fields": summary})
 
     if summary["errors"]:
         raise RuntimeError(

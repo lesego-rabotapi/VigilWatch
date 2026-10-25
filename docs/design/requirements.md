@@ -172,3 +172,20 @@ As a reader I want the documentation to match what exists.
 
 **Acceptance:**
 - Documents do not reference removed components, code fences are balanced, links resolve and named outputs exist.
+
+### VW-020: Efficient warm invocations
+
+As an owner I want repeat invocations to be fast and cheap.
+
+**Acceptance:**
+- AWS clients are created once per execution environment and reused by later invocations, not rebuilt per request.
+- Clients are created on first use rather than at import time.
+
+### VW-021: Traceable logs
+
+As an owner I want to follow one request through the logs.
+
+**Acceptance:**
+- Every log line is one JSON object with level, message, logger and time.
+- Lines written during an invocation carry that invocation's request ID, and exceptions are included on the same line.
+- The log level is configurable, and Lambda's own log handler is reformatted rather than duplicated.

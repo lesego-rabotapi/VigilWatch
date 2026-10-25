@@ -23,8 +23,12 @@ os.environ["HISTORY_TABLE"] = "vigilwatch-history"
 def aws():
     from moto import mock_aws  # imported lazily so the unit layer never needs moto
 
+    from common import aws as aws_clients
+
+    aws_clients.reset()  # a cached client must not outlive the mock it was built in
     with mock_aws():
         yield
+    aws_clients.reset()
 
 
 def _create_table(name, key_schema, attributes):

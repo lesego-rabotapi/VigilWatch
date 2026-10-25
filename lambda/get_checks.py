@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 
+from common import logs
 from common.http import error, query_param, response
 from common.repo import Repo
 from common.urlguard import UnsafeURL, endpoint_id, normalize
@@ -13,6 +14,7 @@ def utcnow() -> datetime:
 
 
 def lambda_handler(event, context):
+    logs.bind(context)
     raw_url = query_param(event, "url")
     if not raw_url:
         return error(400, "'url' query parameter is required")

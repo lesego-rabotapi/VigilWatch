@@ -5,18 +5,17 @@ Body: {"url": "https://example.com", "expected_status": 200}
 200 for a URL that is already monitored.
 """
 
-import logging
 import os
 from datetime import UTC, datetime
 
+from common import logs
 from common.checker import Settings, apply_result, make_publisher, probe
 from common.http import BadRequest, error, json_body, response
 from common.repo import EndpointLimitReached, Repo
 from common.urlguard import UnresolvableHost, UnsafeURL, default_resolver, endpoint_id, validate
 from common.view import build_view
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+logger = logs.get_logger(__name__)
 
 resolver = default_resolver
 
@@ -33,6 +32,7 @@ def _expected_status(body: dict) -> int:
 
 
 def lambda_handler(event, context):
+    logs.bind(context)
     try:
         body = json_body(event)
         raw_url = body.get("url") or body.get("endpoint")
@@ -63,6 +63,6 @@ def lambda_handler(event, context):
             endpoint = repo.get_endpoint(endpoint["endpoint_id"])
         except Exception:
             # Registration succeeded; the scheduled checker will pick it up.
-            logger.exception("first check failed for %s", url)
+            logger.exception("first check failed", extra={"fields": {"endpoint_url": url}})
 
     return response(201 if created else 200, build_view(repo, endpoint, now))

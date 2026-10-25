@@ -1,7 +1,6 @@
 """Probe an endpoint and fold the result into its health, incident and alert state."""
 
 import json
-import logging
 import os
 import time
 import urllib.error
@@ -10,13 +9,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
-import boto3
-
+from common import aws, logs
 from common.repo import Repo, iso
 from common.status import DOWN, CheckResult, classify
 from common.urlguard import UnsafeURL, validate
 
-logger = logging.getLogger(__name__)
+logger = logs.get_logger(__name__)
 
 USER_AGENT = "VigilWatch/1.0 (+https://github.com/lesego-rabotapi/VigilWatch)"
 
@@ -85,7 +83,7 @@ def make_publisher(topic_arn: str | None = None) -> Publisher:
     if not topic_arn:
         return lambda subject, payload: False
 
-    sns = boto3.client("sns")
+    sns = aws.sns_client()
 
     def publish(subject: str, payload: dict) -> bool:
         # SNS subjects: ASCII, no newlines, at most 100 characters.
