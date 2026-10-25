@@ -27,7 +27,7 @@ def test_environments_and_their_write_permission():
     ]
 
 
-def test_the_default_environment_is_dev_and_can_come_from_ENV(monkeypatch):
+def test_the_default_environment_is_dev_and_can_come_from_the_env_variable(monkeypatch):
     monkeypatch.delenv("ENV", raising=False)
     assert get_environment().name == "dev"
     monkeypatch.setenv("ENV", "PROD")
