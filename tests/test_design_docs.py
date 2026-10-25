@@ -60,3 +60,24 @@ def test_runtime_decisions_adr_records_what_was_deliberately_not_adopted():
     for term in ("Powertools", "SnapStart", "native JSON", "NEEDS-AWS", "cached"):
         assert term in text, f"ADR 0008 does not discuss {term}"
     assert "Status:" in text
+
+
+def test_checker_honesty_adr_records_the_decision_and_its_limits():
+    text = (ROOT / "docs" / "adr" / "0006-checker-honesty.md").read_text(encoding="utf-8")
+    for term in (
+        "INCONCLUSIVE",
+        "control",
+        "heartbeat",
+        "single region",
+        "any target that answers",
+        "NEEDS-AWS",
+        "Status:",
+    ):
+        assert term in text, f"ADR 0006 does not mention {term!r}"
+
+
+def test_the_scheduled_check_diagram_shows_the_connectivity_controls():
+    diagram = _sections()["Scheduled check"]
+    assert "INCONCLUSIVE" in diagram
+    assert "common.controls" in diagram
+    assert "Business error" in diagram and "Unexpected error" in diagram
