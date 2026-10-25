@@ -26,14 +26,16 @@ locals {
   }
 
   function_env = {
-    ENDPOINTS_TABLE   = aws_dynamodb_table.endpoints.name
-    HISTORY_TABLE     = aws_dynamodb_table.history.name
-    SNS_TOPIC_ARN     = aws_sns_topic.alerts.arn
-    MAX_ENDPOINTS     = tostring(var.max_endpoints)
-    FAILURE_THRESHOLD = tostring(var.failure_threshold)
-    DEGRADED_MS       = tostring(var.degraded_ms)
-    PROBE_TIMEOUT_S   = "5"
-    CONTROL_URLS      = join(",", concat(["https://${aws_cloudfront_distribution.frontend.domain_name}/healthz.txt"], var.extra_control_urls))
+    ENDPOINTS_TABLE    = aws_dynamodb_table.endpoints.name
+    HISTORY_TABLE      = aws_dynamodb_table.history.name
+    SNS_TOPIC_ARN      = aws_sns_topic.alerts.arn
+    MAX_ENDPOINTS      = tostring(var.max_endpoints)
+    FAILURE_THRESHOLD  = tostring(var.failure_threshold)
+    DEGRADED_MS        = tostring(var.degraded_ms)
+    RECOVERY_THRESHOLD = tostring(var.recovery_threshold)
+    REMINDER_MINUTES   = tostring(var.reminder_minutes)
+    PROBE_TIMEOUT_S    = "5"
+    CONTROL_URLS       = join(",", concat(["https://${aws_cloudfront_distribution.frontend.domain_name}/healthz.txt"], var.extra_control_urls))
   }
 }
 

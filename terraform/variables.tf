@@ -59,6 +59,28 @@ variable "failure_threshold" {
   }
 }
 
+variable "recovery_threshold" {
+  description = "Consecutive healthy checks before an incident closes and a RECOVERED email is sent. 1 closes at the first healthy check; raise it to damp flapping sites."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.recovery_threshold >= 1 && var.recovery_threshold <= 10
+    error_message = "recovery_threshold must be between 1 and 10."
+  }
+}
+
+variable "reminder_minutes" {
+  description = "While an incident stays open, send a 'still down' email this often. 0 turns reminders off."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.reminder_minutes >= 0 && var.reminder_minutes <= 1440
+    error_message = "reminder_minutes must be between 0 (off) and 1440 (daily)."
+  }
+}
+
 variable "degraded_ms" {
   description = "Latency (ms) at or above which a correct response is reported as DEGRADED."
   type        = number
