@@ -30,6 +30,15 @@ def _read(name: str, default, kind, low, high):
     return value
 
 
+def _read_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    if raw.lower() not in ("true", "false"):
+        raise SettingsError(f"{name} must be true or false, got {raw!r}")
+    return raw.lower() == "true"
+
+
 MAX_CONTROL_URLS = 5
 
 
@@ -53,6 +62,7 @@ class Settings:
     control_urls: tuple[str, ...] = ()
     recovery_threshold: int = 1
     reminder_minutes: int = 0
+    metrics_enabled: bool = True
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -64,4 +74,5 @@ class Settings:
             control_urls=_read_urls("CONTROL_URLS"),
             recovery_threshold=_read("RECOVERY_THRESHOLD", cls.recovery_threshold, int, 1, 10),
             reminder_minutes=_read("REMINDER_MINUTES", cls.reminder_minutes, int, 0, 1440),
+            metrics_enabled=_read_bool("METRICS_ENABLED", cls.metrics_enabled),
         )

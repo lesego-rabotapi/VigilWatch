@@ -121,7 +121,8 @@ def lambda_handler(event, context):
 
     latencies = [r.latency_ms for r in results if r.latency_ms is not None]
     repo.record_heartbeat(now, {**summary, "controls": controls})
-    print(_emf(summary, latencies, now, controls))
+    if settings.metrics_enabled:
+        print(_emf(summary, latencies, now, controls))
     logger.info("run complete", extra={"fields": {**summary, "controls": controls}})
 
     if summary["errors"]:
