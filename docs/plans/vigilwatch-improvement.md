@@ -74,7 +74,7 @@ Lesson 5 "deploy despite failing tests" (gates stay strict); HATEOAS (two routes
 | 1 | Land PR #4 and repo guardrails | 0 | S | no | 🔄 IN PROGRESS (1.2, 1.3 done and pushed; 1.1, 1.4 need you) |
 | 2 | Requirements, design and traceability | 1 | M | no | ✅ COMPLETE |
 | 3 | Quality foundation (taxonomy, SOLID, cold start, errors, E2E harness) | 2 | L | no | ✅ COMPLETE |
-| 4 | Honest checker, alert state machine, atomic cap | 3 | M | no | ⏳ PENDING |
+| 4 | Honest checker, alert state machine, atomic cap | 3 | M | no | ✅ COMPLETE |
 | 5 | Terraform modules and environments | 3 | L | no | ⏳ PENDING |
 | 6 | Pipeline, promotion, rollback, drift, gate integrity | 5 | L | partly (runs) | ⏳ PENDING |
 | 7 | Resilience, observability, SLOs | 4, 5 | M | partly (drill) | ⏳ PENDING |
@@ -369,3 +369,8 @@ prove that the policy, package-verification and gate-integrity checks fail when 
 | 2026-10-25 | 3.6 | E2E harness: `--env` local/dev/prod, addresses only from environment variables, proxies, read-only prod. Run against the local stack: `local` 6 passed; `prod` 4 smoke passed and 2 write tests skipped | `tests/unit/test_e2e_harness.py`, `tests/test_e2e_policy.py` |
 | 2026-10-25 | 3.7 | `app.js` is now tested (it was invisible to coverage). Gates: Python 90% (actual 96.6%), frontend lines 90 / functions 90 / branches 80 (actual 97.5 / 100 / 85.5), proven to fail when unmet | `tests/test_quality_gates.py`, `frontend/tests/app.test.js` |
 | 2026-10-25 | 3 gate | 486 pytest tests, 18 frontend tests, 10 terraform tests; unit layer 179 tests in 4.2 s; ruff clean | local run |
+| 2026-10-25 | 4.1-4.3 | Honest checker: control URLs probed only when something is DOWN and nothing answered; with no control answering, results are `INCONCLUSIVE` (recorded, never counted, no incident or alert). Heartbeat, `RunsCompleted`/`EndpointsInconclusive`/`ControlProbeFailed` metrics and the `checker-blind` alarm; dashboard pill and legend | `tests/unit/test_controls.py`, `tests/mock/test_checker_honesty.py`, `tests/features/honesty.feature`, `terraform/tests` |
+| 2026-10-25 | 4.4 | Atomic endpoint cap via a DynamoDB transaction and a counter item. Finding: moto does not serialise requests, so the concurrency test models per-request atomicity; the old code fails it 9 of 10 runs, the new code passed 30 of 30. Real atomicity is `NEEDS-AWS` | `tests/mock/test_atomic_cap.py` |
+| 2026-10-25 | 4.5 | Alert polish: retry of an undelivered DOWN alert (a gap this stage found), `RECOVERY_THRESHOLD` flap damping, optional `REMINDER_MINUTES` reminders; all off by default | `tests/unit/test_state_machine.py`, `terraform/tests` |
+| 2026-10-25 | 4.6 | ADR 0006 and the scheduled-check diagram updated. Limits recorded: single region, single Lambda. The diagram's syntax is covered by the structural docs test; it was not re-rendered in Mermaid after this edit | `tests/test_design_docs.py` |
+| 2026-10-25 | 4 gate | 577 of 578 pytest tests passed before the matrix refresh (the one failure was the stale traceability matrix, since regenerated); coverage 95.49%; ruff clean; 17 terraform and 26 frontend tests | local run |
