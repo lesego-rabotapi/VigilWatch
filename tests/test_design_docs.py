@@ -81,3 +81,18 @@ def test_the_scheduled_check_diagram_shows_the_connectivity_controls():
     assert "INCONCLUSIVE" in diagram
     assert "common.controls" in diagram
     assert "Business error" in diagram and "Unexpected error" in diagram
+
+
+def test_environments_adr_records_the_decisions_and_the_free_tier_arithmetic():
+    text = (ROOT / "docs" / "adr" / "0005-environments-and-modules.md").read_text(encoding="utf-8")
+    for term in (
+        "allowed_account_ids",
+        "Build once",
+        "No SIT",
+        "METRICS_ENABLED",
+        "deletion protection",
+        "proxy",
+        "NEEDS-AWS",
+        "Status:",
+    ):
+        assert term in text, f"ADR 0005 does not mention {term!r}"

@@ -32,7 +32,7 @@ TEST_LOCATIONS = [
     ("tests/step_defs/**/*.py", "bdd"),
     ("tests/test_*.py", "policy"),
     ("frontend/tests/**/*.js", "frontend"),
-    ("terraform/tests/**/*.tftest.hcl", "infrastructure"),
+    ("terraform/**/tests/*.tftest.hcl", "infrastructure"),
 ]
 SELF = "tests/test_traceability.py"
 

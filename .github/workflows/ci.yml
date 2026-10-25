@@ -33,27 +33,29 @@ jobs:
   terraform:
     name: Terraform (fmt, validate, test, lint)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: terraform
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
-      - run: terraform fmt -check -recursive
-      - run: terraform init -backend=false -input=false
-      - run: terraform validate
-      - run: terraform test
+      - run: terraform fmt -check -recursive terraform
+      - name: Validate and test every module and every environment
+        run: |
+          set -euo pipefail
+          for dir in terraform/modules/* terraform/envs/*; do
+            echo "::group::$dir"
+            (cd "$dir" && terraform init -backend=false -input=false && terraform validate && terraform test)
+            echo "::endgroup::"
+          done
       - name: Validate bootstrap stack
         run: |
-          terraform -chdir=bootstrap init -backend=false -input=false
-          terraform -chdir=bootstrap validate
+          terraform -chdir=terraform/bootstrap init -backend=false -input=false
+          terraform -chdir=terraform/bootstrap validate
       - uses: terraform-linters/setup-tflint@v4
-      - run: tflint --init
+      - run: tflint --init --config "$(pwd)/terraform/.tflint.hcl"
         env:
           GITHUB_TOKEN: ${{ github.token }}
-      - run: tflint --recursive --config "$(pwd)/.tflint.hcl"
+      - run: tflint --recursive --config "$(pwd)/terraform/.tflint.hcl"
 
   frontend:
     name: Frontend (DOM + contract tests)

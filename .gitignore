@@ -5,6 +5,8 @@
 *.tfplan
 *.tfvars
 *.tfvars.json
+# The environment definitions are the one place tfvars are committed: no secrets, no account ids.
+!terraform/envs/*/terraform.tfvars
 crash.log
 crash.*.log
 override.tf
@@ -39,3 +41,5 @@ as-a-senior-cloud-proud-meerkat.md
 .idea/
 .DS_Store
 Thumbs.db
+# Modules are tested standalone in CI; only the environments pin provider hashes.
+terraform/modules/**/.terraform.lock.hcl

@@ -2,6 +2,7 @@ name: Deploy
 
 # Repository configuration required (Settings -> Secrets and variables -> Variables):
 #   AWS_DEPLOY_ROLE_ARN  output deploy_role_arn of terraform/bootstrap
+#   AWS_ACCOUNT_ID       the account Terraform may touch (the provider refuses any other)
 #   TF_STATE_BUCKET      output state_bucket of terraform/bootstrap
 #   NOTIFICATION_EMAIL   optional alert recipient
 # and an Environment named "production" with required reviewers (the approval gate).
@@ -38,9 +39,18 @@ jobs:
       id-token: write
     defaults:
       run:
-        working-directory: terraform
+        working-directory: terraform/envs/prod
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Built once. The plan records this file's hash and apply deploys exactly these bytes.
+      - name: Build the Lambda bundle
+        working-directory: .
+        run: |
+          python scripts/build_bundle.py --out "$GITHUB_WORKSPACE/terraform/.build/vigilwatch.zip"
+          echo "bundle_sha256: $(python -c "import json,sys; print(json.load(open(sys.argv[1]))['bundle_sha256'])" "$GITHUB_WORKSPACE/terraform/.build/vigilwatch.tfvars.json")" >> "$GITHUB_STEP_SUMMARY"
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
@@ -58,7 +68,11 @@ jobs:
           -backend-config="encrypt=true"
           -backend-config="use_lockfile=true"
       - name: terraform plan
-        run: terraform plan -out=tfplan -var "notification_email=${{ vars.NOTIFICATION_EMAIL }}"
+        run: >
+          terraform plan -out=tfplan
+          -var-file="$GITHUB_WORKSPACE/terraform/.build/vigilwatch.tfvars.json"
+          -var 'allowed_account_ids=["${{ vars.AWS_ACCOUNT_ID }}"]'
+          -var "notification_email=${{ vars.NOTIFICATION_EMAIL }}"
       - name: Plan summary
         run: |
           {
@@ -72,7 +86,7 @@ jobs:
         with:
           name: tfplan
           path: |
-            terraform/tfplan
+            terraform/envs/prod/tfplan
             terraform/.build/
           retention-days: 5
           include-hidden-files: true
@@ -90,7 +104,7 @@ jobs:
       id-token: write
     defaults:
       run:
-        working-directory: terraform
+        working-directory: terraform/envs/prod
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4

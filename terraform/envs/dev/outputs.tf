@@ -1,49 +1,59 @@
+output "environment" {
+  description = "Name of this environment."
+  value       = module.stack.environment
+}
+
 output "dashboard_url" {
   description = "Public URL of the dashboard."
-  value       = "https://${aws_cloudfront_distribution.frontend.domain_name}"
+  value       = module.stack.dashboard_url
 }
 
 output "api_base_url" {
   description = "Base URL of the HTTP API (no trailing slash)."
-  value       = trimsuffix(aws_apigatewayv2_stage.default.invoke_url, "/")
+  value       = module.stack.api_base_url
 }
 
 output "cloudfront_distribution_id" {
   description = "Used by CI to invalidate the cache after a deploy."
-  value       = aws_cloudfront_distribution.frontend.id
+  value       = module.stack.cloudfront_distribution_id
 }
 
 output "frontend_bucket" {
   description = "S3 bucket holding the dashboard files."
-  value       = aws_s3_bucket.frontend.bucket
+  value       = module.stack.frontend_bucket
 }
 
 output "endpoints_table" {
   description = "DynamoDB table of monitored endpoints."
-  value       = aws_dynamodb_table.endpoints.name
+  value       = module.stack.endpoints_table
 }
 
 output "history_table" {
   description = "DynamoDB table of checks, daily rollups and incidents."
-  value       = aws_dynamodb_table.history.name
+  value       = module.stack.history_table
 }
 
 output "sns_topic_arn" {
   description = "Alert topic (endpoint DOWN/RECOVERED and monitor health alarms)."
-  value       = aws_sns_topic.alerts.arn
+  value       = module.stack.sns_topic_arn
 }
 
 output "checker_function_name" {
   description = "Scheduled uptime checker Lambda."
-  value       = aws_lambda_function.fn["uptime_check"].function_name
+  value       = module.stack.checker_function_name
 }
 
 output "checker_dlq_url" {
   description = "Dead-letter queue for failed scheduled runs."
-  value       = aws_sqs_queue.checker_dlq.url
+  value       = module.stack.checker_dlq_url
+}
+
+output "alarm_names" {
+  description = "Names of the alarms created in this environment."
+  value       = module.stack.alarm_names
 }
 
 output "region" {
   description = "AWS region."
-  value       = var.aws_region
+  value       = module.stack.region
 }

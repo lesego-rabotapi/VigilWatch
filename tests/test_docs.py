@@ -12,7 +12,10 @@ DOCS = sorted([ROOT / "README.md", ROOT / "systemOverview.md", *(ROOT / "docs").
 TEXT = {p: p.read_text(encoding="utf-8") for p in DOCS}
 OUTPUTS = {
     name
-    for path in (ROOT / "terraform" / "outputs.tf", ROOT / "terraform" / "bootstrap" / "outputs.tf")
+    for path in (
+        ROOT / "terraform" / "envs" / "prod" / "outputs.tf",
+        ROOT / "terraform" / "bootstrap" / "outputs.tf",
+    )
     for name in re.findall(r'output\s+"([a-z_]+)"', path.read_text())
 }
 

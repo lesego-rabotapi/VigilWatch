@@ -91,10 +91,11 @@ are bounded by throttling and tiny storage. Set up a zero-spend AWS Budget as a 
 
 ```text
 lambda/            Lambda handlers + common/ (status, SSRF guard, repository, checker, view)
-terraform/         Main stack, terraform test suite (tests/), bootstrap/ for state + CI role
+terraform/         modules/ (data, compute, api, frontend, monitoring, alerts, vigilwatch), envs/dev and envs/prod,
+                   bootstrap/ for state + CI role. Each module carries its own terraform test suite
 frontend/          Static dashboard (no build step) + node:test/jsdom tests
 tests/             unit/, integration/ (moto), contract/ (API schema), e2e/ (post-deploy), policy tests
-scripts/           local_api.py: dashboard + API locally with AWS mocked
+scripts/           local_api.py (dashboard + API locally, AWS mocked), build_bundle.py (reproducible Lambda zip)
 docs/              Architecture, runbook, ADRs
 .github/workflows  ci.yml (quality gates), deploy.yml (OIDC, plan -> approval -> apply)
 ```
@@ -105,10 +106,11 @@ First-time setup (state bucket, CI role, migrating an older deployment) is in
 [docs/RUNBOOK.md](docs/RUNBOOK.md). After bootstrap:
 
 ```bash
-cd terraform
-cp backend.hcl.example backend.hcl   # fill in the state bucket name
+python scripts/build_bundle.py        # one reproducible Lambda zip, printed with its hash
+cd terraform/envs/dev                 # or envs/prod
+cp backend.hcl.example backend.hcl    # fill in the state bucket name
 terraform init -backend-config=backend.hcl
-terraform plan -out=tfplan -var notification_email=you@example.com
+terraform plan -out=tfplan -var-file=../../.build/vigilwatch.tfvars.json -var 'allowed_account_ids=["<your-account-id>"]' -var notification_email=you@example.com
 terraform apply tfplan
 terraform output dashboard_url
 ```
@@ -125,7 +127,7 @@ Every layer has tests, and every feature in this codebase was written test-first
 | Unit (status, SSRF guard, probe) | pytest | `pytest -m unit` |
 | Mock (DynamoDB, SNS, handlers) | pytest + moto | `pytest -m mock` |
 | API contract (shared JSON Schema) | pytest + jsonschema, node:test | `pytest tests/contract` |
-| Infrastructure | `terraform test` with a mocked AWS provider | `cd terraform && terraform init -backend=false && terraform test` |
+| Infrastructure | `terraform test` with a mocked AWS provider | `for d in terraform/modules/* terraform/envs/*; do (cd $d && terraform init -backend=false && terraform test); done` |
 | Frontend (rendering, XSS, config) | node:test + jsdom | `cd frontend && npm ci && npm test` |
 | Pipeline and docs policy | pytest | `pytest tests/test_workflows.py tests/test_docs.py` |
 | End-to-end smoke | pytest, against a live or local stack | `pytest -m e2e tests/e2e --env=dev` (address from `API_URL_DEV`) |

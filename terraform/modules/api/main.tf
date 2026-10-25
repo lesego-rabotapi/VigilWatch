@@ -9,12 +9,12 @@ locals {
 }
 
 resource "aws_apigatewayv2_api" "http" {
-  name          = "${var.project_name}-http"
+  name          = "${var.name_prefix}-http"
   protocol_type = "HTTP"
 
   # The single source of CORS headers (the functions do not set any).
   cors_configuration {
-    allow_origins = concat(["https://${aws_cloudfront_distribution.frontend.domain_name}"], var.extra_cors_origins)
+    allow_origins = var.allowed_origins
     allow_methods = ["GET", "POST", "OPTIONS"]
     allow_headers = ["content-type"]
     max_age       = 3600
@@ -26,7 +26,7 @@ resource "aws_apigatewayv2_integration" "api" {
 
   api_id                 = aws_apigatewayv2_api.http.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_function.fn[each.key].invoke_arn
+  integration_uri        = var.function_invoke_arns[each.key]
   payload_format_version = "2.0"
 }
 
@@ -39,7 +39,7 @@ resource "aws_apigatewayv2_route" "route" {
 }
 
 resource "aws_cloudwatch_log_group" "api_access" {
-  name              = "/aws/apigateway/${var.project_name}-http"
+  name              = "/aws/apigateway/${var.name_prefix}-http"
   retention_in_days = var.log_retention_days
 }
 
@@ -49,8 +49,8 @@ resource "aws_apigatewayv2_stage" "default" {
   auto_deploy = true
 
   default_route_settings {
-    throttling_rate_limit    = var.api_throttle_rate
-    throttling_burst_limit   = var.api_throttle_burst
+    throttling_rate_limit    = var.throttle_rate
+    throttling_burst_limit   = var.throttle_burst
     detailed_metrics_enabled = false
   }
 
@@ -72,7 +72,7 @@ resource "aws_lambda_permission" "api_invoke" {
 
   statement_id  = "AllowHttpApiInvoke"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.fn[each.key].function_name
+  function_name = var.function_names[each.key]
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.http.execution_arn}/*/*"
 }

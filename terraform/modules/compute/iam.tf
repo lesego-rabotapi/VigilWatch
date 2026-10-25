@@ -1,12 +1,22 @@
 # One role per function, each scoped to exactly the resources and actions it uses.
+#
+# The policy documents are built from names and variables only (never from resource attributes), so
+# they are known at plan time. That lets a test render the exact documents and enforce them against
+# the handlers without an AWS account (see output.function_policies).
 
 locals {
+  log_group_arn = {
+    for key, name in local.function_names :
+    key => "arn:aws:logs:${var.aws_region}:${var.account_id}:log-group:/aws/lambda/${name}:*"
+  }
+  dlq_arn = "arn:aws:sqs:${var.aws_region}:${var.account_id}:${local.function_names["uptime_check"]}-dlq"
+
   log_statement = {
-    for name, _ in local.functions : name => {
+    for key, _ in local.functions : key => {
       Sid      = "WriteOwnLogs"
       Effect   = "Allow"
       Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
-      Resource = ["${aws_cloudwatch_log_group.fn[name].arn}:*"]
+      Resource = [local.log_group_arn[key]]
     }
   }
 
@@ -16,25 +26,25 @@ locals {
         Sid      = "ReadAndUpdateEndpoints"
         Effect   = "Allow"
         Action   = ["dynamodb:Scan", "dynamodb:GetItem", "dynamodb:UpdateItem"]
-        Resource = [aws_dynamodb_table.endpoints.arn]
+        Resource = [var.endpoints_table_arn]
       },
       {
         Sid      = "WriteHistory"
         Effect   = "Allow"
         Action   = ["dynamodb:PutItem", "dynamodb:UpdateItem"]
-        Resource = [aws_dynamodb_table.history.arn]
+        Resource = [var.history_table_arn]
       },
       {
         Sid      = "PublishAlerts"
         Effect   = "Allow"
         Action   = ["sns:Publish"]
-        Resource = [aws_sns_topic.alerts.arn]
+        Resource = [var.sns_topic_arn]
       },
       {
         Sid      = "DeadLetter"
         Effect   = "Allow"
         Action   = ["sqs:SendMessage"]
-        Resource = [aws_sqs_queue.checker_dlq.arn]
+        Resource = [local.dlq_arn]
       },
     ]
 
@@ -43,19 +53,19 @@ locals {
         Sid      = "RegisterEndpoints"
         Effect   = "Allow"
         Action   = ["dynamodb:Scan", "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"]
-        Resource = [aws_dynamodb_table.endpoints.arn]
+        Resource = [var.endpoints_table_arn]
       },
       {
         Sid      = "FirstCheckHistory"
         Effect   = "Allow"
         Action   = ["dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:Query"]
-        Resource = [aws_dynamodb_table.history.arn]
+        Resource = [var.history_table_arn]
       },
       {
         Sid      = "PublishAlerts"
         Effect   = "Allow"
         Action   = ["sns:Publish"]
-        Resource = [aws_sns_topic.alerts.arn]
+        Resource = [var.sns_topic_arn]
       },
     ]
 
@@ -64,22 +74,29 @@ locals {
         Sid      = "ReadEndpoint"
         Effect   = "Allow"
         Action   = ["dynamodb:GetItem"]
-        Resource = [aws_dynamodb_table.endpoints.arn]
+        Resource = [var.endpoints_table_arn]
       },
       {
         Sid      = "ReadHistory"
         Effect   = "Allow"
         Action   = ["dynamodb:Query"]
-        Resource = [aws_dynamodb_table.history.arn]
+        Resource = [var.history_table_arn]
       },
     ]
+  }
+
+  function_policies = {
+    for key, _ in local.functions : key => jsonencode({
+      Version   = "2012-10-17"
+      Statement = concat([local.log_statement[key]], local.function_statements[key])
+    })
   }
 }
 
 resource "aws_iam_role" "fn" {
   for_each = local.functions
 
-  name = "${var.project_name}-${replace(each.key, "_", "-")}"
+  name = local.function_names[each.key]
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -88,7 +105,7 @@ resource "aws_iam_role" "fn" {
       Principal = { Service = "lambda.amazonaws.com" }
       Action    = "sts:AssumeRole"
       Condition = {
-        StringEquals = { "aws:SourceAccount" = data.aws_caller_identity.current.account_id }
+        StringEquals = { "aws:SourceAccount" = var.account_id }
       }
     }]
   })
@@ -97,11 +114,7 @@ resource "aws_iam_role" "fn" {
 resource "aws_iam_role_policy" "fn" {
   for_each = local.functions
 
-  name = "least-privilege"
-  role = aws_iam_role.fn[each.key].id
-
-  policy = jsonencode({
-    Version   = "2012-10-17"
-    Statement = concat([local.log_statement[each.key]], local.function_statements[each.key])
-  })
+  name   = "least-privilege"
+  role   = aws_iam_role.fn[each.key].id
+  policy = local.function_policies[each.key]
 }

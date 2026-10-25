@@ -1,14 +1,15 @@
 # Alarms watch the monitor itself. Monitored-endpoint downtime is alerted
 # directly by the checker (SNS), so it is not duplicated here.
-# Five standard alarms; the free tier covers ten.
+# Ten standard alarms are free per account, shared by every environment, so each
+# environment asks for only the alarms it needs (enabled_alarms).
 
 locals {
-  alarms = {
+  all_alarms = {
     "checker-errors" = {
       description = "The uptime checker failed internally (DynamoDB/SNS errors, crashes)."
       namespace   = "AWS/Lambda"
       metric      = "Errors"
-      dimensions  = { FunctionName = aws_lambda_function.fn["uptime_check"].function_name }
+      dimensions  = { FunctionName = var.checker_function }
       statistic   = "Sum"
       period      = 300
       periods     = 1
@@ -21,7 +22,7 @@ locals {
       description = "The uptime checker has not been invoked for 30 minutes: monitoring is blind."
       namespace   = "AWS/Lambda"
       metric      = "Invocations"
-      dimensions  = { FunctionName = aws_lambda_function.fn["uptime_check"].function_name }
+      dimensions  = { FunctionName = var.checker_function }
       statistic   = "Sum"
       period      = 900
       periods     = 2
@@ -34,7 +35,7 @@ locals {
       description = "A scheduled checker run failed and was dead-lettered."
       namespace   = "AWS/SQS"
       metric      = "ApproximateNumberOfMessagesVisible"
-      dimensions  = { QueueName = aws_sqs_queue.checker_dlq.name }
+      dimensions  = { QueueName = var.dead_letter_queue }
       statistic   = "Maximum"
       period      = 300
       periods     = 1
@@ -60,7 +61,7 @@ locals {
       description = "The public API is returning server errors."
       namespace   = "AWS/ApiGateway"
       metric      = "5xx"
-      dimensions  = { ApiId = aws_apigatewayv2_api.http.id, Stage = "$default" }
+      dimensions  = { ApiId = var.api_id, Stage = "$default" }
       statistic   = "Sum"
       period      = 300
       periods     = 1
@@ -70,12 +71,14 @@ locals {
       missing     = "notBreaching"
     }
   }
+
+  alarms = { for name, alarm in local.all_alarms : name => alarm if contains(var.enabled_alarms, name) }
 }
 
 resource "aws_cloudwatch_metric_alarm" "alarm" {
   for_each = local.alarms
 
-  alarm_name          = "${var.project_name}-${each.key}"
+  alarm_name          = "${var.name_prefix}-${each.key}"
   alarm_description   = each.value.description
   namespace           = each.value.namespace
   metric_name         = each.value.metric
@@ -87,6 +90,6 @@ resource "aws_cloudwatch_metric_alarm" "alarm" {
   comparison_operator = each.value.comparison
   threshold           = each.value.threshold
   treat_missing_data  = each.value.missing
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  ok_actions          = [aws_sns_topic.alerts.arn]
+  alarm_actions       = [var.topic_arn]
+  ok_actions          = [var.topic_arn]
 }

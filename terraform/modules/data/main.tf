@@ -2,12 +2,12 @@
 # provisioned capacity, but on-demand requests are always billed.
 
 resource "aws_dynamodb_table" "endpoints" {
-  name                        = "${var.project_name}-endpoints"
+  name                        = "${var.name_prefix}-endpoints"
   billing_mode                = "PROVISIONED"
-  read_capacity               = var.dynamodb_capacity
-  write_capacity              = var.dynamodb_capacity
+  read_capacity               = var.capacity
+  write_capacity              = var.capacity
   hash_key                    = "endpoint_id"
-  deletion_protection_enabled = var.dynamodb_deletion_protection
+  deletion_protection_enabled = var.deletion_protection
 
   attribute {
     name = "endpoint_id"
@@ -20,13 +20,13 @@ resource "aws_dynamodb_table" "endpoints" {
 }
 
 resource "aws_dynamodb_table" "history" {
-  name                        = "${var.project_name}-history"
+  name                        = "${var.name_prefix}-history"
   billing_mode                = "PROVISIONED"
-  read_capacity               = var.dynamodb_capacity
-  write_capacity              = var.dynamodb_capacity
+  read_capacity               = var.capacity
+  write_capacity              = var.capacity
   hash_key                    = "endpoint_id"
   range_key                   = "sk"
-  deletion_protection_enabled = var.dynamodb_deletion_protection
+  deletion_protection_enabled = var.deletion_protection
 
   attribute {
     name = "endpoint_id"
