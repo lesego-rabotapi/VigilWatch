@@ -20,6 +20,7 @@ COMMON = Path(__file__).resolve().parents[2] / "lambda" / "common"
 LAYER = {
     "aws": 0,
     "dynamo": 0,
+    "errors": 0,
     "http": 0,
     "logs": 0,
     "ports": 0,
@@ -33,6 +34,7 @@ LAYER = {
     "history_repo": 1,
     "incidents_repo": 1,
     "probe": 1,
+    "api": 2,
     "repo": 2,
     "state": 2,
     "checker": 3,
