@@ -122,8 +122,8 @@ Every layer has tests, and every feature in this codebase was written test-first
 
 | Layer | Tooling | Command |
 |---|---|---|
-| Unit (status, SSRF guard, probe) | pytest | `pytest tests/unit` |
-| Integration (DynamoDB, SNS, handlers) | pytest + moto | `pytest tests/integration` |
+| Unit (status, SSRF guard, probe) | pytest | `pytest -m unit` |
+| Mock (DynamoDB, SNS, handlers) | pytest + moto | `pytest -m mock` |
 | API contract (shared JSON Schema) | pytest + jsonschema, node:test | `pytest tests/contract` |
 | Infrastructure | `terraform test` with a mocked AWS provider | `cd terraform && terraform init -backend=false && terraform test` |
 | Frontend (rendering, XSS, config) | node:test + jsdom | `cd frontend && npm ci && npm test` |

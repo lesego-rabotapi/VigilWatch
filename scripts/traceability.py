@@ -24,8 +24,8 @@ CRITERIA_HEADING = "**Acceptance:**"
 # (glob relative to ROOT, layer label). The first matching entry wins.
 TEST_LOCATIONS = [
     ("tests/unit/**/*.py", "unit"),
-    ("tests/integration/**/*.py", "mock"),
     ("tests/mock/**/*.py", "mock"),
+    ("tests/integration/**/*.py", "integration"),
     ("tests/contract/**/*.py", "contract"),
     ("tests/e2e/**/*.py", "e2e"),
     ("tests/features/**/*.feature", "bdd"),

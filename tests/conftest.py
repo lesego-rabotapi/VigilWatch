@@ -1,10 +1,12 @@
 import json
 import os
 import re
+from pathlib import Path
 
 import boto3
 import pytest
-from moto import mock_aws
+
+from tests.taxonomy import find_unmarked, layer_for
 
 # Fake credentials so no test can ever reach a real AWS account.
 os.environ["AWS_ACCESS_KEY_ID"] = "testing"
@@ -19,6 +21,8 @@ os.environ["HISTORY_TABLE"] = "vigilwatch-history"
 
 @pytest.fixture
 def aws():
+    from moto import mock_aws  # imported lazily so the unit layer never needs moto
+
     with mock_aws():
         yield
 
@@ -87,3 +91,20 @@ def pytest_bdd_apply_tag(tag, function):
         pytest.mark.req(tag)(function)
         return True
     return None
+
+
+def pytest_collection_modifyitems(config, items):
+    """Mark each test with its layer from its location, and refuse unmarked or ambiguous tests."""
+    root = Path(config.rootpath)
+    for item in items:
+        try:
+            relative = Path(item.path).relative_to(root).as_posix()
+        except ValueError:
+            continue
+        layer = layer_for(relative)
+        if layer and not any(m.name == layer for m in item.iter_markers()):
+            item.add_marker(getattr(pytest.mark, layer))
+    unmarked = find_unmarked(items)
+    if unmarked:
+        names = ", ".join(item.nodeid for item in unmarked)
+        raise pytest.UsageError(f"tests without exactly one layer marker: {names}")

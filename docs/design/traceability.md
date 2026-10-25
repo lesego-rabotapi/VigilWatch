@@ -6,22 +6,22 @@ Stories are in [requirements.md](requirements.md).
 
 | Requirement | Layers | Tests |
 |---|---|---|
-| **VW-001** Register a URL to monitor | bdd, e2e, mock | `tests/e2e/test_smoke.py`<br>`tests/features/monitoring.feature`<br>`tests/integration/test_register_endpoint.py`<br>`tests/integration/test_repo.py` |
-| **VW-002** Refuse unsafe URLs | bdd, e2e, mock, unit | `tests/e2e/test_smoke.py`<br>`tests/features/monitoring.feature`<br>`tests/integration/test_register_endpoint.py`<br>`tests/unit/test_probe.py`<br>`tests/unit/test_urlguard.py` |
-| **VW-003** Bound the number of monitored endpoints | bdd, infrastructure, mock | `terraform/tests/vigilwatch.tftest.hcl`<br>`tests/features/monitoring.feature`<br>`tests/integration/test_register_endpoint.py`<br>`tests/integration/test_repo.py` |
-| **VW-004** Check endpoints on a schedule | bdd, infrastructure, mock | `terraform/tests/vigilwatch.tftest.hcl`<br>`tests/features/monitoring.feature`<br>`tests/integration/test_uptime_check.py` |
-| **VW-005** Classify health | bdd, mock, unit | `tests/features/monitoring.feature`<br>`tests/integration/test_uptime_check.py`<br>`tests/unit/test_status.py` |
+| **VW-001** Register a URL to monitor | bdd, e2e, mock | `tests/e2e/test_smoke.py`<br>`tests/features/monitoring.feature`<br>`tests/mock/test_register_endpoint.py`<br>`tests/mock/test_repo.py` |
+| **VW-002** Refuse unsafe URLs | bdd, e2e, mock, unit | `tests/e2e/test_smoke.py`<br>`tests/features/monitoring.feature`<br>`tests/mock/test_register_endpoint.py`<br>`tests/unit/test_probe.py`<br>`tests/unit/test_urlguard.py` |
+| **VW-003** Bound the number of monitored endpoints | bdd, infrastructure, mock | `terraform/tests/vigilwatch.tftest.hcl`<br>`tests/features/monitoring.feature`<br>`tests/mock/test_register_endpoint.py`<br>`tests/mock/test_repo.py` |
+| **VW-004** Check endpoints on a schedule | bdd, infrastructure, mock | `terraform/tests/vigilwatch.tftest.hcl`<br>`tests/features/monitoring.feature`<br>`tests/mock/test_uptime_check.py` |
+| **VW-005** Classify health | bdd, mock, unit | `tests/features/monitoring.feature`<br>`tests/mock/test_uptime_check.py`<br>`tests/unit/test_status.py` |
 | **VW-006** Probe politely and safely | unit | `tests/unit/test_probe.py` |
-| **VW-007** Report 30-day uptime | bdd, mock | `tests/features/status.feature`<br>`tests/integration/test_repo.py` |
-| **VW-008** Show recent latency | bdd, mock | `tests/features/status.feature`<br>`tests/integration/test_repo.py` |
-| **VW-009** Record incidents | bdd, mock | `tests/features/alerting.feature`<br>`tests/integration/test_repo.py`<br>`tests/integration/test_uptime_check.py` |
-| **VW-010** Alert once, then confirm recovery | bdd, mock | `tests/features/alerting.feature`<br>`tests/integration/test_uptime_check.py` |
+| **VW-007** Report 30-day uptime | bdd, mock | `tests/features/status.feature`<br>`tests/mock/test_repo.py` |
+| **VW-008** Show recent latency | bdd, mock | `tests/features/status.feature`<br>`tests/mock/test_repo.py` |
+| **VW-009** Record incidents | bdd, mock | `tests/features/alerting.feature`<br>`tests/mock/test_repo.py`<br>`tests/mock/test_uptime_check.py` |
+| **VW-010** Alert once, then confirm recovery | bdd, mock | `tests/features/alerting.feature`<br>`tests/mock/test_uptime_check.py` |
 | **VW-011** Stable dashboard payload | bdd, contract, e2e, frontend | `frontend/tests/view.test.js`<br>`tests/contract/test_checks_contract.py`<br>`tests/contract/test_openapi.py`<br>`tests/e2e/test_smoke.py`<br>`tests/features/status.feature` |
 | **VW-012** Clear errors for lookups | bdd, contract, e2e | `tests/contract/test_checks_contract.py`<br>`tests/contract/test_openapi.py`<br>`tests/e2e/test_smoke.py`<br>`tests/features/status.feature` |
-| **VW-013** Bounded storage | infrastructure, mock | `terraform/tests/vigilwatch.tftest.hcl`<br>`tests/integration/test_repo.py` |
+| **VW-013** Bounded storage | infrastructure, mock | `terraform/tests/vigilwatch.tftest.hcl`<br>`tests/mock/test_repo.py` |
 | **VW-014** Safe, readable dashboard | frontend | `frontend/tests/view.test.js` |
-| **VW-015** Observe the monitor itself | infrastructure, mock | `terraform/tests/vigilwatch.tftest.hcl`<br>`tests/integration/test_uptime_check.py` |
+| **VW-015** Observe the monitor itself | infrastructure, mock | `terraform/tests/vigilwatch.tftest.hcl`<br>`tests/mock/test_uptime_check.py` |
 | **VW-016** Least privilege and private hosting | infrastructure | `terraform/tests/vigilwatch.tftest.hcl` |
 | **VW-017** Safe, gated deployment | policy | `tests/test_workflows.py` |
-| **VW-018** Clean repository | policy | `tests/test_repo_hygiene.py` |
+| **VW-018** Clean repository | policy | `tests/test_repo_hygiene.py`<br>`tests/test_taxonomy.py` |
 | **VW-019** Honest documentation | policy | `tests/test_design_docs.py`<br>`tests/test_docs.py` |
