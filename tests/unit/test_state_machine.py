@@ -45,29 +45,52 @@ class Alerts:
         return self.succeed
 
 
-def endpoint(failures=0, incident=None, expected=200):
+def endpoint(
+    failures=0, incident=None, expected=200, successes=0, alerted="auto", last_alert_sent=None
+):
+    """An endpoint as stored. An open incident normally has had its DOWN alert delivered."""
     item = {
         "endpoint_id": "abc",
         "url": "https://example.com/",
         "expected_status": expected,
         "consecutive_failures": failures,
+        "consecutive_successes": successes,
     }
     if incident:
         item["open_incident_start"] = incident
+        if last_alert_sent is None and alerted == "auto":
+            last_alert_sent = incident
+    if last_alert_sent:
+        item["last_alert_sent"] = last_alert_sent
     return item
 
 
 def run(
-    result, failures=0, incident=None, threshold=2, alerts=None, expected=200, controls_ok=True
+    result,
+    failures=0,
+    incident=None,
+    threshold=2,
+    alerts=None,
+    expected=200,
+    controls_ok=True,
+    successes=0,
+    alerted="auto",
+    last_alert_sent=None,
+    recovery_threshold=1,
+    reminder_minutes=0,
 ):
     store, alerts = FakeStore(), alerts or Alerts()
     status = apply_result(
-        endpoint(failures, incident, expected),
+        endpoint(failures, incident, expected, successes, alerted, last_alert_sent),
         result,
         store,
         alerts,
         NOW,
-        Settings(failure_threshold=threshold),
+        Settings(
+            failure_threshold=threshold,
+            recovery_threshold=recovery_threshold,
+            reminder_minutes=reminder_minutes,
+        ),
         controls_ok=controls_ok,
     )
     return status, store, alerts, store.updates[-1]
@@ -176,3 +199,128 @@ def test_a_successful_probe_proves_connectivity_whatever_the_controls_say(result
 def test_a_real_outage_with_healthy_connectivity_is_unaffected():
     status, store, alerts, _ = run(FAIL, failures=1, controls_ok=True)
     assert status == "DOWN" and store.opened and len(alerts.sent) == 1
+
+
+# ---- alert quality: flap damping, retry of a failed alert, reminders ----
+
+# NOW is 12:00; incident and alerts are timestamped relative to it.
+THIRTY, SIXTY, NINETY = "2026-10-02T11:30:00Z", "2026-10-02T11:00:00Z", "2026-10-02T10:30:00Z"
+
+
+@pytest.mark.parametrize(
+    "result, successes, recovery_threshold, closes, events, stored_successes",
+    [
+        pytest.param(OK, 0, 1, True, ["RECOVERED"], 0, id="default: one healthy check recovers"),
+        pytest.param(OK, 0, 2, False, [], 1, id="damped: first healthy check only counts"),
+        pytest.param(OK, 1, 2, True, ["RECOVERED"], 0, id="damped: second healthy check recovers"),
+        pytest.param(SLOW, 1, 2, True, ["RECOVERED"], 0, id="degraded counts as healthy"),
+        pytest.param(OK, 2, 5, False, [], 3, id="damped: still counting towards five"),
+    ],
+)
+def test_flap_damping_needs_consecutive_healthy_checks_before_an_incident_closes(
+    result, successes, recovery_threshold, closes, events, stored_successes
+):
+    _, store, alerts, fields = run(
+        result,
+        failures=3,
+        incident=START,
+        successes=successes,
+        recovery_threshold=recovery_threshold,
+    )
+    assert bool(store.closed) is closes
+    assert [p["event"] for _, p in alerts.sent] == events
+    assert fields["consecutive_successes"] == stored_successes
+    if not closes:
+        assert "open_incident_start" not in fields, "the incident stays exactly as it was"
+
+
+def test_a_failure_in_the_middle_of_recovery_restarts_the_healthy_count():
+    _, store, alerts, fields = run(
+        FAIL, failures=3, incident=START, successes=1, recovery_threshold=2
+    )
+    assert fields["consecutive_successes"] == 0
+    assert not store.opened and alerts.sent == [], "same incident, already alerted: stay quiet"
+
+
+def test_healthy_checks_outside_an_incident_never_accumulate():
+    _, _, _, fields = run(OK, successes=1, recovery_threshold=3)
+    assert fields["consecutive_successes"] == 0
+
+
+@pytest.mark.negative
+def test_a_down_alert_that_failed_to_send_is_retried_on_the_next_failing_check():
+    _, store, alerts, fields = run(FAIL, failures=2, incident=START, alerted=None)
+    assert [p["event"] for _, p in alerts.sent] == ["DOWN"]
+    assert fields["last_alert_sent"] == iso(NOW)
+    assert not store.opened, "it is the same incident, not a new one"
+
+
+@pytest.mark.negative
+def test_a_retry_that_fails_again_records_nothing_and_will_be_tried_again():
+    _, _, alerts, fields = run(
+        FAIL, failures=2, incident=START, alerted=None, alerts=Alerts(succeed=False)
+    )
+    assert len(alerts.sent) == 1 and "last_alert_sent" not in fields
+
+
+def test_an_alert_from_an_earlier_incident_does_not_count_as_delivered_for_this_one():
+    stale = "2026-10-01T08:00:00Z"
+    _, _, alerts, _ = run(FAIL, failures=2, incident=START, last_alert_sent=stale)
+    assert [p["event"] for _, p in alerts.sent] == ["DOWN"]
+
+
+@pytest.mark.parametrize(
+    "reminder_minutes, last_alert, expect_reminder",
+    [
+        (0, NINETY, False),
+        (60, THIRTY, False),
+        (60, SIXTY, True),
+        (60, NINETY, True),
+        (30, THIRTY, True),
+    ],
+)
+def test_reminders_fire_only_when_enabled_and_due(reminder_minutes, last_alert, expect_reminder):
+    _, _, alerts, fields = run(
+        FAIL,
+        failures=5,
+        incident=START,
+        last_alert_sent=last_alert,
+        reminder_minutes=reminder_minutes,
+    )
+    events = [p["event"] for _, p in alerts.sent]
+    assert events == (["REMINDER"] if expect_reminder else [])
+    assert ("last_alert_sent" in fields) is expect_reminder
+
+
+def test_a_reminder_says_the_site_is_still_down_and_restarts_the_clock():
+    _, _, alerts, fields = run(
+        FAIL, failures=5, incident=START, last_alert_sent=NINETY, reminder_minutes=60
+    )
+    [(subject, payload)] = alerts.sent
+    assert subject == "[VigilWatch] STILL DOWN: https://example.com/"
+    assert payload["incident_start"] == START
+    assert fields["last_alert_sent"] == iso(NOW)
+
+
+def test_no_reminder_is_sent_for_a_healthy_check():
+    _, _, alerts, _ = run(
+        OK,
+        failures=5,
+        incident=START,
+        last_alert_sent=NINETY,
+        reminder_minutes=60,
+        recovery_threshold=2,
+    )
+    assert alerts.sent == []
+
+
+def test_no_reminder_while_blind():
+    _, _, alerts, _ = run(
+        FAIL,
+        failures=5,
+        incident=START,
+        last_alert_sent=NINETY,
+        reminder_minutes=60,
+        controls_ok=False,
+    )
+    assert alerts.sent == []

@@ -153,3 +153,36 @@ def test_pathologically_nested_json_is_a_bad_request_not_a_crash(depth):
     event = {"body": "[" * depth + "]" * depth}
     with pytest.raises(BadRequest):
         json_body(event)
+
+
+@pytest.mark.boundary
+@pytest.mark.parametrize(
+    "value, valid", [(0, False), (1, True), (2, True), (10, True), (11, False), (-1, False)]
+)
+def test_recovery_threshold_boundary(monkeypatch, value, valid):
+    monkeypatch.setenv("RECOVERY_THRESHOLD", str(value))
+    if valid:
+        assert Settings.from_env().recovery_threshold == value
+    else:
+        with pytest.raises(SettingsError, match="RECOVERY_THRESHOLD"):
+            Settings.from_env()
+
+
+@pytest.mark.boundary
+@pytest.mark.parametrize(
+    "value, valid", [(-1, False), (0, True), (1, True), (1440, True), (1441, False)]
+)
+def test_reminder_minutes_boundary(monkeypatch, value, valid):
+    monkeypatch.setenv("REMINDER_MINUTES", str(value))
+    if valid:
+        assert Settings.from_env().reminder_minutes == value
+    else:
+        with pytest.raises(SettingsError, match="REMINDER_MINUTES"):
+            Settings.from_env()
+
+
+def test_alert_polish_is_off_by_default(monkeypatch):
+    monkeypatch.delenv("RECOVERY_THRESHOLD", raising=False)
+    monkeypatch.delenv("REMINDER_MINUTES", raising=False)
+    settings = Settings.from_env()
+    assert (settings.recovery_threshold, settings.reminder_minutes) == (1, 0)
