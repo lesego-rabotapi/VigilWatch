@@ -182,3 +182,32 @@ def test_aws_jobs_are_skipped_not_failed_until_the_repository_is_configured(depl
         condition = str(wf["jobs"][name].get("if", ""))
         assert "vars.AWS_DEPLOY_ROLE_ARN" in condition, f"{name} has no configuration guard"
         assert "!=" in condition and "''" in condition, f"{name}: {condition}"
+
+
+# ---- Modules, environments and the prebuilt bundle ---------------------------
+
+
+def test_ci_checks_every_module_and_every_environment(ci):
+    text, _ = ci
+    assert "terraform/modules/*" in text and "terraform/envs/*" in text
+    assert "terraform fmt -check -recursive terraform" in text
+
+
+def test_no_workflow_can_destroy_infrastructure(deploy, ci):
+    for text, _ in (deploy, ci):
+        assert not re.search(r"terraform\s+destroy|-destroy\b", text)
+
+
+def test_deploy_builds_the_bundle_once_and_apply_reuses_it(deploy):
+    _, wf = deploy
+    plan, apply = steps_text(wf["jobs"]["plan"]), steps_text(wf["jobs"]["apply"])
+    assert "scripts/build_bundle.py" in plan
+    assert "bundle_sha256" in plan
+    assert "build_bundle" not in apply, "apply must deploy the bundle the plan was made with"
+
+
+def test_deploy_names_the_environment_and_pins_the_account(deploy):
+    text, wf = deploy
+    assert "terraform/envs/prod" in text
+    assert "allowed_account_ids" in steps_text(wf["jobs"]["plan"])
+    assert "vars.AWS_ACCOUNT_ID" in text
