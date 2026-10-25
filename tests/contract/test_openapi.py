@@ -98,3 +98,23 @@ def test_not_found_error_from_checks_matches_the_error_schema(tables):
     response = get_checks.lambda_handler(event, None)
     assert response["statusCode"] == 404
     _error_schema_validator().validate(json.loads(response["body"]))
+
+
+def test_inconclusive_is_a_documented_status_in_the_payload_and_the_exported_schema():
+    schemas = load_spec()["components"]["schemas"]
+    assert "INCONCLUSIVE" in schemas["Status"]["enum"]
+    assert "INCONCLUSIVE" in schemas["CheckStatus"]["enum"]
+    payload = {
+        "endpoint_id": "0123456789abcdef",
+        "url": "https://example.com/",
+        "status": "INCONCLUSIVE",
+        "uptime_30d": None,
+        "latest_latency_ms": None,
+        "last_check": "2026-10-02T12:00:00Z",
+        "last_alert_sent": None,
+        "recent_latencies": [
+            {"ms": None, "status": "INCONCLUSIVE", "checked_at": "2026-10-02T12:00:00Z"}
+        ],
+        "incidents": [],
+    }
+    jsonschema.validate(payload, build_schema("ChecksResponse"))

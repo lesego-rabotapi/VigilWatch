@@ -47,7 +47,14 @@ def world(tables, monkeypatch):
 
 def test_healthy_run_persists_check_and_updates_endpoint(world):
     summary = world["run"]()
-    assert summary == {"checked": 1, "up": 1, "degraded": 0, "down": 0, "errors": 0}
+    assert summary == {
+        "checked": 1,
+        "up": 1,
+        "degraded": 0,
+        "down": 0,
+        "inconclusive": 0,
+        "errors": 0,
+    }
 
     ep = world["repo"].get_endpoint("a")
     assert ep["status"] == "UP"
@@ -176,7 +183,14 @@ def test_emits_one_emf_record_without_per_endpoint_dimensions(world, capsys):
     assert directive["Namespace"] == "VigilWatch"
     assert directive["Dimensions"] == [["Service"]]
     names = {m["Name"] for m in directive["Metrics"]}
-    assert names == {"ChecksRun", "EndpointsDown", "EndpointsDegraded", "AvgLatencyMs"}
+    assert names == {
+        "ChecksRun",
+        "EndpointsDown",
+        "EndpointsDegraded",
+        "EndpointsInconclusive",
+        "RunsCompleted",
+        "AvgLatencyMs",
+    }
     assert record["ChecksRun"] == 2
     assert record["EndpointsDown"] == 1
     assert "url" not in json.dumps(directive).lower()

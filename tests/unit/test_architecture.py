@@ -30,6 +30,7 @@ LAYER = {
     "timefmt": 0,
     "urlguard": 0,
     "alerts": 1,
+    "controls": 1,
     "endpoints_repo": 1,
     "history_repo": 1,
     "incidents_repo": 1,

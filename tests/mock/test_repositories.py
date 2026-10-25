@@ -77,3 +77,36 @@ def test_the_repo_facade_delegates_to_the_three_repositories(tables):
     assert repo.get_endpoint("a")["url"] == "https://a.example.com/"
     assert len(repo.recent_checks("a")) == 1
     assert len(repo.incidents("a")) == 1
+
+
+def test_inconclusive_checks_are_recorded_but_never_counted_towards_uptime(history_table):
+    repo = HistoryRepository(history_table)
+    repo.record("a", NOW, "UP", 200, 50.0)
+    repo.record("a", NOW + timedelta(minutes=5), "INCONCLUSIVE", None, None)
+    repo.record("a", NOW + timedelta(minutes=10), "INCONCLUSIVE", 503, 40.0)
+    assert [c["status"] for c in repo.recent("a")] == ["INCONCLUSIVE", "INCONCLUSIVE", "UP"]
+    assert repo.uptime_30d("a", NOW) == 100.0, "the two blind checks are not downtime"
+    rollup = history_table.get_item(Key={"endpoint_id": "a", "sk": "D#2026-10-02"})["Item"]
+    assert (int(rollup["total"]), int(rollup["up"])) == (1, 1)
+
+
+def test_an_all_inconclusive_day_has_no_uptime_figure(history_table):
+    repo = HistoryRepository(history_table)
+    repo.record("a", NOW, "INCONCLUSIVE", None, None)
+    assert repo.uptime_30d("a", NOW) is None
+
+
+def test_the_heartbeat_round_trips_and_is_overwritten_by_the_latest_run(history_table):
+    repo = HistoryRepository(history_table)
+    assert repo.heartbeat() is None
+    repo.record_heartbeat(NOW, {"checked": 2, "up": 2, "controls": "not_needed"})
+    repo.record_heartbeat(NOW + timedelta(minutes=5), {"checked": 3, "up": 1, "controls": "failed"})
+    beat = repo.heartbeat()
+    assert beat["last_run"] == "2026-10-02T12:05:00Z"
+    assert (beat["checked"], beat["controls"]) == (3, "failed")
+
+
+def test_the_heartbeat_is_invisible_to_endpoint_queries(history_table):
+    repo = HistoryRepository(history_table)
+    repo.record_heartbeat(NOW, {"checked": 1})
+    assert repo.recent("_system") == [] and IncidentRepository(history_table).list("_system") == []

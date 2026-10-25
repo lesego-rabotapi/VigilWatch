@@ -57,7 +57,9 @@ def endpoint(failures=0, incident=None, expected=200):
     return item
 
 
-def run(result, failures=0, incident=None, threshold=2, alerts=None, expected=200):
+def run(
+    result, failures=0, incident=None, threshold=2, alerts=None, expected=200, controls_ok=True
+):
     store, alerts = FakeStore(), alerts or Alerts()
     status = apply_result(
         endpoint(failures, incident, expected),
@@ -66,6 +68,7 @@ def run(result, failures=0, incident=None, threshold=2, alerts=None, expected=20
         alerts,
         NOW,
         Settings(failure_threshold=threshold),
+        controls_ok=controls_ok,
     )
     return status, store, alerts, store.updates[-1]
 
@@ -135,3 +138,41 @@ def test_a_failed_publish_keeps_the_incident_but_not_the_alert_time():
     assert store.opened, "the incident must be recorded even if the email could not be sent"
     assert len(alerts.sent) == 1
     assert "last_alert_sent" not in fields
+
+
+# ---- the checker must not blame a target for the checker's own connectivity failure --------------
+
+BLIND = [
+    pytest.param(FAIL, 0, None, id="first failure"),
+    pytest.param(FAIL, 1, None, id="would have crossed the threshold"),
+    pytest.param(FAIL, 5, START, id="incident already open"),
+    pytest.param(CheckResult(None, None, "timed out"), 1, None, id="timeout"),
+]
+
+
+@pytest.mark.negative
+@pytest.mark.parametrize("result, failures, incident", BLIND)
+def test_a_down_result_is_inconclusive_when_the_connectivity_checks_failed(
+    result, failures, incident
+):
+    status, store, alerts, fields = run(result, failures, incident, controls_ok=False)
+    assert status == "INCONCLUSIVE"
+    assert not store.opened and not store.closed, "no incident may open or close"
+    assert alerts.sent == [], "no alert about the target"
+    for untouched in ("consecutive_failures", "open_incident_start", "last_alert_sent"):
+        assert untouched not in fields, f"{untouched} must be left exactly as it was"
+    assert fields["status"] == "INCONCLUSIVE"
+    assert store.checks[-1][1] == "INCONCLUSIVE", "the check is still recorded, as inconclusive"
+
+
+@pytest.mark.parametrize("result", [OK, SLOW], ids=["up", "degraded"])
+def test_a_successful_probe_proves_connectivity_whatever_the_controls_say(result):
+    status, _, _, fields = run(result, failures=3, incident=START, controls_ok=False)
+    assert status in ("UP", "DEGRADED")
+    assert fields["consecutive_failures"] == 0
+    assert fields["open_incident_start"] is None, "recovery still closes the incident"
+
+
+def test_a_real_outage_with_healthy_connectivity_is_unaffected():
+    status, store, alerts, _ = run(FAIL, failures=1, controls_ok=True)
+    assert status == "DOWN" and store.opened and len(alerts.sent) == 1
