@@ -15,8 +15,12 @@
     UP: ["pill-up", "Up"],
     DEGRADED: ["pill-degraded", "Degraded"],
     DOWN: ["pill-down", "Down"],
+    INCONCLUSIVE: ["pill-inconclusive", "Inconclusive"],
   };
-  const BAR_CLASS = { UP: "ok", DEGRADED: "warn" };
+  const BAR_CLASS = { UP: "ok", DEGRADED: "warn", INCONCLUSIVE: "na" };
+  const INCONCLUSIVE_NOTE =
+    "VigilWatch could not tell whether your site is up: its own connectivity check failed, " +
+    "so these checks are not counted as downtime.";
 
   function apiBase(config) {
     const base = config && typeof config.apiBase === "string" ? config.apiBase.trim() : "";
@@ -93,6 +97,9 @@
     $("latency-empty").classList.add("hidden");
     $("status-grid").classList.remove("hidden");
     setStatusPill($("status-pill"), data.status);
+    const note = $("status-note");
+    note.textContent = data.status === "INCONCLUSIVE" ? INCONCLUSIVE_NOTE : "";
+    note.classList.toggle("hidden", data.status !== "INCONCLUSIVE");
 
     $("metric-uptime").textContent =
       typeof data.uptime_30d === "number" ? data.uptime_30d.toFixed(2) + "%" : DASH;

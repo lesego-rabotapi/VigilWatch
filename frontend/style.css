@@ -221,6 +221,14 @@ body {
   color: var(--error);
 }
 
+/* Neither up nor down: the checker could not tell. Dashed so it is not read as a verdict. */
+.pill-inconclusive {
+  background: rgba(140, 150, 175, 0.1);
+  border-color: rgba(140, 150, 175, 0.7);
+  border-style: dashed;
+  color: var(--text);
+}
+
 
 .row {
   display: flex;
@@ -252,6 +260,9 @@ body {
 }
 .bar.err {
   background: var(--error);
+}
+.bar.na {
+  background: repeating-linear-gradient(45deg, #5b6482, #5b6482 3px, #3a415a 3px, #3a415a 6px);
 }
 
 /* Table */
