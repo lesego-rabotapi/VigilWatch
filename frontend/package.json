@@ -4,7 +4,7 @@
   "private": true,
   "description": "VigilWatch static dashboard (no build step). Dev dependencies are for tests only.",
   "scripts": {
-    "test": "node --test \"tests/**/*.test.js\""
+    "test": "node --test --experimental-test-coverage --test-coverage-exclude=\"tests/**\" --test-coverage-lines=90 --test-coverage-functions=90 --test-coverage-branches=80 \"tests/**/*.test.js\""
   },
   "engines": {
     "node": ">=22"

@@ -62,7 +62,10 @@ function setup({ config = { apiBase: API }, responses = [] } = {}) {
   return {
     window, $, calls, timers, cleared, errors, submit,
     start: () => initApp(window),
-    done: () => { console.error = originalError; },
+    done: () => {
+      console.error = originalError;
+      window.close(); // clears any timers so the test process can exit
+    },
   };
 }
 
@@ -188,10 +191,14 @@ test("loaded as a plain browser script it starts itself without a module system"
   window.eval(fs.readFileSync(path.join(__dirname, "../view.js"), "utf8"));
   window.eval(fs.readFileSync(path.join(__dirname, "../app.js"), "utf8"));
 
-  window.document.getElementById("endpoint-url").value = "https://example.com";
-  window.document
-    .getElementById("monitor-form")
-    .dispatchEvent(new window.Event("submit", { cancelable: true, bubbles: true }));
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.deepEqual(calls, [`${API}/register`]);
+  try {
+    window.document.getElementById("endpoint-url").value = "https://example.com";
+    window.document
+      .getElementById("monitor-form")
+      .dispatchEvent(new window.Event("submit", { cancelable: true, bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepEqual(calls, [`${API}/register`]);
+  } finally {
+    window.close(); // the poller started a real 15 s interval; closing clears it
+  }
 });

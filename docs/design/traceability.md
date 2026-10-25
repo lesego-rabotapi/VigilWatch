@@ -6,7 +6,7 @@ Stories are in [requirements.md](requirements.md).
 
 | Requirement | Layers | Tests |
 |---|---|---|
-| **VW-001** Register a URL to monitor | bdd, e2e, mock | `tests/e2e/test_smoke.py`<br>`tests/features/monitoring.feature`<br>`tests/mock/test_input_boundaries.py`<br>`tests/mock/test_register_endpoint.py`<br>`tests/mock/test_repo.py`<br>`tests/mock/test_repositories.py` |
+| **VW-001** Register a URL to monitor | bdd, e2e, frontend, mock | `frontend/tests/app.test.js`<br>`tests/e2e/test_smoke.py`<br>`tests/features/monitoring.feature`<br>`tests/mock/test_input_boundaries.py`<br>`tests/mock/test_register_endpoint.py`<br>`tests/mock/test_repo.py`<br>`tests/mock/test_repositories.py` |
 | **VW-002** Refuse unsafe URLs | bdd, e2e, mock, unit | `tests/e2e/test_smoke.py`<br>`tests/features/monitoring.feature`<br>`tests/mock/test_error_codes.py`<br>`tests/mock/test_input_boundaries.py`<br>`tests/mock/test_register_endpoint.py`<br>`tests/unit/test_boundaries.py`<br>`tests/unit/test_probe.py`<br>`tests/unit/test_urlguard.py` |
 | **VW-003** Bound the number of monitored endpoints | bdd, infrastructure, mock, unit | `terraform/tests/vigilwatch.tftest.hcl`<br>`tests/features/monitoring.feature`<br>`tests/mock/test_error_codes.py`<br>`tests/mock/test_input_boundaries.py`<br>`tests/mock/test_register_endpoint.py`<br>`tests/mock/test_repo.py`<br>`tests/mock/test_repositories.py`<br>`tests/unit/test_boundaries.py` |
 | **VW-004** Check endpoints on a schedule | bdd, infrastructure, mock | `terraform/tests/vigilwatch.tftest.hcl`<br>`tests/features/monitoring.feature`<br>`tests/mock/test_uptime_check.py` |
@@ -19,11 +19,11 @@ Stories are in [requirements.md](requirements.md).
 | **VW-011** Stable dashboard payload | bdd, contract, e2e, frontend | `frontend/tests/view.test.js`<br>`tests/contract/test_checks_contract.py`<br>`tests/contract/test_openapi.py`<br>`tests/e2e/test_smoke.py`<br>`tests/features/status.feature` |
 | **VW-012** Clear errors for lookups | bdd, contract, e2e, mock, unit | `tests/contract/test_checks_contract.py`<br>`tests/contract/test_openapi.py`<br>`tests/e2e/test_smoke.py`<br>`tests/features/status.feature`<br>`tests/mock/test_error_codes.py`<br>`tests/unit/test_api_errors.py` |
 | **VW-013** Bounded storage | infrastructure, mock | `terraform/tests/vigilwatch.tftest.hcl`<br>`tests/mock/test_repo.py` |
-| **VW-014** Safe, readable dashboard | frontend | `frontend/tests/view.test.js` |
+| **VW-014** Safe, readable dashboard | frontend | `frontend/tests/app.test.js`<br>`frontend/tests/view.test.js` |
 | **VW-015** Observe the monitor itself | infrastructure, mock | `terraform/tests/vigilwatch.tftest.hcl`<br>`tests/mock/test_uptime_check.py` |
 | **VW-016** Least privilege and private hosting | infrastructure | `terraform/tests/vigilwatch.tftest.hcl` |
-| **VW-017** Safe, gated deployment | policy, unit | `tests/test_e2e_policy.py`<br>`tests/test_workflows.py`<br>`tests/unit/test_e2e_harness.py` |
+| **VW-017** Safe, gated deployment | policy, unit | `tests/test_e2e_policy.py`<br>`tests/test_quality_gates.py`<br>`tests/test_workflows.py`<br>`tests/unit/test_e2e_harness.py` |
 | **VW-018** Clean repository | policy | `tests/test_repo_hygiene.py`<br>`tests/test_taxonomy.py` |
-| **VW-019** Honest documentation | policy, unit | `tests/test_design_docs.py`<br>`tests/test_docs.py`<br>`tests/unit/test_architecture.py`<br>`tests/unit/test_test_mix.py` |
+| **VW-019** Honest documentation | policy, unit | `tests/test_design_docs.py`<br>`tests/test_docs.py`<br>`tests/test_quality_gates.py`<br>`tests/unit/test_architecture.py`<br>`tests/unit/test_test_mix.py` |
 | **VW-020** Efficient warm invocations | mock, unit | `tests/mock/test_client_reuse.py`<br>`tests/unit/test_aws_cache.py` |
 | **VW-021** Traceable logs | mock, unit | `tests/mock/test_request_id_logging.py`<br>`tests/unit/test_api_errors.py`<br>`tests/unit/test_logs.py` |
