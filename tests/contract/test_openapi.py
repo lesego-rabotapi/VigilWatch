@@ -34,8 +34,8 @@ def test_spec_documents_exactly_the_routes_the_api_serves():
 @pytest.mark.parametrize(
     "path, method, statuses",
     [
-        ("/register", "post", {"200", "201", "400", "429"}),
-        ("/checks", "get", {"200", "400", "404"}),
+        ("/register", "post", {"200", "201", "400", "429", "500"}),
+        ("/checks", "get", {"200", "400", "404", "500"}),
     ],
 )
 def test_every_status_the_handlers_can_return_is_documented(path, method, statuses):

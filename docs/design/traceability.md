@@ -7,8 +7,8 @@ Stories are in [requirements.md](requirements.md).
 | Requirement | Layers | Tests |
 |---|---|---|
 | **VW-001** Register a URL to monitor | bdd, e2e, mock | `tests/e2e/test_smoke.py`<br>`tests/features/monitoring.feature`<br>`tests/mock/test_register_endpoint.py`<br>`tests/mock/test_repo.py`<br>`tests/mock/test_repositories.py` |
-| **VW-002** Refuse unsafe URLs | bdd, e2e, mock, unit | `tests/e2e/test_smoke.py`<br>`tests/features/monitoring.feature`<br>`tests/mock/test_register_endpoint.py`<br>`tests/unit/test_probe.py`<br>`tests/unit/test_urlguard.py` |
-| **VW-003** Bound the number of monitored endpoints | bdd, infrastructure, mock | `terraform/tests/vigilwatch.tftest.hcl`<br>`tests/features/monitoring.feature`<br>`tests/mock/test_register_endpoint.py`<br>`tests/mock/test_repo.py`<br>`tests/mock/test_repositories.py` |
+| **VW-002** Refuse unsafe URLs | bdd, e2e, mock, unit | `tests/e2e/test_smoke.py`<br>`tests/features/monitoring.feature`<br>`tests/mock/test_error_codes.py`<br>`tests/mock/test_register_endpoint.py`<br>`tests/unit/test_probe.py`<br>`tests/unit/test_urlguard.py` |
+| **VW-003** Bound the number of monitored endpoints | bdd, infrastructure, mock | `terraform/tests/vigilwatch.tftest.hcl`<br>`tests/features/monitoring.feature`<br>`tests/mock/test_error_codes.py`<br>`tests/mock/test_register_endpoint.py`<br>`tests/mock/test_repo.py`<br>`tests/mock/test_repositories.py` |
 | **VW-004** Check endpoints on a schedule | bdd, infrastructure, mock | `terraform/tests/vigilwatch.tftest.hcl`<br>`tests/features/monitoring.feature`<br>`tests/mock/test_uptime_check.py` |
 | **VW-005** Classify health | bdd, mock, unit | `tests/features/monitoring.feature`<br>`tests/mock/test_uptime_check.py`<br>`tests/unit/test_status.py` |
 | **VW-006** Probe politely and safely | unit | `tests/unit/test_probe.py` |
@@ -17,7 +17,7 @@ Stories are in [requirements.md](requirements.md).
 | **VW-009** Record incidents | bdd, mock, unit | `tests/features/alerting.feature`<br>`tests/mock/test_repo.py`<br>`tests/mock/test_repositories.py`<br>`tests/mock/test_uptime_check.py`<br>`tests/unit/test_state_machine.py` |
 | **VW-010** Alert once, then confirm recovery | bdd, mock, unit | `tests/features/alerting.feature`<br>`tests/mock/test_uptime_check.py`<br>`tests/unit/test_state_machine.py` |
 | **VW-011** Stable dashboard payload | bdd, contract, e2e, frontend | `frontend/tests/view.test.js`<br>`tests/contract/test_checks_contract.py`<br>`tests/contract/test_openapi.py`<br>`tests/e2e/test_smoke.py`<br>`tests/features/status.feature` |
-| **VW-012** Clear errors for lookups | bdd, contract, e2e | `tests/contract/test_checks_contract.py`<br>`tests/contract/test_openapi.py`<br>`tests/e2e/test_smoke.py`<br>`tests/features/status.feature` |
+| **VW-012** Clear errors for lookups | bdd, contract, e2e, mock, unit | `tests/contract/test_checks_contract.py`<br>`tests/contract/test_openapi.py`<br>`tests/e2e/test_smoke.py`<br>`tests/features/status.feature`<br>`tests/mock/test_error_codes.py`<br>`tests/unit/test_api_errors.py` |
 | **VW-013** Bounded storage | infrastructure, mock | `terraform/tests/vigilwatch.tftest.hcl`<br>`tests/mock/test_repo.py` |
 | **VW-014** Safe, readable dashboard | frontend | `frontend/tests/view.test.js` |
 | **VW-015** Observe the monitor itself | infrastructure, mock | `terraform/tests/vigilwatch.tftest.hcl`<br>`tests/mock/test_uptime_check.py` |
@@ -26,4 +26,4 @@ Stories are in [requirements.md](requirements.md).
 | **VW-018** Clean repository | policy | `tests/test_repo_hygiene.py`<br>`tests/test_taxonomy.py` |
 | **VW-019** Honest documentation | policy, unit | `tests/test_design_docs.py`<br>`tests/test_docs.py`<br>`tests/unit/test_architecture.py` |
 | **VW-020** Efficient warm invocations | mock, unit | `tests/mock/test_client_reuse.py`<br>`tests/unit/test_aws_cache.py` |
-| **VW-021** Traceable logs | mock, unit | `tests/mock/test_request_id_logging.py`<br>`tests/unit/test_logs.py` |
+| **VW-021** Traceable logs | mock, unit | `tests/mock/test_request_id_logging.py`<br>`tests/unit/test_api_errors.py`<br>`tests/unit/test_logs.py` |

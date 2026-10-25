@@ -20,8 +20,8 @@ def response(status_code: int, body: dict) -> dict:
     }
 
 
-def error(status_code: int, message: str) -> dict:
-    return response(status_code, {"message": message})
+def error(status_code: int, message: str, code: str, **extra) -> dict:
+    return response(status_code, {"message": message, "code": code, **extra})
 
 
 def json_body(event: dict) -> dict:

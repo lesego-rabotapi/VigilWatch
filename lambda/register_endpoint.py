@@ -2,17 +2,18 @@
 
 Body: {"url": "https://example.com", "expected_status": 200}
 201 with the dashboard payload (after an immediate first check) for a new URL,
-200 for a URL that is already monitored.
+200 for a URL that is already monitored. Errors are raised and mapped by `api_handler`.
 """
 
 import os
 from datetime import UTC, datetime
 
 from common import logs
+from common.api import api_handler
 from common.checker import Settings, apply_result, make_publisher, probe
-from common.http import BadRequest, error, json_body, response
-from common.repo import EndpointLimitReached, Repo
-from common.urlguard import UnresolvableHost, UnsafeURL, default_resolver, endpoint_id, validate
+from common.http import BadRequest, json_body, response
+from common.repo import Repo
+from common.urlguard import default_resolver, endpoint_id, validate
 from common.view import build_view
 
 logger = logs.get_logger(__name__)
@@ -31,29 +32,21 @@ def _expected_status(body: dict) -> int:
     return value
 
 
+@api_handler
 def lambda_handler(event, context):
-    logs.bind(context)
-    try:
-        body = json_body(event)
-        raw_url = body.get("url") or body.get("endpoint")
-        if not isinstance(raw_url, str) or not raw_url.strip():
-            raise BadRequest("'url' is required")
-        expected_status = _expected_status(body)
-        url = validate(raw_url, resolver=resolver)
-    except UnresolvableHost:
-        return error(400, "Could not resolve that host name")
-    except (BadRequest, UnsafeURL) as exc:
-        return error(400, str(exc))
+    body = json_body(event)
+    raw_url = body.get("url") or body.get("endpoint")
+    if not isinstance(raw_url, str) or not raw_url.strip():
+        raise BadRequest("'url' is required")
+    expected_status = _expected_status(body)
+    url = validate(raw_url, resolver=resolver)
 
     repo = Repo()
     now = utcnow()
     max_endpoints = int(os.environ.get("MAX_ENDPOINTS", "10"))
-    try:
-        endpoint, created = repo.put_endpoint(
-            endpoint_id(url), url, now, expected_status=expected_status, max_endpoints=max_endpoints
-        )
-    except EndpointLimitReached:
-        return error(429, f"Monitoring limit reached ({max_endpoints} endpoints)")
+    endpoint, created = repo.put_endpoint(
+        endpoint_id(url), url, now, expected_status=expected_status, max_endpoints=max_endpoints
+    )
 
     if created:
         settings = Settings.from_env()

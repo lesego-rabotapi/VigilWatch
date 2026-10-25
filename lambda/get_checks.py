@@ -2,10 +2,11 @@
 
 from datetime import UTC, datetime
 
-from common import logs
-from common.http import error, query_param, response
+from common.api import api_handler
+from common.errors import NotFoundError, ValidationError
+from common.http import query_param, response
 from common.repo import Repo
-from common.urlguard import UnsafeURL, endpoint_id, normalize
+from common.urlguard import endpoint_id, normalize
 from common.view import build_view
 
 
@@ -13,19 +14,16 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+@api_handler
 def lambda_handler(event, context):
-    logs.bind(context)
     raw_url = query_param(event, "url")
     if not raw_url:
-        return error(400, "'url' query parameter is required")
-    try:
-        # Lookup only: no DNS resolution needed, the id is derived from the normalized URL.
-        url = normalize(raw_url)
-    except UnsafeURL as exc:
-        return error(400, str(exc))
+        raise ValidationError("'url' query parameter is required")
+    # Lookup only: no DNS resolution needed, the id is derived from the normalized URL.
+    url = normalize(raw_url)
 
     repo = Repo()
     endpoint = repo.get_endpoint(endpoint_id(url))
     if endpoint is None:
-        return error(404, "This URL is not being monitored. Register it first.")
+        raise NotFoundError("This URL is not being monitored. Register it first.")
     return response(200, build_view(repo, endpoint, utcnow()))

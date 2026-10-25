@@ -54,6 +54,7 @@ def _emf(summary: dict, latencies: list[float], now: datetime) -> str:
 
 
 def lambda_handler(event, context):
+    logs.bind(context)
     settings = Settings.from_env()
     repo = Repo()
     publish = make_publisher()
