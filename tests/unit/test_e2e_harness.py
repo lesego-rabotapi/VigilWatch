@@ -148,4 +148,4 @@ def test_a_read_only_proxy_may_still_read_and_preflight(echo_server):
 @pytest.mark.negative
 def test_a_connection_failure_is_a_proxy_error_not_a_raw_urllib_exception():
     with pytest.raises(ProxyError, match="could not reach"):
-        ApiProxy("http://127.0.0.1:1", timeout=0.5).checks("https://example.com/")
+        ApiProxy("http://127.0.0.1:1", timeout=0.2).checks("https://example.com/")

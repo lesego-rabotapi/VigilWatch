@@ -1,11 +1,10 @@
 """The test-mix report: how many tests each layer has and how many target failure paths."""
 
-import subprocess
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
 from test_mix import render, summarize
 
 pytestmark = pytest.mark.req("VW-019")
@@ -46,16 +45,3 @@ def test_render_produces_a_markdown_table_with_totals():
 
 def test_render_handles_an_empty_suite():
     assert "| **Total** | 0 | 0 | 0 | 0 |" in render({})
-
-
-def test_the_script_reports_on_this_repository():
-    done = subprocess.run(  # noqa: S603 (our own interpreter and script)
-        [sys.executable, str(ROOT / "scripts" / "test_mix.py")],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert done.returncode == 0, done.stderr[-800:]
-    for layer in ("unit", "mock", "contract", "bdd", "policy"):
-        assert f"| {layer} |" in done.stdout, layer

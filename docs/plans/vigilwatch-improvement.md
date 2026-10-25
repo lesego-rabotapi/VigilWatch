@@ -73,7 +73,7 @@ Lesson 5 "deploy despite failing tests" (gates stay strict); HATEOAS (two routes
 | 0 | Toolchain install and baseline | none | S | no | ✅ COMPLETE |
 | 1 | Land PR #4 and repo guardrails | 0 | S | no | 🔄 IN PROGRESS (1.2, 1.3 done and pushed; 1.1, 1.4 need you) |
 | 2 | Requirements, design and traceability | 1 | M | no | ✅ COMPLETE |
-| 3 | Quality foundation (taxonomy, SOLID, cold start, errors, E2E harness) | 2 | L | no | ⏳ PENDING |
+| 3 | Quality foundation (taxonomy, SOLID, cold start, errors, E2E harness) | 2 | L | no | ✅ COMPLETE |
 | 4 | Honest checker, alert state machine, atomic cap | 3 | M | no | ⏳ PENDING |
 | 5 | Terraform modules and environments | 3 | L | no | ⏳ PENDING |
 | 6 | Pipeline, promotion, rollback, drift, gate integrity | 5 | L | partly (runs) | ⏳ PENDING |
@@ -361,3 +361,11 @@ prove that the policy, package-verification and gate-integrity checks fail when 
 | 2026-10-24 | 2.3 | Four sequence diagrams with business-error and unexpected-error paths; all four parse and render in Mermaid 11 (checked in a browser) | `tests/test_design_docs.py` |
 | 2026-10-24 | 2.4 | 33 Gherkin scenarios (monitoring, alerting, status) run against the real handlers on moto; a threshold mutation fails 2 of them | `tests/step_defs`, `tests/features` |
 | 2026-10-24 | 2 gate | 280 tests pass, coverage 94.26%, ruff clean, no uncovered requirement | local run |
+| 2026-10-25 | 3.1 | One layer per test, enforced at collection; moto tests moved to `tests/mock`; `pytest -m unit` never imports moto | `tests/test_taxonomy.py` |
+| 2026-10-25 | 3.2 | boto3 clients created once per execution environment (3 invocations built 3 resources, now 1); JSON logs with request IDs; ADR 0008 records Powertools, native JSON logs and SnapStart as not adopted. **No speed-up is claimed: it is unmeasured until task 9.3 runs** | `tests/mock/test_client_reuse.py`, `tests/unit/test_logs.py` |
+| 2026-10-25 | 3.3 | `repo.py` and `checker.py` split into single-purpose modules with enforced dependency layers; the alert state machine is unit-tested with in-memory fakes; no behaviour change (all earlier tests passed untouched) | `tests/unit/test_architecture.py`, `test_state_machine.py` |
+| 2026-10-25 | 3.4 | Typed `AppError`s, stable error `code`, JSON 500 that never leaks internals (**one deliberate behaviour change**: unexpected failures used to be a bare gateway error) | `tests/unit/test_api_errors.py`, `tests/mock/test_error_codes.py` |
+| 2026-10-25 | 3.5 | Boundary and hostile-input tests found two real defects, both fixed: unvalidated settings, and a deeply nested JSON body that became a 500 (and could trip the `api-5xx` alarm). Handler-level injection and boundary tests already passed. Test mix is reported in CI | `tests/unit/test_boundaries.py`, `scripts/test_mix.py` |
+| 2026-10-25 | 3.6 | E2E harness: `--env` local/dev/prod, addresses only from environment variables, proxies, read-only prod. Run against the local stack: `local` 6 passed; `prod` 4 smoke passed and 2 write tests skipped | `tests/unit/test_e2e_harness.py`, `tests/test_e2e_policy.py` |
+| 2026-10-25 | 3.7 | `app.js` is now tested (it was invisible to coverage). Gates: Python 90% (actual 96.6%), frontend lines 90 / functions 90 / branches 80 (actual 97.5 / 100 / 85.5), proven to fail when unmet | `tests/test_quality_gates.py`, `frontend/tests/app.test.js` |
+| 2026-10-25 | 3 gate | 486 pytest tests, 18 frontend tests, 10 terraform tests; unit layer 179 tests in 4.2 s; ruff clean | local run |

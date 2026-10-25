@@ -76,7 +76,7 @@ def test_timeout_is_an_error(server):
 
 
 def test_connection_refused_is_an_error():
-    result = probe("http://127.0.0.1:1/", timeout=0.5, validator=no_guard)
+    result = probe("http://127.0.0.1:1/", timeout=0.2, validator=no_guard)
     assert result.status_code is None
     assert result.error
 
