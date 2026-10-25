@@ -1,4 +1,4 @@
-# req: VW-003 VW-004 VW-013 VW-015 VW-016
+# req: VW-003 VW-004 VW-013 VW-015 VW-016 VW-022
 # Infrastructure tests. The AWS provider is mocked: nothing is created and no
 # credentials are needed. Run: terraform init -backend=false && terraform test
 
@@ -236,7 +236,7 @@ run "alerting" {
     error_message = "every alarm must notify the alert topic"
   }
   assert {
-    condition     = toset(keys(aws_cloudwatch_metric_alarm.alarm)) == toset(["checker-errors", "checker-not-running", "checker-dlq", "api-5xx"])
+    condition     = toset(keys(aws_cloudwatch_metric_alarm.alarm)) == toset(["checker-errors", "checker-not-running", "checker-dlq", "checker-blind", "api-5xx"])
     error_message = "expected alarms are missing"
   }
 }
@@ -276,4 +276,51 @@ run "rejects_unbounded_endpoint_cap" {
     max_endpoints = 500
   }
   expect_failures = [var.max_endpoints]
+}
+
+run "honest_checker" {
+  command = apply
+
+  assert {
+    condition     = strcontains(aws_lambda_function.fn["uptime_check"].environment[0].variables["CONTROL_URLS"], "https://${aws_cloudfront_distribution.frontend.domain_name}/healthz.txt")
+    error_message = "the checker must probe this deployment's own health file as a connectivity control"
+  }
+  assert {
+    condition     = alltrue([for u in var.extra_control_urls : strcontains(aws_lambda_function.fn["uptime_check"].environment[0].variables["CONTROL_URLS"], u)])
+    error_message = "independent control URLs must reach the checker"
+  }
+  assert {
+    condition     = aws_s3_object.healthz.key == "healthz.txt" && aws_s3_object.healthz.content_type == "text/plain"
+    error_message = "the dashboard bucket must serve a health file for the control probe"
+  }
+  assert {
+    condition = (aws_cloudwatch_metric_alarm.alarm["checker-blind"].metric_name == "ControlProbeFailed"
+      && aws_cloudwatch_metric_alarm.alarm["checker-blind"].namespace == "VigilWatch"
+    && aws_cloudwatch_metric_alarm.alarm["checker-blind"].dimensions["Service"] == "uptime-check")
+    error_message = "a blind checker must raise an alarm from the ControlProbeFailed metric"
+  }
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.alarm["checker-blind"].datapoints_to_alarm == 2 && aws_cloudwatch_metric_alarm.alarm["checker-blind"].evaluation_periods == 3
+    error_message = "one control blip must not alarm: require 2 of 3 periods"
+  }
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.alarm["checker-blind"].treat_missing_data == "notBreaching"
+    error_message = "the metric is only emitted when connectivity was checked, so missing data is healthy"
+  }
+}
+
+run "rejects_insecure_or_excessive_control_urls" {
+  command = plan
+  variables {
+    extra_control_urls = ["ftp://insecure.example.com/"]
+  }
+  expect_failures = [var.extra_control_urls]
+}
+
+run "rejects_too_many_control_urls" {
+  command = plan
+  variables {
+    extra_control_urls = ["https://a.example.com/", "https://b.example.com/", "https://c.example.com/", "https://d.example.com/", "https://e.example.com/"]
+  }
+  expect_failures = [var.extra_control_urls]
 }
