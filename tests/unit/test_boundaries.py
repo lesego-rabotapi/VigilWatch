@@ -186,3 +186,22 @@ def test_alert_polish_is_off_by_default(monkeypatch):
     monkeypatch.delenv("REMINDER_MINUTES", raising=False)
     settings = Settings.from_env()
     assert (settings.recovery_threshold, settings.reminder_minutes) == (1, 0)
+
+
+@pytest.mark.negative
+@pytest.mark.parametrize("value", ["yes", "1", "", "TRUE ", "enabled"])
+def test_metrics_enabled_accepts_only_true_or_false(monkeypatch, value):
+    monkeypatch.setenv("METRICS_ENABLED", value)
+    with pytest.raises(SettingsError, match="METRICS_ENABLED"):
+        Settings.from_env()
+
+
+@pytest.mark.parametrize("value, expected", [("true", True), ("false", False), ("False", False)])
+def test_metrics_enabled_values(monkeypatch, value, expected):
+    monkeypatch.setenv("METRICS_ENABLED", value)
+    assert Settings.from_env().metrics_enabled is expected
+
+
+def test_metrics_are_on_by_default(monkeypatch):
+    monkeypatch.delenv("METRICS_ENABLED", raising=False)
+    assert Settings.from_env().metrics_enabled is True

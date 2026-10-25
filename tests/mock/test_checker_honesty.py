@@ -229,3 +229,11 @@ def test_the_blind_metric_is_absent_when_connectivity_never_needed_checking(worl
     names = {m["Name"] for m in emf(capsys)["_aws"]["CloudWatchMetrics"][0]["Metrics"]}
     assert "ControlProbeFailed" not in names
     assert "RunsCompleted" in names
+
+
+def test_metrics_can_be_switched_off_without_losing_the_heartbeat(world, capsys, monkeypatch):
+    """A second environment would exceed the 10 free custom metrics, so it can stay silent."""
+    monkeypatch.setenv("METRICS_ENABLED", "false")
+    world["run"]()
+    assert "_aws" not in capsys.readouterr().out
+    assert world["repo"].heartbeat()["checked"] == 2
