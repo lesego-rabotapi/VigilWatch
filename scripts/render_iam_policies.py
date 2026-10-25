@@ -1,0 +1,70 @@
+"""Render the exact IAM policy of each Lambda function from the Terraform compute module.
+
+The documents are built from names and variables only, so Terraform can print them without an AWS
+account or credentials. The enforcement test (tests/mock/test_iam_policies.py) attaches them to IAM
+users in moto and runs the handlers as those users.
+
+    python scripts/render_iam_policies.py            # prints {function: policy}
+"""
+
+import json
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+MODULE = ROOT / "terraform" / "modules" / "compute"
+
+# Match the names and ARNs the moto fixtures use (account 123456789012 is moto's default).
+DEFAULTS = {
+    "name_prefix": "vigilwatch",
+    "aws_region": "af-south-1",
+    "account_id": "123456789012",
+    "bundle_path": "bundle.zip",
+    "bundle_sha256": "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
+    "endpoints_table": "vigilwatch-endpoints",
+    "history_table": "vigilwatch-history",
+    "endpoints_table_arn": "arn:aws:dynamodb:af-south-1:123456789012:table/vigilwatch-endpoints",
+    "history_table_arn": "arn:aws:dynamodb:af-south-1:123456789012:table/vigilwatch-history",
+    "sns_topic_arn": "arn:aws:sns:af-south-1:123456789012:vigilwatch-alerts",
+}
+
+
+def available() -> bool:
+    return shutil.which("terraform") is not None
+
+
+def _terraform(*args: str, stdin: str | None = None) -> str:
+    result = subprocess.run(  # noqa: S603 - fixed argument list, no shell
+        ["terraform", *args],  # noqa: S607
+        cwd=MODULE,
+        input=stdin,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"terraform {' '.join(args[:2])} failed:\n{result.stdout}\n{result.stderr}"
+        )
+    return result.stdout
+
+
+def render(overrides: dict | None = None) -> dict[str, dict]:
+    values = {**DEFAULTS, **(overrides or {})}
+    if not (MODULE / ".terraform").exists():
+        _terraform("init", "-backend=false", "-input=false", "-no-color")
+    flags = [f"-var={name}={value}" for name, value in values.items()]
+    printed = _terraform(
+        "console", "-no-color", *flags, stdin="jsonencode(local.function_policies)\n"
+    )
+    # The console prints the value as a quoted string literal, which is also valid JSON.
+    documents = json.loads(json.loads(printed.strip()))
+    return {name: json.loads(document) for name, document in documents.items()}
+
+
+if __name__ == "__main__":
+    if not available():
+        sys.exit("terraform is not installed")
+    print(json.dumps(render(), indent=2))

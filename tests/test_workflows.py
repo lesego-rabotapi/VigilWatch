@@ -211,3 +211,14 @@ def test_deploy_names_the_environment_and_pins_the_account(deploy):
     assert "terraform/envs/prod" in text
     assert "allowed_account_ids" in steps_text(wf["jobs"]["plan"])
     assert "vars.AWS_ACCOUNT_ID" in text
+
+
+def test_the_python_job_installs_terraform_for_the_policy_enforcement_tests(ci):
+    """tests/mock/test_iam_policies.py renders the real policies with terraform: no skipping."""
+    _, wf = ci
+    steps = wf["jobs"]["python"]["steps"]
+    uses = [s.get("uses", "") for s in steps]
+    setup = next(i for i, u in enumerate(uses) if u.startswith("hashicorp/setup-terraform"))
+    pytest_step = next(i for i, s in enumerate(steps) if "pytest" in str(s.get("run", "")))
+    assert setup < pytest_step, "terraform must be installed before pytest runs"
+    assert steps[setup]["with"]["terraform_wrapper"] is False, "the wrapper adds output to stdout"

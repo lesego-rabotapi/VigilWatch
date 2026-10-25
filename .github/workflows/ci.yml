@@ -24,6 +24,11 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-dev.txt
       - run: pip install -r requirements-dev.txt
+      # The IAM enforcement tests render the real policies with `terraform console`.
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest --cov --cov-report=term --cov-report=xml

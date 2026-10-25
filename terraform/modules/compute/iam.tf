@@ -25,7 +25,7 @@ locals {
       {
         Sid      = "ReadAndUpdateEndpoints"
         Effect   = "Allow"
-        Action   = ["dynamodb:Scan", "dynamodb:GetItem", "dynamodb:UpdateItem"]
+        Action   = ["dynamodb:Scan", "dynamodb:UpdateItem"]
         Resource = [var.endpoints_table_arn]
       },
       {
