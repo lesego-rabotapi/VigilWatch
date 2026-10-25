@@ -120,4 +120,4 @@ def test_the_command_line_prints_a_manifest_terraform_can_read(tmp_path, capsys)
     printed = json.loads(capsys.readouterr().out)
     assert printed["bundle_path"] == str(out)
     assert printed["bundle_sha256"] == build_bundle.build(src, tmp_path / "c.zip").base64sha256
-    assert json.loads(out.with_suffix(".json").read_text()) == printed
+    assert json.loads(out.with_name("b.tfvars.json").read_text()) == printed
