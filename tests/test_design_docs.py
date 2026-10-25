@@ -53,3 +53,10 @@ def test_diagrams_only_name_modules_that_exist():
     assert modules, "diagrams should reference the shared modules"
     for module in modules:
         assert (ROOT / "lambda" / "common" / f"{module}.py").exists(), module
+
+
+def test_runtime_decisions_adr_records_what_was_deliberately_not_adopted():
+    text = (ROOT / "docs" / "adr" / "0008-runtime-patterns.md").read_text(encoding="utf-8")
+    for term in ("Powertools", "SnapStart", "native JSON", "NEEDS-AWS", "cached"):
+        assert term in text, f"ADR 0008 does not discuss {term}"
+    assert "Status:" in text
