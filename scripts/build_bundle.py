@@ -69,17 +69,29 @@ def _from_commit(source: Path, rev: str) -> dict[str, bytes]:
     }
 
 
+def _require_dir(source: Path) -> None:
+    if not source.is_dir():
+        raise FileNotFoundError(f"source directory not found: {source}")
+
+
 def _uncommitted(source: Path) -> list[str]:
     """Modified, staged or untracked files under source: what a build of HEAD would leave out."""
+    _require_dir(source)
     status = _git("status", "--porcelain=v1", "-z", "--untracked-files=all", "--", ".", cwd=source)
-    return sorted(entry[3:] for entry in status.decode().split("\0") if entry)
+    records, paths = iter(status.decode().split("\0")), []
+    for record in records:
+        if not record:
+            continue
+        paths.append(record[3:])  # "XY path"
+        if record[0] in "RC":  # a rename or copy: the next record is the bare original path
+            paths.append(next(records))
+    return sorted(paths)
 
 
 def build(source: Path, out: Path, rev: str | None = None) -> Manifest:
     """Bundle source as committed in rev, or as it is on disk when rev is None."""
     source, out = Path(source), Path(out).resolve()
-    if not source.is_dir():
-        raise FileNotFoundError(f"source directory not found: {source}")
+    _require_dir(source)
     files = _from_commit(source, rev) if rev else _from_worktree(source)
     if not files:
         raise ValueError(f"nothing to package in {source}")
