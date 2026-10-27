@@ -194,7 +194,8 @@ def test_the_command_line_builds_the_checked_out_commit_by_default(tmp_path, cap
 
 
 @pytest.mark.negative
-def test_a_source_outside_a_repository_cannot_be_built_from_a_commit(tmp_path):
+def test_a_source_outside_a_repository_cannot_be_built_from_a_commit(tmp_path, monkeypatch):
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))  # whatever encloses tmp_path
     with pytest.raises(ValueError, match="git"):
         build_bundle.build(make_tree(tmp_path), tmp_path / "b.zip", rev="HEAD")
 

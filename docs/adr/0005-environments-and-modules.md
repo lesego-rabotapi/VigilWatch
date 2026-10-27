@@ -34,7 +34,9 @@ infrastructure code.
 
 **Build once.** `scripts/build_bundle.py` produces a byte-reproducible zip and its hash. Terraform deploys
 that file (`bundle_path`, `bundle_sha256`) rather than zipping at plan time, so production receives the exact
-bytes development ran. A promotion that rebuilt could ship something nobody tested.
+bytes development ran. A promotion that rebuilt could ship something nobody tested. The files are read from the
+commit (`HEAD` unless `--rev` says otherwise), not from disk, so a Windows checkout with CRLF line endings or an
+untracked file in `lambda/` builds the same bytes as CI.
 
 **Sizing for one free tier.**
 
