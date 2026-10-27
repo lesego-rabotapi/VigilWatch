@@ -174,3 +174,38 @@ def test_environment_tfvars_are_committed_not_ignored():
             check=False,
         )
         assert result.returncode == 1, f"envs/{env}/terraform.tfvars is git-ignored"
+
+
+# ---- The CI deploy role can reach what the environments create -------------------------------
+
+
+def _bootstrap_s3_resources() -> list[str]:
+    text = (TF / "bootstrap" / "main.tf").read_text(encoding="utf-8")
+    block = re.search(r'Sid\s*=\s*"FrontendBucketOnly"(.*?)\n\s*\}', text, re.S)
+    assert block, "bootstrap has no FrontendBucketOnly statement"
+    arns = re.findall(r'"(arn:aws:s3:::[^"]+)"', block.group(1))
+    return [
+        a.replace("${var.project_name}", "vigilwatch").replace(
+            "${data.aws_caller_identity.current.account_id}", "123456789012"
+        )
+        for a in arns
+    ]
+
+
+@pytest.mark.parametrize("env", ENVS)
+def test_the_deploy_role_may_manage_each_environments_dashboard_bucket(env):
+    """The frontend module names buckets <project>-<env>-frontend-<account>; the role must match."""
+    import fnmatch
+
+    module = (TF / "modules" / "frontend" / "main.tf").read_text(encoding="utf-8")
+    assert 'bucket = "${var.name_prefix}-frontend-${var.account_id}"' in module
+    bucket = f"arn:aws:s3:::vigilwatch-{env}-frontend-123456789012"
+    resources = _bootstrap_s3_resources()
+    assert any(fnmatch.fnmatchcase(bucket, r) for r in resources), resources
+    assert any(fnmatch.fnmatchcase(bucket + "/index.html", r) for r in resources), resources
+
+
+def test_the_deploy_role_s3_grant_stays_inside_this_projects_buckets():
+    for resource in _bootstrap_s3_resources():
+        assert resource.startswith("arn:aws:s3:::vigilwatch-"), resource
+        assert "-frontend-123456789012" in resource, resource
