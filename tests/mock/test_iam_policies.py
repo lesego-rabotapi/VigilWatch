@@ -101,16 +101,6 @@ def test_removing_an_action_drops_empty_statements():
 
 
 @pytest.mark.negative
-def test_a_render_failure_becomes_one_case_with_a_short_name(monkeypatch):
-    """The case id is printed on every report line: it must not be terraform's whole stderr."""
-    monkeypatch.setattr(render_iam_policies, "available", lambda: True)
-    stderr = "Error: something\n" + "detail " * 200
-    monkeypatch.setattr(render_iam_policies, "render_or_error", lambda: (None, stderr))
-    cases = _necessary_actions()
-    assert [case.id for case in cases] == [RENDER_FAILED]
-
-
-@pytest.mark.negative
 def test_the_policies_fixture_reports_a_render_failure_with_terraforms_message(monkeypatch):
     """Every test using the policies fails with the reason, instead of an unrelated error."""
     monkeypatch.setattr(
@@ -124,7 +114,12 @@ def test_collecting_this_module_runs_no_terraform(monkeypatch):
     """Collection happens for every run, `-m unit` included: it must not start terraform, which
     could re-initialise the module and download providers."""
     calls = []
-    monkeypatch.setattr(render_iam_policies, "_terraform", lambda *args, **_: calls.append(args) or "")
+
+    def record(*args, **_):
+        calls.append(args)
+        return ""
+
+    monkeypatch.setattr(render_iam_policies, "_terraform", record)
     monkeypatch.setattr(render_iam_policies, "available", lambda: True)
     render_iam_policies.clear_cache()
     try:
@@ -310,33 +305,34 @@ def test_each_function_works_with_exactly_the_permissions_terraform_grants(
     assert run_as(function, rendered[function], enforcement, monkeypatch) == EXPECTED[function]
 
 
-RENDER_FAILED = "terraform-render-failed"
-
-
-def _necessary_actions():
-    """Evaluated at collection: a render failure becomes one failing case, not an aborted run.
-    That case fails in the `rendered` fixture, which reports terraform's message."""
-    if not render_iam_policies.available():
-        return []
-    policies, error = render_iam_policies.render_or_error()
-    if error:
-        return [pytest.param(RENDER_FAILED, None, id=RENDER_FAILED)]
-    return [
-        pytest.param(name, action, id=f"{name}-{action}")
-        for name, policy in sorted(policies.items())
-        for action in exercised(policy)
-    ]
+def empty_tables():
+    """Back to an empty world between attempts, so one attempt's data cannot decide the next."""
+    dynamodb = boto3.resource("dynamodb")
+    for name in (os.environ["ENDPOINTS_TABLE"], os.environ["HISTORY_TABLE"]):
+        table = dynamodb.Table(name)
+        keys = [k["AttributeName"] for k in table.key_schema]
+        for item in table.scan()["Items"]:
+            table.delete_item(Key={k: item[k] for k in keys})
 
 
 @requires_terraform
 @pytest.mark.negative
 @pytest.mark.security
-@pytest.mark.parametrize("function, action", _necessary_actions())
+@pytest.mark.parametrize("function", ["register_endpoint", "get_checks", "uptime_check"])
 def test_removing_any_single_permission_breaks_the_function(
-    function, action, rendered, enforcement, scenario_env, monkeypatch
+    function, rendered, enforcement, scenario_env, monkeypatch
 ):
-    """Every granted action is used: if one could be removed unnoticed, it is over-privilege."""
-    outcome = run_as(function, without(rendered[function], action), enforcement, monkeypatch)
-    assert outcome != EXPECTED[function], (
-        f"{function} still works without {action}: not needed, or not exercised"
-    )
+    """Every granted action is used: if one could be removed unnoticed, it is over-privilege.
+
+    The actions come from the rendered policy at run time, not at collection, so collecting the
+    suite never starts terraform."""
+    policy, expected = rendered[function], EXPECTED[function]
+    unneeded = []
+    for action in exercised(policy):
+        if run_as(function, without(policy, action), enforcement, monkeypatch) == expected:
+            unneeded.append(action)
+        empty_tables()
+    # The reset itself must leave a world where the full policy still works, or every attempt
+    # above would have failed for the wrong reason and this test would prove nothing.
+    assert run_as(function, policy, enforcement, monkeypatch) == expected
+    assert unneeded == [], f"{function} works without {unneeded}: not needed, or not exercised"

@@ -1,4 +1,4 @@
-"""Rendering the IAM policies must be cheap to repeat and must never break test collection."""
+"""Rendering the IAM policies must be cheap to repeat and must fail with terraform's reason."""
 
 import json
 
@@ -100,8 +100,8 @@ def test_an_error_in_the_module_itself_is_reported_without_touching_providers(te
 
 
 @pytest.mark.negative
-def test_collection_gets_an_error_value_instead_of_an_exception(terraform):
-    """Parametrising tests calls this at import time: raising there would abort the whole run."""
+def test_a_failed_render_is_returned_as_a_reason_instead_of_raised(terraform):
+    """The policy fixture turns the reason into one clear failure message."""
     _, script = terraform
     script["console"] = [RuntimeError("offline")]
     policies, error = render_iam_policies.render_or_error()
@@ -109,7 +109,7 @@ def test_collection_gets_an_error_value_instead_of_an_exception(terraform):
     assert "offline" in error
 
 
-def test_collection_gets_the_policies_when_terraform_works(terraform):
+def test_a_successful_render_is_returned_with_no_reason(terraform):
     _, script = terraform
     script["console"] = [console_output({"x": POLICY})]
     assert render_iam_policies.render_or_error() == ({"x": POLICY}, None)

@@ -89,8 +89,8 @@ def render(overrides: dict | None = None) -> dict[str, dict]:
 
 
 def render_or_error(overrides: dict | None = None) -> tuple[dict | None, str | None]:
-    """For test collection, where an exception would abort the whole run: (policies, None) or
-    (None, why)."""
+    """(policies, None) or (None, why): lets a caller report terraform's own message as the
+    reason, instead of an unrelated error further on."""
     try:
         return render(overrides), None
     except (RuntimeError, OSError, ValueError) as error:
