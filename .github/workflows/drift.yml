@@ -1,0 +1,153 @@
+name: Drift
+
+# Weekly: does what runs in each environment still match its Terraform state? A refresh-only plan
+# of the released commit's configuration, with the read-only role (AWS_PLAN_ROLE_ARN) and without
+# taking the state lock. Any difference is a change made outside the pipeline, reported in a single
+# open issue by a job that holds no AWS access. An environment with no release yet is skipped.
+
+on:
+  schedule:
+    - cron: "17 5 * * 1" # Mondays 05:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: af-south-1
+  TF_VERSION: "1.16.6"
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  detect:
+    name: Drift in ${{ matrix.environment }}
+    if: ${{ vars.AWS_PLAN_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' && vars.TF_STATE_BUCKET != '' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [dev, prod]
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ENVIRONMENT: ${{ matrix.environment }}
+      BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      BUNDLE: ${{ github.workspace }}/terraform/.build/vigilwatch.zip
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Refuse any account but the configured one
+        env:
+          EXPECTED: ${{ vars.AWS_ACCOUNT_ID }}
+        run: |
+          if [ "$(aws sts get-caller-identity --query Account --output text)" != "$EXPECTED" ]; then
+            echo "::error::these credentials are not for the account in AWS_ACCOUNT_ID"
+            exit 1
+          fi
+      - name: Find the released commit
+        id: release
+        run: |
+          if sha="$(aws s3 cp "s3://$BUCKET/releases/$ENVIRONMENT" -)"; then
+            echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::$ENVIRONMENT has no release yet: nothing to compare"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.release.outputs.sha
+        with:
+          ref: ${{ steps.release.outputs.sha }}
+      - uses: actions/setup-python@v5
+        if: steps.release.outputs.sha
+        with:
+          python-version: "3.12"
+      - name: Fetch the released bundle
+        if: steps.release.outputs.sha
+        env:
+          SHA: ${{ steps.release.outputs.sha }}
+        run: |
+          mkdir -p "$(dirname "$BUNDLE")"
+          aws s3 cp "s3://$BUCKET/bundles/$SHA.zip" "$BUNDLE" --only-show-errors
+          python scripts/build_bundle.py --describe "$BUNDLE"
+      - uses: hashicorp/setup-terraform@v3
+        if: steps.release.outputs.sha
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      # -detailed-exitcode: 0 in step, 2 drifted, 1 an error.
+      - name: Refresh-only plan
+        if: steps.release.outputs.sha
+        working-directory: terraform/envs/${{ matrix.environment }}
+        env:
+          ACCOUNT: ${{ vars.AWS_ACCOUNT_ID }}
+          EMAIL: ${{ vars.NOTIFICATION_EMAIL }}
+        run: |
+          terraform init \
+            -backend-config="bucket=$BUCKET" \
+            -backend-config="key=vigilwatch/envs/$ENVIRONMENT.tfstate" \
+            -backend-config="region=$AWS_REGION" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+          status=0
+          terraform plan -refresh-only -lock=false -detailed-exitcode -no-color \
+            -var-file="$GITHUB_WORKSPACE/terraform/.build/vigilwatch.tfvars.json" \
+            -var "allowed_account_ids=[\"$ACCOUNT\"]" \
+            -var "notification_email=$EMAIL" > plan.txt 2>&1 || status=$?
+          if [ "$status" -eq 1 ]; then
+            cat plan.txt
+            exit 1
+          fi
+          if [ "$status" -eq 2 ]; then
+            { echo "### Drift in $ENVIRONMENT"; echo '```'; tail -n 150 plan.txt; echo '```'; } \
+              > "$GITHUB_WORKSPACE/drift.md"
+            cat "$GITHUB_WORKSPACE/drift.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Record the result
+        run: |
+          if [ ! -f drift.md ]; then
+            echo "none" > drift.md
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: drift-${{ matrix.environment }}
+          path: drift.md
+          retention-days: 30
+
+  report:
+    name: Report drift
+    needs: [detect]
+    if: ${{ !cancelled() && needs.detect.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: drift-*
+      - name: Open or update the drift issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: Infrastructure drift detected
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          : > body.md
+          for file in drift-*/drift.md; do
+            if [ "$(cat "$file")" != "none" ]; then
+              cat "$file" >> body.md
+              echo >> body.md
+            fi
+          done
+          if [ ! -s body.md ]; then
+            echo "No drift."
+            exit 0
+          fi
+          echo "Found by $RUN. Reconcile by changing the code and deploying, or revert the change made outside the pipeline." >> body.md
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$TITLE in:title" --json number --jq '.[0].number')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body-file body.md
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file body.md
+          fi
