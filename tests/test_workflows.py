@@ -424,6 +424,15 @@ def test_a_release_is_tagged_only_after_prod_passed_its_smoke_test(promote):
     assert "deploy" in wf["jobs"]["release"]["needs"]
 
 
+def test_the_release_notes_are_the_changelog_since_the_previous_release(promote):
+    _, wf = promote
+    text = steps_text(wf["jobs"]["release"])
+    assert "git describe --tags --abbrev=0" in text, "notes start after the previous release"
+    assert "scripts/changelog.py" in text
+    assert "gh release create" in text and "--notes-file" in text
+    assert "--generate-notes" not in text
+
+
 # ---- Every workflow -----------------------------------------------------------------------------
 
 
