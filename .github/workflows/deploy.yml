@@ -31,7 +31,7 @@ jobs:
 
   plan:
     name: Terraform plan
-    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' }}
+    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' }}
     needs: [ci]
     runs-on: ubuntu-latest
     permissions:
@@ -93,7 +93,7 @@ jobs:
 
   apply:
     name: Terraform apply (approval required)
-    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' }}
+    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' }}
     needs: [plan]
     runs-on: ubuntu-latest
     environment:
@@ -154,7 +154,7 @@ jobs:
 
   release:
     name: Tag release
-    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' }}
+    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' }}
     needs: [apply]
     runs-on: ubuntu-latest
     permissions:
