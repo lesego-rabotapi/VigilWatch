@@ -4,7 +4,10 @@ Layout (DevOps Stage 6): ci.yml on every change; deploy-dev.yml on main; promote
 rollback.yml by hand with approval; all three deploy through one reusable deploy-environment.yml.
 """
 
+import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -12,7 +15,8 @@ import yaml
 
 pytestmark = pytest.mark.req("VW-017")
 
-WORKFLOWS = Path(__file__).resolve().parent.parent / ".github" / "workflows"
+ROOT = Path(__file__).resolve().parent.parent
+WORKFLOWS = ROOT / ".github" / "workflows"
 CONFIGURED = (
     "vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' && vars.TF_STATE_BUCKET != ''"
 )
@@ -321,6 +325,62 @@ def test_the_production_smoke_test_is_read_only_and_given_a_url_it_can_read(depl
     check = next(s for s in wf["jobs"]["smoke"]["steps"] if "run" in s)
     assert "E2E_READONLY_URL" in check["run"] and "::error" in check["run"]
     assert check["if"] == "${{ inputs.environment == 'prod' }}"
+
+
+def _collected(markers: str) -> int:
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider"]
+        + ["-m", markers, "tests/e2e"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return int(re.search(r"(\d+)(?:/\d+)? tests? collected", result.stdout).group(1))
+
+
+def test_the_smoke_gate_fails_on_any_skip_or_a_short_run(deploy):
+    """Prod runs only the read-only smoke tests and dev runs all of them; in both, a skipped or
+    missing test turns the job red (CI gate integrity)."""
+    _, wf = deploy
+    smoke = next(s for s in wf["jobs"]["smoke"]["steps"] if "pytest" in str(s.get("run")))
+    assert (
+        smoke["env"]["MARKERS"] == "${{ inputs.environment == 'prod' && 'e2e and smoke' || 'e2e' }}"
+    )
+    assert '-m "$MARKERS"' in smoke["run"] and "--junitxml=" in smoke["run"]
+    assert "scripts/check_junit.py" in smoke["run"] and '--min-tests "$MIN_TESTS"' in smoke["run"]
+    minimum = re.fullmatch(
+        r"\$\{\{ inputs\.environment == 'prod' && '(\d+)' \|\| '(\d+)' \}\}",
+        smoke["env"]["MIN_TESTS"],
+    )
+    assert minimum, smoke["env"]["MIN_TESTS"]
+    assert int(minimum.group(1)) == _collected("e2e and smoke"), "prod minimum = smoke tests"
+    assert int(minimum.group(2)) == _collected("e2e"), "dev minimum = every e2e test"
+
+
+@pytest.mark.negative
+def test_a_smoke_run_without_an_address_is_red_in_ci():
+    """The mutation check for the gate: an unset API_URL must fail, not skip."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("API_URL", "DASHBOARD_URL"))}
+    env["CI"] = "true"
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+        + ["-m", "e2e and smoke", "tests/e2e", "--env=prod"],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0, result.stdout[-500:]
+    assert "skipped" not in result.stdout.splitlines()[-1]
+
+
+@pytest.mark.parametrize("name", all_workflows())
+def test_no_workflow_can_quietly_ignore_a_failure_or_skip_a_review(name):
+    text, _ = load(name)
+    for forbidden in ("continue-on-error", "|| true", "-auto-approve", "set +e"):
+        assert forbidden not in text, f"{name} uses {forbidden}"
 
 
 def test_the_deploy_pins_the_account_in_terraform(deploy):
