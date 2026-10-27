@@ -12,9 +12,9 @@ import sys
 from pathlib import Path
 
 import pytest
-import verify_package
 
 import build_bundle
+import verify_package
 
 pytestmark = pytest.mark.req("VW-017")
 

@@ -81,6 +81,27 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
       - run: tflint --recursive --config "$(pwd)/terraform/.tflint.hcl"
 
+  # Lessons 3 and 4: what Lambda loads is the bundle alone, in its own runtime. Import and call every
+  # handler there, from the bundle only, with no network.
+  package:
+    name: Package (Lambda runtime image)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build the bundle
+        run: python scripts/build_bundle.py --out "$RUNNER_TEMP/bundle.zip"
+      - name: Load and call every handler inside the Lambda Python 3.12 image
+        run: >
+          docker run --rm --network none
+          -v "$RUNNER_TEMP/bundle.zip:/bundle.zip:ro"
+          -v "$GITHUB_WORKSPACE/scripts:/verify:ro"
+          --entrypoint python3
+          public.ecr.aws/lambda/python:3.12
+          -I /verify/verify_package.py /bundle.zip
+
   frontend:
     name: Frontend (DOM + contract tests)
     runs-on: ubuntu-latest
