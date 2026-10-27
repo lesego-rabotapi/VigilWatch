@@ -7,6 +7,7 @@ endpoint, so the Lambda Errors alarm means "the monitor is broken".
 """
 
 import json
+import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 
@@ -43,16 +44,16 @@ def _emf(summary: dict, latencies: list[float], now: datetime, controls: str) ->
                 "CloudWatchMetrics": [
                     {
                         "Namespace": "VigilWatch",
-                        # A single low-cardinality dimension keeps this at a fixed
-                        # number of custom metrics, whatever is being monitored.
-                        "Dimensions": [["Service"]],
+                        # One dimension, one value per environment: a fixed number of custom
+                        # metrics whatever is monitored, and dev never feeds prod's alarms.
+                        "Dimensions": [["FunctionName"]],
                         "Metrics": [
                             {"Name": name, "Unit": units.get(name, "Count")} for name in values
                         ],
                     }
                 ],
             },
-            "Service": "uptime-check",
+            "FunctionName": os.environ.get("AWS_LAMBDA_FUNCTION_NAME", "uptime-check"),
             **values,
         }
     )

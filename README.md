@@ -64,7 +64,7 @@ Decisions: [docs/adr/](docs/adr/).
 - **Provisioned DynamoDB.** It is free but can throttle under bursts. Daily rollups keep the
   30-day uptime query at no more than 30 items, so normal use stays far below capacity.
 - **Low-cardinality metrics.** Metrics are emitted with Embedded Metric Format and a single
-  `Service` dimension, so the number of custom metrics stays fixed however many URLs are monitored
+  `FunctionName` dimension (one value per environment), so the number of custom metrics stays fixed however many URLs are monitored
   ([ADR 0003](docs/adr/0003-emf-metrics-without-per-endpoint-dimensions.md)).
 - **One region, one probe location.** A check from one region cannot tell "site down" from
   "network path down"; multi-region probing costs more and is out of scope.

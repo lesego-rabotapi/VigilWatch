@@ -112,7 +112,7 @@ which both the Python and the frontend tests load.
 ## Observability
 
 - **Logs.** Each function has its own log group (14-day retention). API access logs are JSON.
-- **Metrics.** EMF from the checker, namespace `VigilWatch`, dimension `Service=uptime-check`.
+- **Metrics.** EMF from the checker, namespace `VigilWatch`, dimension `FunctionName=<the checker's function name>`, so each environment has its own series.
 - **Alarms** (all notify the SNS topic): `checker-errors`, `checker-not-running`
   (fewer than 1 invocation in 30 minutes, missing data counts as breaching), `checker-dlq`, `api-5xx`.
   The runbook explains each one.

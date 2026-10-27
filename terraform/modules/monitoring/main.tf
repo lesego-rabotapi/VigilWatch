@@ -48,7 +48,7 @@ locals {
       description = "The checker cannot reach the internet: its connectivity checks failed. Targets are reported INCONCLUSIVE and no target alerts are sent until it recovers."
       namespace   = "VigilWatch"
       metric      = "ControlProbeFailed"
-      dimensions  = { Service = "uptime-check" }
+      dimensions  = { FunctionName = var.checker_function } # the checker sets it from its own name
       statistic   = "Maximum"
       period      = 300
       periods     = 3
