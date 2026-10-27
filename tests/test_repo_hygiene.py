@@ -70,3 +70,8 @@ def test_bundled_sources_are_checked_out_with_lf_line_endings(path):
     _tracked_files()  # skip if not a git checkout
     out = _git("check-attr", "eol", "--", path).stdout
     assert out.strip().endswith("eol: lf"), out
+
+
+def test_gitignore_comments_describe_the_current_build():
+    text = (ROOT / ".gitignore").read_text(encoding="utf-8")
+    assert "archive_file" not in text, "bundles come from scripts/build_bundle.py now"

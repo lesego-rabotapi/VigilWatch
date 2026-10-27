@@ -96,3 +96,8 @@ def test_environments_adr_records_the_decisions_and_the_free_tier_arithmetic():
         "Status:",
     ):
         assert term in text, f"ADR 0005 does not mention {term!r}"
+
+
+def test_environments_adr_records_that_prod_no_longer_allows_localhost():
+    text = (ROOT / "docs" / "adr" / "0005-environments-and-modules.md").read_text(encoding="utf-8")
+    assert "localhost" in text and "extra_cors_origins" in text

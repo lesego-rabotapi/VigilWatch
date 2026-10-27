@@ -230,3 +230,9 @@ def test_a_half_configured_repository_skips_instead_of_failing(deploy):
     for name in ("plan", "apply", "release"):
         condition = str(wf["jobs"][name].get("if", ""))
         assert "vars.AWS_ACCOUNT_ID != ''" in condition, f"{name}: {condition}"
+
+
+def test_the_terraform_job_checks_the_free_tier_across_environments(ci):
+    """terraform validate sees one environment at a time; the shared account needs the sum."""
+    _, wf = ci
+    assert "python scripts/free_tier_budget.py" in steps_text(wf["jobs"]["terraform"])
