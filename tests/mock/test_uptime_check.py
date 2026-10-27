@@ -181,7 +181,7 @@ def test_emits_one_emf_record_without_per_endpoint_dimensions(world, capsys):
     record = emf[0]
     directive = record["_aws"]["CloudWatchMetrics"][0]
     assert directive["Namespace"] == "VigilWatch"
-    assert directive["Dimensions"] == [["Service"]]
+    assert directive["Dimensions"] == [["FunctionName"]]
     names = {m["Name"] for m in directive["Metrics"]}
     assert names == {
         "ChecksRun",

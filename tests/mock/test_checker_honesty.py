@@ -214,7 +214,19 @@ def test_metrics_report_blindness_without_a_per_endpoint_dimension(world, capsys
     assert record["ControlProbeFailed"] == 1
     assert record["EndpointsInconclusive"] == 2
     assert record["RunsCompleted"] == 1
-    assert record["_aws"]["CloudWatchMetrics"][0]["Dimensions"] == [["Service"]]
+    assert record["_aws"]["CloudWatchMetrics"][0]["Dimensions"] == [["FunctionName"]]
+
+
+def test_metrics_are_scoped_to_the_function_so_environments_never_share_a_series(
+    world, capsys, monkeypatch
+):
+    """dev and prod share one account: without this, a blind dev checker would alarm prod."""
+    monkeypatch.setenv("AWS_LAMBDA_FUNCTION_NAME", "vigilwatch-dev-uptime-check")
+    world["set"](A, FAIL)
+    world["set"](B, FAIL)
+    blind(world)
+    world["run"]()
+    assert emf(capsys)["FunctionName"] == "vigilwatch-dev-uptime-check"
 
 
 def test_the_blind_metric_is_zero_when_connectivity_was_checked_and_fine(world, capsys):

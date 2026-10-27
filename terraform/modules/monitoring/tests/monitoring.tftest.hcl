@@ -52,8 +52,8 @@ run "a_blind_checker_alarms_from_the_control_metric" {
   assert {
     condition = (aws_cloudwatch_metric_alarm.alarm["checker-blind"].metric_name == "ControlProbeFailed"
       && aws_cloudwatch_metric_alarm.alarm["checker-blind"].namespace == "VigilWatch"
-    && aws_cloudwatch_metric_alarm.alarm["checker-blind"].dimensions["Service"] == "uptime-check")
-    error_message = "a blind checker must raise an alarm from the ControlProbeFailed metric"
+    && aws_cloudwatch_metric_alarm.alarm["checker-blind"].dimensions["FunctionName"] == "vigilwatch-prod-uptime-check")
+    error_message = "a blind checker must raise an alarm from this environment's ControlProbeFailed series only"
   }
   assert {
     condition     = aws_cloudwatch_metric_alarm.alarm["checker-blind"].datapoints_to_alarm == 2 && aws_cloudwatch_metric_alarm.alarm["checker-blind"].evaluation_periods == 3
