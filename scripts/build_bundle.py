@@ -59,13 +59,13 @@ def _from_commit(source: Path, rev: str) -> dict[str, bytes]:
     """The files under source as committed in rev: line endings and untracked files on disk
     cannot leak in."""
     top = Path(_git("rev-parse", "--show-toplevel", cwd=source).decode().strip()).resolve()
-    prefix = source.resolve().relative_to(top).as_posix()
-    listed = _git("ls-tree", "-r", "-z", "--name-only", rev, "--", prefix, cwd=top)
+    prefix = PurePosixPath(source.resolve().relative_to(top).as_posix())  # "." at the top
+    listed = _git("ls-tree", "-r", "-z", "--name-only", rev, "--", str(prefix), cwd=top)
     names = [n for n in listed.decode().split("\0") if n]
     return {
         name: _git("cat-file", "blob", f"{rev}:{path}", cwd=top)
         for path in names
-        if _packaged(name := path[len(prefix) + 1 :])
+        if _packaged(name := PurePosixPath(path).relative_to(prefix).as_posix())
     }
 
 
