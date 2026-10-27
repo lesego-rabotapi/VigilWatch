@@ -9,6 +9,7 @@ users in moto and runs the handlers as those users.
 
 import functools
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -57,13 +58,23 @@ def _console(values: tuple) -> str:
     return _terraform("console", "-no-color", *flags, stdin="jsonencode(local.function_policies)\n")
 
 
+# What terraform prints when .terraform is missing, stale or half-initialised. Any other error is
+# in the module itself, and re-initialising would only download providers to hide it.
+_NOT_INITIALISED = re.compile(
+    r"terraform init|dependency lock file|not installed|required provider|module not installed",
+    re.IGNORECASE,
+)
+
+
 @functools.cache
 def _render(values: tuple) -> str:
     try:
         printed = _console(values)
-    except RuntimeError:
-        # Missing, stale or half-initialised .terraform: initialise once and try again. -upgrade
-        # because the module's lock file is git-ignored and an old one may pin a missing provider.
+    except RuntimeError as error:
+        if not _NOT_INITIALISED.search(str(error)):
+            raise
+        # Initialise once and try again. -upgrade because the module's lock file is git-ignored
+        # and an old one may pin a provider that is no longer cached.
         _terraform("init", "-backend=false", "-input=false", "-no-color", "-upgrade")
         printed = _console(values)
     return printed
