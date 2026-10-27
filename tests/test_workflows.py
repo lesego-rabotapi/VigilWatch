@@ -232,6 +232,23 @@ def test_a_half_configured_repository_skips_instead_of_failing(deploy):
         assert "vars.AWS_ACCOUNT_ID != ''" in condition, f"{name}: {condition}"
 
 
+def test_the_production_smoke_test_is_read_only(deploy):
+    """apply deploys prod: its smoke test must never register endpoints there."""
+    _, wf = deploy
+    smoke = next(s for s in wf["jobs"]["apply"]["steps"] if "pytest -m e2e" in str(s.get("run")))
+    assert "--env=prod" in smoke["run"]
+    assert "--env=dev" not in smoke["run"]
+    assert set(smoke["env"]) == {"API_URL_PROD", "DASHBOARD_URL_PROD"}
+
+
+def test_aws_jobs_also_wait_for_the_state_bucket(deploy):
+    """Without it terraform init has no backend to use and the run fails instead of skipping."""
+    _, wf = deploy
+    for name in ("plan", "apply", "release"):
+        condition = str(wf["jobs"][name].get("if", ""))
+        assert "vars.TF_STATE_BUCKET != ''" in condition, f"{name}: {condition}"
+
+
 def test_the_terraform_job_checks_the_free_tier_across_environments(ci):
     """terraform validate sees one environment at a time; the shared account needs the sum."""
     _, wf = ci
