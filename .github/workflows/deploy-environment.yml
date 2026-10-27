@@ -257,9 +257,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # Production is read-only: the harness refuses to register anything there.
+      # Production runs only the read-only smoke tests; dev runs every e2e test. A skipped test or a
+      # short run fails the job (scripts/check_junit.py): a skipped check proves nothing.
       - name: Post-deploy smoke test
         env:
+          MARKERS: ${{ inputs.environment == 'prod' && 'e2e and smoke' || 'e2e' }}
+          MIN_TESTS: ${{ inputs.environment == 'prod' && '4' || '6' }}
           API_URL_DEV: ${{ needs.apply.outputs.api_base_url }}
           DASHBOARD_URL_DEV: ${{ needs.apply.outputs.dashboard_url }}
           API_URL_PROD: ${{ needs.apply.outputs.api_base_url }}
@@ -267,7 +270,8 @@ jobs:
           E2E_READONLY_URL: ${{ vars.E2E_READONLY_URL }}
         run: |
           pip install -r requirements-dev.txt
-          pytest -m e2e tests/e2e --env="$ENVIRONMENT" -v
+          pytest -m "$MARKERS" tests/e2e --env="$ENVIRONMENT" -v --junitxml=e2e.xml
+          python scripts/check_junit.py e2e.xml --min-tests "$MIN_TESTS"
 
   record:
     name: Record the release of ${{ inputs.environment }}

@@ -1,7 +1,8 @@
 """A smoke run is green only if every expected test ran and none was skipped."""
 
-import check_junit
 import pytest
+
+import check_junit
 
 pytestmark = pytest.mark.req("VW-017")
 
