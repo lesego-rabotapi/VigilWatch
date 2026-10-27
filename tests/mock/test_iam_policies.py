@@ -14,6 +14,7 @@ What this proves and what it does not (evidence tag MOCK):
 """
 
 import copy
+import importlib.util
 import json
 import os
 from datetime import UTC, datetime
@@ -117,6 +118,21 @@ def test_the_policies_fixture_reports_a_render_failure_with_terraforms_message(m
     )
     with pytest.raises(pytest.fail.Exception, match="(?s)could not render.*no provider"):
         _policies_or_fail()
+
+
+def test_collecting_this_module_runs_no_terraform(monkeypatch):
+    """Collection happens for every run, `-m unit` included: it must not start terraform, which
+    could re-initialise the module and download providers."""
+    calls = []
+    monkeypatch.setattr(render_iam_policies, "_terraform", lambda *args, **_: calls.append(args) or "")
+    monkeypatch.setattr(render_iam_policies, "available", lambda: True)
+    render_iam_policies.clear_cache()
+    try:
+        spec = importlib.util.spec_from_file_location("iam_policies_collected_again", __file__)
+        spec.loader.exec_module(importlib.util.module_from_spec(spec))
+    finally:
+        render_iam_policies.clear_cache()
+    assert calls == []
 
 
 def test_terraform_is_available_where_it_must_run():
