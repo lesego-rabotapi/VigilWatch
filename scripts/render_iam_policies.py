@@ -62,8 +62,9 @@ def _render(values: tuple) -> str:
     try:
         printed = _console(values)
     except RuntimeError:
-        # Missing, stale or half-initialised .terraform: initialise once and try again.
-        _terraform("init", "-backend=false", "-input=false", "-no-color")
+        # Missing, stale or half-initialised .terraform: initialise once and try again. -upgrade
+        # because the module's lock file is git-ignored and an old one may pin a missing provider.
+        _terraform("init", "-backend=false", "-input=false", "-no-color", "-upgrade")
         printed = _console(values)
     return printed
 

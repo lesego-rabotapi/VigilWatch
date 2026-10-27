@@ -115,7 +115,7 @@ def test_the_policies_fixture_reports_a_render_failure_with_terraforms_message(m
     monkeypatch.setattr(
         render_iam_policies, "render_or_error", lambda: (None, "Error: no provider")
     )
-    with pytest.raises(pytest.fail.Exception, match="could not render.*no provider"):
+    with pytest.raises(pytest.fail.Exception, match="(?s)could not render.*no provider"):
         _policies_or_fail()
 
 
@@ -125,9 +125,16 @@ def test_terraform_is_available_where_it_must_run():
         assert render_iam_policies.available(), "CI must install terraform for the policy tests"
 
 
+def _policies_or_fail() -> dict:
+    policies, error = render_iam_policies.render_or_error()
+    if error:
+        pytest.fail(f"terraform could not render the policies:\n{error}", pytrace=False)
+    return policies
+
+
 @pytest.fixture(scope="module")
 def rendered():
-    return render_iam_policies.render()
+    return _policies_or_fail()
 
 
 @requires_terraform
@@ -287,18 +294,21 @@ def test_each_function_works_with_exactly_the_permissions_terraform_grants(
     assert run_as(function, rendered[function], enforcement, monkeypatch) == EXPECTED[function]
 
 
-RENDER_FAILED = "terraform could not render the policies"
+RENDER_FAILED = "terraform-render-failed"
 
 
 def _necessary_actions():
-    """Evaluated at collection: a render failure becomes one failing case, not an aborted run."""
+    """Evaluated at collection: a render failure becomes one failing case, not an aborted run.
+    That case fails in the `rendered` fixture, which reports terraform's message."""
     if not render_iam_policies.available():
         return []
     policies, error = render_iam_policies.render_or_error()
     if error:
-        return [(RENDER_FAILED, error)]
+        return [pytest.param(RENDER_FAILED, None, id=RENDER_FAILED)]
     return [
-        (name, action) for name, policy in sorted(policies.items()) for action in exercised(policy)
+        pytest.param(name, action, id=f"{name}-{action}")
+        for name, policy in sorted(policies.items())
+        for action in exercised(policy)
     ]
 
 
@@ -310,7 +320,6 @@ def test_removing_any_single_permission_breaks_the_function(
     function, action, rendered, enforcement, scenario_env, monkeypatch
 ):
     """Every granted action is used: if one could be removed unnoticed, it is over-privilege."""
-    assert function != RENDER_FAILED, f"{RENDER_FAILED}: {action}"
     outcome = run_as(function, without(rendered[function], action), enforcement, monkeypatch)
     assert outcome != EXPECTED[function], (
         f"{function} still works without {action}: not needed, or not exercised"
