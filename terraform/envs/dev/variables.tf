@@ -63,12 +63,6 @@ variable "extra_cors_origins" {
 
 # Optional tuning. Each is null unless set in terraform.tfvars or with -var, and the stack module
 # then applies its own default, so defaults live in one place.
-variable "project_name" {
-  description = "Project part of every resource name. Unset (null) keeps the module default."
-  type        = string
-  default     = null
-}
-
 variable "check_interval_minutes" {
   description = "Minutes between scheduled uptime checks. Unset (null) keeps the module default."
   type        = number

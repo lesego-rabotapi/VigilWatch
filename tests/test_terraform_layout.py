@@ -266,7 +266,7 @@ def test_the_urgent_rollback_keeps_the_alert_email_subscription():
     """Without notification_email the plan deletes prod's SNS email subscription mid-incident."""
     runbook = (ROOT / "docs" / "RUNBOOK.md").read_text(encoding="utf-8")
     rollback = _section(runbook, "## 6. Rollback")
-    plans = [line for line in rollback.splitlines() if "terraform plan" in line]
+    plans = [line for line in rollback.splitlines() if line.strip().startswith("terraform plan")]
     assert plans, "the rollback has no terraform plan"
     for line in plans:
         assert "notification_email" in line, line

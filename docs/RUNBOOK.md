@@ -75,8 +75,8 @@ terraform init -backend-config=backend.hcl
 terraform plan -out=tfplan -var-file=../../.build/vigilwatch.tfvars.json -var 'allowed_account_ids=["<your-account-id>"]' -var notification_email=you@example.com
 terraform apply tfplan
 terraform output dashboard_url
-API_URL=$(terraform output -raw api_base_url) DASHBOARD_URL=$(terraform output -raw dashboard_url) \
-  pytest -m e2e ../tests/e2e
+API_URL_DEV=$(terraform output -raw api_base_url) DASHBOARD_URL_DEV=$(terraform output -raw dashboard_url) \
+  pytest -m e2e ../../../tests/e2e --env=dev
 ```
 
 ## 4. Day-2 operations
@@ -109,13 +109,14 @@ alarms that use free Lambda metrics (ADR 0005).
   and push. The pipeline plans the previous configuration and applies it after approval. The
   Lambda bundle is built from the same commit, so code and infrastructure roll back together.
 - **Urgent, pipeline unavailable:** check out the last good commit locally, rebuild its bundle and
-  apply it from the environment directory with the same backend:
+  apply it from the environment directory with the same backend. Pass the alert address the
+  pipeline uses (`NOTIFICATION_EMAIL`): without it the plan deletes the email subscription.
 
   ```bash
   python scripts/build_bundle.py
   cd terraform/envs/prod
   terraform init -backend-config=backend.hcl
-  terraform plan -out=tfplan -var-file=../../.build/vigilwatch.tfvars.json -var 'allowed_account_ids=["<your-account-id>"]'
+  terraform plan -out=tfplan -var-file=../../.build/vigilwatch.tfvars.json -var 'allowed_account_ids=["<your-account-id>"]' -var notification_email=you@example.com
   terraform apply tfplan
   ```
 - **Corrupted state:** the state bucket is versioned. List versions with
