@@ -112,5 +112,19 @@ def test_the_command_fails_when_over_budget(tmp_path, capsys):
     assert "capacity" in capsys.readouterr().out
 
 
+@pytest.mark.negative
+def test_finding_no_environment_fails_instead_of_passing_on_nothing(tmp_path, capsys):
+    """A moved or misspelt envs directory must not turn the check into a green no-op."""
+    assert free_tier_budget.main(["--envs", str(tmp_path)]) == 1
+    assert "no environments" in capsys.readouterr().out
+
+
+@pytest.mark.negative
+def test_a_missing_setting_is_named_not_a_bare_key_error(tmp_path):
+    prod = PROD.replace("dynamodb_capacity = 5\n", "")
+    problems = free_tier_budget.violations(write_envs(tmp_path, dev=DEV, prod=prod))
+    assert problems == ["prod: dynamodb_capacity is not set"]
+
+
 def test_the_command_passes_on_the_repository():
     assert free_tier_budget.main([]) == 0
