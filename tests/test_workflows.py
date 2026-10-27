@@ -222,3 +222,11 @@ def test_the_python_job_installs_terraform_for_the_policy_enforcement_tests(ci):
     pytest_step = next(i for i, s in enumerate(steps) if "pytest" in str(s.get("run", "")))
     assert setup < pytest_step, "terraform must be installed before pytest runs"
     assert steps[setup]["with"]["terraform_wrapper"] is False, "the wrapper adds output to stdout"
+
+
+def test_a_half_configured_repository_skips_instead_of_failing(deploy):
+    """The plan needs both the role and the account id; missing either must mean 'skipped'."""
+    _, wf = deploy
+    for name in ("plan", "apply", "release"):
+        condition = str(wf["jobs"][name].get("if", ""))
+        assert "vars.AWS_ACCOUNT_ID != ''" in condition, f"{name}: {condition}"
