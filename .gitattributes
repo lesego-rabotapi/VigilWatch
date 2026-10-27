@@ -1,2 +1,5 @@
 # The Lambda bundle hash must not depend on the OS that checked the code out.
-lambda/** text eol=lf
+# Text types only: forcing text on a binary would rewrite its bytes on commit.
+lambda/**/*.py text eol=lf
+lambda/**/*.json text eol=lf
+lambda/**/*.txt text eol=lf
