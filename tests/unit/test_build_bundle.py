@@ -162,14 +162,17 @@ def git(repo: Path, *args: str) -> str:
     ).stdout
 
 
-def committed_tree(base: Path) -> Path:
-    """A repository whose lambda/ holds one committed file, then a dirty working copy of it."""
+def committed_tree(base: Path, *, dirty: bool = True) -> Path:
+    """A repository whose lambda/ holds one committed file, then (dirty) a CRLF working copy of it
+    and an untracked file."""
     repo = base / "repo"
     (repo / "lambda").mkdir(parents=True)
     git(repo, "init", "-q")
     (repo / "lambda" / "handler.py").write_bytes(b"X = 1\n")
     git(repo, "add", ".")
     git(repo, "commit", "-q", "-m", "one")
+    if not dirty:
+        return repo / "lambda"
     (repo / "lambda" / "handler.py").write_bytes(b"X = 1\r\n")  # a Windows checkout
     (repo / "lambda" / "scratch.py").write_bytes(b"secret = 1\n")  # never committed
     return repo / "lambda"
@@ -186,7 +189,7 @@ def test_a_build_from_a_commit_ignores_line_endings_and_untracked_files_on_disk(
 
 
 def test_the_command_line_builds_the_checked_out_commit_by_default(tmp_path, capsys):
-    src = committed_tree(tmp_path)
+    src = committed_tree(tmp_path, dirty=False)
     assert build_bundle.main(["--source", str(src), "--out", str(tmp_path / "b.zip")]) == 0
     printed = json.loads(capsys.readouterr().out)
     expected = build_bundle.build(src, tmp_path / "c.zip", rev="HEAD").base64sha256
@@ -212,3 +215,24 @@ def test_a_source_at_the_repository_root_keeps_whole_entry_names(tmp_path):
     build_bundle.build(repo, tmp_path / "b.zip", rev="HEAD")
     with zipfile.ZipFile(tmp_path / "b.zip") as z:
         assert z.namelist() == ["lambda/handler.py"]
+
+
+@pytest.mark.negative
+@pytest.mark.parametrize("path", ["handler.py", "new_module.py"], ids=["modified", "untracked"])
+def test_the_command_line_refuses_to_silently_drop_uncommitted_work(tmp_path, capsys, path):
+    """Building HEAD over local edits would deploy the old code while the developer tests the new."""
+    src = committed_tree(tmp_path, dirty=False)
+    (src / path).write_bytes(b"X = 2\n")
+    assert build_bundle.main(["--source", str(src), "--out", str(tmp_path / "b.zip")]) == 1
+    err = capsys.readouterr().err
+    assert path in err and "commit" in err
+    assert not (tmp_path / "b.zip").exists()
+
+
+def test_allow_dirty_builds_the_commit_anyway_and_says_what_was_left_out(tmp_path, capsys):
+    src = committed_tree(tmp_path)
+    argv = ["--source", str(src), "--out", str(tmp_path / "b.zip"), "--allow-dirty"]
+    assert build_bundle.main(argv) == 0
+    assert "scratch.py" in capsys.readouterr().err
+    with zipfile.ZipFile(tmp_path / "b.zip") as z:
+        assert z.read("handler.py") == b"X = 1\n"
