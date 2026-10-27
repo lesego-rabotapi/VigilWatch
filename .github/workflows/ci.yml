@@ -11,6 +11,11 @@ permissions:
 
 env:
   TF_VERSION: "1.16.6"
+  # Providers are reused between runs instead of downloaded each time. The modules' lock files are
+  # not committed, so Terraform may fill them from the cache; the environments' committed lock
+  # files still pin and verify their providers.
+  TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform-plugin-cache
+  TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE: "true"
 
 jobs:
   python:
@@ -29,6 +34,12 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: terraform-providers-${{ runner.os }}-${{ hashFiles('terraform/**/versions.tf', 'terraform/**/.terraform.lock.hcl') }}
+          restore-keys: terraform-providers-${{ runner.os }}-
+      - run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest --cov --cov-report=term --cov-report=xml
@@ -43,10 +54,15 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: terraform-providers-${{ runner.os }}-${{ hashFiles('terraform/**/versions.tf', 'terraform/**/.terraform.lock.hcl') }}
+          restore-keys: terraform-providers-${{ runner.os }}-
+      - run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
       - run: terraform fmt -check -recursive terraform
-      # Dev and prod share one account's free tier; terraform validate sees one at a time.
-      - name: Free tier across environments
-        run: python scripts/free_tier_budget.py
+      # The free tier shared by dev and prod is checked by the Python job's test suite
+      # (the free-tier unit tests run the check on the repository), so it is not repeated here.
       - name: Validate and test every module and every environment
         run: |
           set -euo pipefail
