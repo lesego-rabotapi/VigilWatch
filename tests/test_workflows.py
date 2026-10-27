@@ -267,10 +267,31 @@ def test_aws_jobs_also_wait_for_the_state_bucket(deploy):
         assert "vars.TF_STATE_BUCKET != ''" in condition, f"{name}: {condition}"
 
 
-def test_the_terraform_job_checks_the_free_tier_across_environments(ci):
-    """terraform validate sees one environment at a time; the shared account needs the sum."""
+def test_the_free_tier_is_checked_once_by_the_test_suite_not_again_by_a_ci_step(ci):
+    """tests/unit/test_free_tier_budget.py runs the command on the repository in every job that
+    runs pytest; a second CI step computes the same answer."""
+    text, _ = ci
+    assert "free_tier_budget.py" not in text
+
+
+@pytest.mark.parametrize("job", ["python", "terraform"])
+def test_terraform_providers_come_from_a_cache_between_runs(ci, job):
+    """Module lock files are not committed, so without a cache every run downloads the AWS
+    provider, hundreds of MB, before any test starts."""
     _, wf = ci
-    assert "python scripts/free_tier_budget.py" in steps_text(wf["jobs"]["terraform"])
+    env = {**wf.get("env", {}), **wf["jobs"][job].get("env", {})}
+    assert env.get("TF_PLUGIN_CACHE_DIR"), f"{job} sets no plugin cache directory"
+    steps = wf["jobs"][job]["steps"]
+    cache = next(
+        (i for i, s in enumerate(steps) if str(s.get("uses", "")).startswith("actions/cache@")),
+        None,
+    )
+    assert cache is not None, f"{job} restores no cache"
+    assert "TF_PLUGIN_CACHE_DIR" in str(steps[cache]["with"]["path"])
+    first_use = next(
+        i for i, s in enumerate(steps) if re.search(r"pytest|terraform init", str(s.get("run", "")))
+    )
+    assert cache < first_use, f"{job} must restore the cache before terraform runs"
 
 
 def test_a_missing_read_only_url_is_reported_first_and_listed_in_the_header(deploy):

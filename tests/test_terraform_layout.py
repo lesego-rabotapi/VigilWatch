@@ -127,11 +127,6 @@ def test_no_account_ids_or_addresses_are_hardcoded_in_infrastructure_code():
 # ---- Free-tier arithmetic across environments --------------------------------
 
 
-def test_the_committed_environments_fit_one_free_tier():
-    """The sums themselves live in scripts/free_tier_budget.py (unit-tested there)."""
-    assert free_tier_budget.violations() == []
-
-
 @pytest.mark.parametrize("env", ENVS)
 def test_every_enabled_alarm_is_one_the_monitoring_module_knows(env):
     alarms = set(tfvars(env)["enabled_alarms"])
