@@ -166,8 +166,9 @@ resource "aws_iam_role_policy" "deploy" {
           "s3:GetObject", "s3:GetObjectTagging", "s3:PutObject", "s3:DeleteObject",
         ]
         Resource = [
-          "arn:aws:s3:::${var.project_name}-frontend-${data.aws_caller_identity.current.account_id}",
-          "arn:aws:s3:::${var.project_name}-frontend-${data.aws_caller_identity.current.account_id}/*",
+          # One dashboard bucket per environment: <project>-<env>-frontend-<account>.
+          "arn:aws:s3:::${var.project_name}-*-frontend-${data.aws_caller_identity.current.account_id}",
+          "arn:aws:s3:::${var.project_name}-*-frontend-${data.aws_caller_identity.current.account_id}/*",
         ]
       },
       {
