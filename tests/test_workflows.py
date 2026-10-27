@@ -1,4 +1,8 @@
-"""Pipeline policy: quality gates on every change, safe and keyless deploys."""
+"""Pipeline policy: quality gates on every change, safe and keyless deploys.
+
+Layout (DevOps Stage 6): ci.yml on every change; deploy-dev.yml on main; promote-prod.yml and
+rollback.yml by hand with approval; all three deploy through one reusable deploy-environment.yml.
+"""
 
 import re
 from pathlib import Path
@@ -9,6 +13,10 @@ import yaml
 pytestmark = pytest.mark.req("VW-017")
 
 WORKFLOWS = Path(__file__).resolve().parent.parent / ".github" / "workflows"
+CONFIGURED = (
+    "vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' && vars.TF_STATE_BUCKET != ''"
+)
+REUSABLE = "./.github/workflows/deploy-environment.yml"
 
 
 def load(name):
@@ -24,18 +32,34 @@ def steps_text(job):
     return "\n".join(str(s.get("run", "")) + " " + str(s.get("uses", "")) for s in job["steps"])
 
 
+def all_workflows():
+    return sorted(p.name for p in WORKFLOWS.glob("*.yml"))
+
+
 @pytest.fixture(scope="module")
 def ci():
     return load("ci.yml")
 
 
 @pytest.fixture(scope="module")
+def dev():
+    return load("deploy-dev.yml")
+
+
+@pytest.fixture(scope="module")
+def promote():
+    return load("promote-prod.yml")
+
+
+@pytest.fixture(scope="module")
+def rollback():
+    return load("rollback.yml")
+
+
+@pytest.fixture(scope="module")
 def deploy():
-    return load("deploy.yml")
-
-
-def test_legacy_pipeline_is_gone():
-    assert not (WORKFLOWS / "deploy.yml").read_text(encoding="utf-8").count("AWS_ACCESS_KEY_ID")
+    """The reusable workflow every environment is deployed through."""
+    return load("deploy-environment.yml")
 
 
 # ---- CI ------------------------------------------------------------------
@@ -79,148 +103,10 @@ def test_ci_frontend_and_security_gates(ci):
     assert "trivy" in text
 
 
-# ---- Deploy --------------------------------------------------------------
-
-
-def test_deploy_only_from_main(deploy):
-    _, wf = deploy
-    assert wf["on"]["push"]["branches"] == ["main"]
-
-
-def test_deploy_reuses_ci_as_a_gate(deploy):
-    _, wf = deploy
-    assert wf["jobs"]["ci"]["uses"] == "./.github/workflows/ci.yml"
-    assert "ci" in wf["jobs"]["plan"]["needs"]
-
-
-def test_deploy_has_no_static_credentials(deploy):
-    text, _ = deploy
-    assert "aws-access-key-id" not in text
-    assert "AWS_SECRET_ACCESS_KEY" not in text
-    assert "role-to-assume" in text
-
-
-def test_deploy_is_serialized(deploy):
-    _, wf = deploy
-    assert wf["concurrency"]["cancel-in-progress"] is False
-
-
-def test_top_level_permissions_are_minimal(deploy):
-    _, wf = deploy
-    assert wf["permissions"] == {"contents": "read"}
-
-
-def test_apply_requires_approval_and_uses_the_reviewed_plan(deploy):
-    text, wf = deploy
-    apply = wf["jobs"]["apply"]
-    assert apply["environment"]["name"] == "production"
-    assert "plan" in apply["needs"]
-    assert "-auto-approve" not in text
-    assert re.search(r"terraform apply .*tfplan", steps_text(apply))
-    assert "terraform plan" in steps_text(wf["jobs"]["plan"])
-    assert "-out=tfplan" in steps_text(wf["jobs"]["plan"])
-
-
-def test_oidc_jobs_request_id_token(deploy):
-    _, wf = deploy
-    for name in ("plan", "apply"):
-        assert wf["jobs"][name]["permissions"]["id-token"] == "write", name
-
-
-def test_post_deploy_smoke_and_cache_invalidation(deploy):
-    _, wf = deploy
-    assert "cloudfront create-invalidation" in steps_text(wf["jobs"]["apply"])
-    assert "pytest -m e2e" in steps_text(wf["jobs"]["smoke"])
-
-
-def test_the_smoke_test_is_its_own_job_so_it_can_be_rerun_without_reapplying(deploy):
-    """Re-running a job that holds `terraform apply tfplan` fails: the saved plan is stale."""
-    _, wf = deploy
-    apply, smoke = wf["jobs"]["apply"], wf["jobs"]["smoke"]
-    assert "pytest" not in steps_text(apply)
-    assert "terraform" not in steps_text(smoke)
-    assert smoke["needs"] == ["apply"] or smoke["needs"] == "apply"
-    assert "id-token" not in smoke.get("permissions", {}), "the smoke test needs no AWS access"
-    assert {"api_base_url", "dashboard_url"} <= set(apply["outputs"])
-
-
-def test_only_release_job_can_write_contents(deploy):
-    _, wf = deploy
-    writers = [
-        n for n, j in wf["jobs"].items() if j.get("permissions", {}).get("contents") == "write"
-    ]
-    assert writers == ["release"]
-    assert "smoke" in wf["jobs"]["release"]["needs"], "only a deploy that passed its smoke test"
-
-
-def test_terraform_version_supports_native_state_locking(deploy, ci):
-    for text, _ in (deploy, ci):
-        for version in re.findall(r"terraform_version:\s*\"?([\d.]+)", text):
-            major, minor = (int(x) for x in version.split(".")[:2])
-            assert (major, minor) >= (1, 10), version
-
-
-def test_actions_are_pinned_to_versions(deploy, ci):
-    for text, _ in (deploy, ci):
-        for ref in re.findall(r"uses:\s*([^\s]+)", text):
-            if ref.startswith("./"):
-                continue
-            assert "@" in ref and not ref.endswith(("@main", "@master")), ref
-
-
-# ---- Toolchain pin ---------------------------------------------------------
-
-
-def test_terraform_version_has_a_single_source_of_truth():
-    pin_file = WORKFLOWS.parent.parent / ".terraform-version"
-    assert pin_file.exists(), ".terraform-version is missing"
-    pinned = pin_file.read_text(encoding="utf-8").strip()
-    assert re.fullmatch(r"\d+\.\d+\.\d+", pinned), pinned
-    for name in ("ci.yml", "deploy.yml"):
-        text = (WORKFLOWS / name).read_text(encoding="utf-8")
-        versions = re.findall(r'TF_VERSION:\s*"([\d.]+)"', text)
-        assert versions == [pinned], f"{name} pins {versions}, expected {pinned}"
-
-
-# ---- Unconfigured repositories ---------------------------------------------
-
-
-def test_aws_jobs_are_skipped_not_failed_until_the_repository_is_configured(deploy):
-    """A fresh merge must show 'skipped', not a red run, before bootstrap is done."""
-    _, wf = deploy
-    for name in ("plan", "apply", "smoke", "release"):
-        condition = str(wf["jobs"][name].get("if", ""))
-        assert "vars.AWS_DEPLOY_ROLE_ARN" in condition, f"{name} has no configuration guard"
-        assert "!=" in condition and "''" in condition, f"{name}: {condition}"
-
-
-# ---- Modules, environments and the prebuilt bundle ---------------------------
-
-
 def test_ci_checks_every_module_and_every_environment(ci):
     text, _ = ci
     assert "terraform/modules/*" in text and "terraform/envs/*" in text
     assert "terraform fmt -check -recursive terraform" in text
-
-
-def test_no_workflow_can_destroy_infrastructure(deploy, ci):
-    for text, _ in (deploy, ci):
-        assert not re.search(r"terraform\s+destroy|-destroy\b", text)
-
-
-def test_deploy_builds_the_bundle_once_and_apply_reuses_it(deploy):
-    _, wf = deploy
-    plan, apply = steps_text(wf["jobs"]["plan"]), steps_text(wf["jobs"]["apply"])
-    assert "scripts/build_bundle.py" in plan
-    assert "bundle_sha256" in plan
-    assert "build_bundle" not in apply, "apply must deploy the bundle the plan was made with"
-
-
-def test_deploy_names_the_environment_and_pins_the_account(deploy):
-    text, wf = deploy
-    assert "terraform/envs/prod" in text
-    assert "allowed_account_ids" in steps_text(wf["jobs"]["plan"])
-    assert "vars.AWS_ACCOUNT_ID" in text
 
 
 def test_the_python_job_installs_terraform_for_the_policy_enforcement_tests(ci):
@@ -232,39 +118,6 @@ def test_the_python_job_installs_terraform_for_the_policy_enforcement_tests(ci):
     pytest_step = next(i for i, s in enumerate(steps) if "pytest" in str(s.get("run", "")))
     assert setup < pytest_step, "terraform must be installed before pytest runs"
     assert steps[setup]["with"]["terraform_wrapper"] is False, "the wrapper adds output to stdout"
-
-
-def test_a_half_configured_repository_skips_instead_of_failing(deploy):
-    """The plan needs both the role and the account id; missing either must mean 'skipped'."""
-    _, wf = deploy
-    for name in ("plan", "apply", "smoke", "release"):
-        condition = str(wf["jobs"][name].get("if", ""))
-        assert "vars.AWS_ACCOUNT_ID != ''" in condition, f"{name}: {condition}"
-
-
-def test_the_production_smoke_test_is_read_only(deploy):
-    """apply deploys prod: its smoke test must never register endpoints there."""
-    _, wf = deploy
-    smoke = next(s for s in wf["jobs"]["smoke"]["steps"] if "pytest -m e2e" in str(s.get("run")))
-    assert "--env=prod" in smoke["run"]
-    assert "--env=dev" not in smoke["run"]
-    assert set(smoke["env"]) == {"API_URL_PROD", "DASHBOARD_URL_PROD", "E2E_READONLY_URL"}
-
-
-def test_the_production_smoke_test_is_given_a_url_it_can_read(deploy):
-    """Prod is read-only, so it cannot register a URL to read back: one must be supplied, or the
-    read test would skip on every deploy."""
-    _, wf = deploy
-    smoke = next(s for s in wf["jobs"]["smoke"]["steps"] if "pytest -m e2e" in str(s.get("run")))
-    assert smoke["env"]["E2E_READONLY_URL"] == "${{ vars.E2E_READONLY_URL }}"
-
-
-def test_aws_jobs_also_wait_for_the_state_bucket(deploy):
-    """Without it terraform init has no backend to use and the run fails instead of skipping."""
-    _, wf = deploy
-    for name in ("plan", "apply", "smoke", "release"):
-        condition = str(wf["jobs"][name].get("if", ""))
-        assert "vars.TF_STATE_BUCKET != ''" in condition, f"{name}: {condition}"
 
 
 def test_the_free_tier_is_checked_once_by_the_test_suite_not_again_by_a_ci_step(ci):
@@ -294,10 +147,267 @@ def test_terraform_providers_come_from_a_cache_between_runs(ci, job):
     assert cache < first_use, f"{job} must restore the cache before terraform runs"
 
 
-def test_a_missing_read_only_url_is_reported_first_and_listed_in_the_header(deploy):
-    """Prod has already changed when the smoke job runs: say plainly what is missing."""
+# ---- The DevOps layout ------------------------------------------------------------------------
+
+
+def test_the_single_deploy_workflow_is_split_into_the_devops_layout():
+    assert not (WORKFLOWS / "deploy.yml").exists(), "replaced by deploy-dev and promote-prod"
+    expected = {
+        "ci.yml",
+        "deploy-dev.yml",
+        "promote-prod.yml",
+        "rollback.yml",
+        "deploy-environment.yml",
+    }
+    assert expected <= set(all_workflows())
+
+
+def test_dev_deploys_every_push_to_main_after_ci(dev):
+    _, wf = dev
+    assert wf["on"]["push"]["branches"] == ["main"]
+    assert wf["jobs"]["ci"]["uses"] == "./.github/workflows/ci.yml"
+    job = wf["jobs"]["deploy"]
+    assert job["uses"] == REUSABLE
+    assert "ci" in job["needs"]
+    assert job["with"] == {"environment": "dev", "sha": "${{ github.sha }}", "build": True}
+
+
+def test_prod_is_only_ever_deployed_by_hand(promote, rollback):
+    for _, wf in (promote, rollback):
+        assert set(wf["on"]) == {"workflow_dispatch"}
+
+
+def test_promotion_deploys_the_commit_dev_last_released_and_its_stored_bundle(promote):
+    _, wf = promote
+    assert wf["on"]["workflow_dispatch"]["inputs"]["sha"]["required"] is False
+    job = wf["jobs"]["deploy"]
+    assert job["uses"] == REUSABLE
+    assert job["with"]["environment"] == "prod"
+    assert job["with"]["sha"] == "${{ needs.resolve.outputs.sha }}"
+    assert job["with"]["require_dev_release"] is True
+    assert job["with"].get("build", False) is False, "prod never builds: it deploys dev's bytes"
+    assert "releases/dev" in steps_text(wf["jobs"]["resolve"])
+
+
+def test_rollback_redeploys_a_given_commit_through_the_same_approval(rollback):
+    _, wf = rollback
+    assert wf["on"]["workflow_dispatch"]["inputs"]["sha"]["required"] is True
+    job = wf["jobs"]["deploy"]
+    assert job["uses"] == REUSABLE
+    assert job["with"] == {
+        "environment": "prod",
+        "sha": "${{ inputs.sha }}",
+        "require_dev_release": False,
+    }
+
+
+def test_each_environment_deploys_one_run_at_a_time_and_never_cancels_an_apply(
+    dev, promote, rollback
+):
+    groups = {}
+    for name, (_, wf) in {"dev": dev, "promote": promote, "rollback": rollback}.items():
+        assert wf["concurrency"]["cancel-in-progress"] is False, name
+        groups[name] = wf["concurrency"]["group"]
+    assert groups["promote"] == groups["rollback"] == "deploy-prod", "one queue for prod"
+    assert groups["dev"] == "deploy-dev"
+
+
+@pytest.mark.parametrize("name", ["deploy-dev.yml", "promote-prod.yml", "rollback.yml"])
+def test_callers_grant_the_reusable_workflow_only_what_it_needs(name):
+    _, wf = load(name)
+    deploy = wf["jobs"]["deploy"]
+    assert deploy["permissions"] == {"contents": "read", "id-token": "write"}
+    assert CONFIGURED in str(deploy["if"]), "skipped, not failed, until the repository is set up"
+
+
+# ---- The reusable deployment ------------------------------------------------------------------
+
+
+def test_the_reusable_workflow_takes_an_environment_and_a_commit(deploy):
+    _, wf = deploy
+    inputs = wf["on"]["workflow_call"]["inputs"]
+    assert {"environment", "sha", "build", "require_dev_release"} <= set(inputs)
+    assert inputs["environment"]["required"] and inputs["sha"]["required"]
+    assert inputs["build"]["default"] is False and inputs["require_dev_release"]["default"] is False
+
+
+def test_inputs_are_validated_before_anything_else_runs(deploy):
+    _, wf = deploy
+    first = wf["jobs"]["plan"]["steps"][0]
+    assert "dev|prod" in first["run"] and "[0-9a-f]{40}" in first["run"]
+    assert "${{" not in first["run"], "inputs reach the shell through env, never inline"
+
+
+def test_the_commit_is_what_gets_checked_out_planned_and_applied(deploy):
+    _, wf = deploy
+    checkout = next(
+        s for s in wf["jobs"]["plan"]["steps"] if "actions/checkout" in s.get("uses", "")
+    )
+    assert checkout["with"]["ref"] == "${{ inputs.sha }}"
+    text = steps_text(wf["jobs"]["plan"])
+    assert "git merge-base --is-ancestor" in text, "prod deploys only commits that are on main"
+
+
+def test_dev_builds_and_stores_the_bundle_prod_fetches_those_bytes(deploy):
+    _, wf = deploy
+    steps = wf["jobs"]["plan"]["steps"]
+    build = next(s for s in steps if "scripts/build_bundle.py --out" in str(s.get("run", "")))
+    fetch = next(s for s in steps if "Fetch" in s.get("name", ""))
+    assert build["if"] == "${{ inputs.build }}" and fetch["if"] == "${{ !inputs.build }}"
+    assert "bundles/" in build["run"] and "aws s3 cp" in build["run"]
+    assert "cmp" in build["run"], "a stored bundle with other bytes means the build drifted"
+    assert "bundles/" in fetch["run"]
+    assert "--describe" in steps_text(wf["jobs"]["plan"])
+
+
+def test_promotion_refuses_anything_but_what_dev_last_released(deploy):
+    _, wf = deploy
+    check = next(
+        s for s in wf["jobs"]["plan"]["steps"] if s.get("if") == "${{ inputs.require_dev_release }}"
+    )
+    assert "releases/dev" in check["run"] and "exit 1" in check["run"]
+
+
+def test_apply_requires_approval_for_prod_and_uses_the_reviewed_plan(deploy):
     text, wf = deploy
-    header = text.split("\non:", 1)[0]
-    assert "E2E_READONLY_URL" in header
-    first = next(s for s in wf["jobs"]["smoke"]["steps"] if "run" in s)
-    assert "E2E_READONLY_URL" in first["run"] and "::error" in first["run"]
+    apply = wf["jobs"]["apply"]
+    assert (
+        "production" in apply["environment"]["name"]
+        and "development" in apply["environment"]["name"]
+    )
+    assert "plan" in apply["needs"]
+    assert re.search(r"terraform apply .*tfplan", steps_text(apply))
+    assert "-out=tfplan" in steps_text(wf["jobs"]["plan"])
+    assert "build_bundle.py --out" not in steps_text(apply), "apply deploys the planned bundle"
+
+
+def test_each_environment_uses_its_own_directory_and_state_key(deploy):
+    text, wf = deploy
+    assert wf["jobs"]["plan"]["defaults"]["run"]["working-directory"] == (
+        "terraform/envs/${{ inputs.environment }}"
+    )
+    assert "key=vigilwatch/envs/${{ inputs.environment }}.tfstate" in text
+
+
+def test_a_successful_deploy_is_recorded_only_after_its_smoke_test(deploy):
+    _, wf = deploy
+    record = wf["jobs"]["record"]
+    assert "smoke" in record["needs"]
+    assert "releases/" in steps_text(record)
+
+
+def test_the_smoke_test_is_its_own_job_so_it_can_be_rerun_without_reapplying(deploy):
+    """Re-running a job that holds `terraform apply tfplan` fails: the saved plan is stale."""
+    _, wf = deploy
+    apply, smoke = wf["jobs"]["apply"], wf["jobs"]["smoke"]
+    assert "pytest" not in steps_text(apply)
+    assert "terraform" not in steps_text(smoke)
+    assert "apply" in smoke["needs"]
+    assert "id-token" not in smoke.get("permissions", {}), "the smoke test needs no AWS access"
+    assert {"api_base_url", "dashboard_url"} <= set(apply["outputs"])
+
+
+def test_post_deploy_cache_invalidation(deploy):
+    _, wf = deploy
+    assert "cloudfront create-invalidation" in steps_text(wf["jobs"]["apply"])
+
+
+def test_the_production_smoke_test_is_read_only_and_given_a_url_it_can_read(deploy):
+    _, wf = deploy
+    smoke = next(s for s in wf["jobs"]["smoke"]["steps"] if "pytest" in str(s.get("run")))
+    assert "--env=${{ inputs.environment }}" not in smoke["run"], "env comes through env vars"
+    assert smoke["env"]["E2E_READONLY_URL"] == "${{ vars.E2E_READONLY_URL }}"
+    assert '--env="$ENVIRONMENT"' in smoke["run"]
+    check = next(s for s in wf["jobs"]["smoke"]["steps"] if "run" in s)
+    assert "E2E_READONLY_URL" in check["run"] and "::error" in check["run"]
+    assert check["if"] == "${{ inputs.environment == 'prod' }}"
+
+
+def test_the_deploy_pins_the_account_in_terraform(deploy):
+    _, wf = deploy
+    assert "allowed_account_ids" in steps_text(wf["jobs"]["plan"])
+
+
+# ---- Promotion and release ---------------------------------------------------------------------
+
+
+def test_only_the_prod_release_can_write_contents():
+    writers = []
+    for name in all_workflows():
+        _, wf = load(name)
+        for job_name, job in wf["jobs"].items():
+            if job.get("permissions", {}).get("contents") == "write":
+                writers.append(f"{name}:{job_name}")
+    assert writers == ["promote-prod.yml:release"]
+
+
+def test_a_release_is_tagged_only_after_prod_passed_its_smoke_test(promote):
+    _, wf = promote
+    assert "deploy" in wf["jobs"]["release"]["needs"]
+
+
+# ---- Every workflow -----------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("name", all_workflows())
+def test_no_workflow_has_static_credentials(name):
+    text, _ = load(name)
+    assert "aws-access-key-id" not in text and "AWS_SECRET_ACCESS_KEY" not in text
+
+
+@pytest.mark.parametrize("name", all_workflows())
+def test_top_level_permissions_are_read_only(name):
+    _, wf = load(name)
+    assert wf["permissions"] == {"contents": "read"}
+
+
+@pytest.mark.parametrize("name", all_workflows())
+def test_every_job_that_assumes_a_role_first_proves_it_is_in_the_right_account(name):
+    """allowed_account_ids stops Terraform; this stops every other AWS call before it runs."""
+    _, wf = load(name)
+    for job_name, job in wf["jobs"].items():
+        steps = job.get("steps", [])
+        assume = [
+            i for i, s in enumerate(steps) if "configure-aws-credentials" in s.get("uses", "")
+        ]
+        for i in assume:
+            guard = steps[i + 1]
+            assert "aws sts get-caller-identity" in guard.get("run", ""), f"{job_name}"
+            assert guard["env"]["EXPECTED"] == "${{ vars.AWS_ACCOUNT_ID }}", f"{job_name}"
+            assert "exit 1" in guard["run"], f"{job_name}"
+
+
+@pytest.mark.parametrize("name", all_workflows())
+def test_no_workflow_can_destroy_infrastructure(name):
+    text, _ = load(name)
+    assert not re.search(r"terraform\s+destroy|-destroy\b", text)
+
+
+@pytest.mark.parametrize("name", all_workflows())
+def test_actions_are_pinned_to_versions(name):
+    text, _ = load(name)
+    for ref in re.findall(r"uses:\s*([^\s]+)", text):
+        if ref.startswith("./"):
+            continue
+        assert "@" in ref and not ref.endswith(("@main", "@master")), ref
+
+
+@pytest.mark.parametrize("name", all_workflows())
+def test_terraform_version_supports_native_state_locking(name):
+    text, _ = load(name)
+    for version in re.findall(r"terraform_version:\s*\"?([\d.]+)", text):
+        major, minor = (int(x) for x in version.split(".")[:2])
+        assert (major, minor) >= (1, 10), version
+
+
+def test_terraform_version_has_a_single_source_of_truth():
+    pin_file = WORKFLOWS.parent.parent / ".terraform-version"
+    assert pin_file.exists(), ".terraform-version is missing"
+    pinned = pin_file.read_text(encoding="utf-8").strip()
+    assert re.fullmatch(r"\d+\.\d+\.\d+", pinned), pinned
+    for name in all_workflows():
+        text = (WORKFLOWS / name).read_text(encoding="utf-8")
+        if "setup-terraform" not in text:
+            continue
+        versions = re.findall(r'TF_VERSION:\s*"([\d.]+)"', text)
+        assert versions == [pinned], f"{name} pins {versions}, expected {pinned}"

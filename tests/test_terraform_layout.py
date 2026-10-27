@@ -89,10 +89,13 @@ def test_each_environment_has_its_own_state_key():
 
 
 def test_the_pipeline_and_the_runbook_use_the_environments_state_keys():
-    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
-    used = re.findall(r"key=([\w/.-]+\.tfstate)", workflow)
-    assert used, "the deploy workflow names no state key"
-    assert set(used) <= set(state_keys().values()), used
+    workflow = (ROOT / ".github" / "workflows" / "deploy-environment.yml").read_text(
+        encoding="utf-8"
+    )
+    used = set(re.findall(r"key=([\w/.${} -]+\.tfstate)", workflow))
+    assert used == {"vigilwatch/envs/${{ inputs.environment }}.tfstate"}, used
+    for env, key in state_keys().items():
+        assert key == f"vigilwatch/envs/{env}.tfstate", "the workflow derives keys this way"
     runbook = (ROOT / "docs" / "RUNBOOK.md").read_text(encoding="utf-8")
     named = set(re.findall(r"vigilwatch/[\w/.-]+\.tfstate", runbook))
     assert named and named <= set(state_keys().values()), named
@@ -208,6 +211,15 @@ def test_the_deploy_role_may_manage_each_environments_dashboard_bucket(env):
     resources = _bootstrap_s3_resources()
     assert any(fnmatch.fnmatchcase(bucket, r) for r in resources), resources
     assert any(fnmatch.fnmatchcase(bucket + "/index.html", r) for r in resources), resources
+
+
+def test_the_deploy_role_trusts_main_and_each_environments_deploy_job_only():
+    """Apply jobs run in a GitHub environment, which changes the OIDC subject to
+    environment:<name>; plan, record and resolve jobs run as the main branch."""
+    text = (TF / "bootstrap" / "main.tf").read_text(encoding="utf-8")
+    block = re.search(r'resource "aws_iam_role" "deploy"(.*?)\n\}', text, re.S).group(1)
+    subjects = set(re.findall(r'"repo:\$\{var\.github_repository\}:([^"]+)"', block))
+    assert subjects == {"ref:refs/heads/main", "environment:development", "environment:production"}
 
 
 @pytest.mark.security
