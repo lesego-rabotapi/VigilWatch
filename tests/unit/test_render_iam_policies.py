@@ -8,6 +8,7 @@ import render_iam_policies
 
 pytestmark = pytest.mark.req("VW-016")
 
+NOT_INITIALISED = 'Error: Missing required provider. Run "terraform init" to install it.'
 POLICY = {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Action": ["a:B"]}]}
 
 
@@ -54,7 +55,7 @@ def test_callers_cannot_change_the_cached_copy(terraform):
 def test_a_failing_console_reinitialises_once_then_retries(terraform):
     """A stale or half-initialised .terraform directory must not be trusted."""
     calls, script = terraform
-    script["console"] = [RuntimeError("provider missing"), console_output({"x": POLICY})]
+    script["console"] = [RuntimeError(NOT_INITIALISED), console_output({"x": POLICY})]
     assert render_iam_policies.render() == {"x": POLICY}
     assert calls == ["console", "init", "console"]
 
@@ -82,10 +83,20 @@ def test_the_retry_upgrades_providers_so_a_stale_lock_file_cannot_block_it(monke
 @pytest.mark.negative
 def test_a_console_that_keeps_failing_raises_after_one_retry(terraform):
     calls, script = terraform
-    script["console"] = [RuntimeError("offline")]
-    with pytest.raises(RuntimeError, match="offline"):
+    script["console"] = [RuntimeError(NOT_INITIALISED)]
+    with pytest.raises(RuntimeError, match="terraform init"):
         render_iam_policies.render()
     assert calls == ["console", "init", "console"]
+
+
+@pytest.mark.negative
+def test_an_error_in_the_module_itself_is_reported_without_touching_providers(terraform):
+    """init -upgrade downloads and may move provider versions: only a missing init justifies it."""
+    calls, script = terraform
+    script["console"] = [RuntimeError("Error: Reference to undeclared local value")]
+    with pytest.raises(RuntimeError, match="undeclared"):
+        render_iam_policies.render()
+    assert calls == ["console"]
 
 
 @pytest.mark.negative
