@@ -1,6 +1,6 @@
 """One object for all DynamoDB access, composed from three single-purpose repositories.
 
-Two tables (see terraform/dynamo.tf):
+Two tables (see terraform/modules/data/main.tf):
 
   endpoints  PK endpoint_id                                    -> EndpointRepository
   history    PK endpoint_id, SK one of

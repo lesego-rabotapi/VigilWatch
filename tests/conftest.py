@@ -43,7 +43,7 @@ def _create_table(name, key_schema, attributes):
 
 @pytest.fixture
 def tables(aws):
-    """Tables mirroring terraform/dynamo.tf."""
+    """Tables mirroring terraform/modules/data/main.tf."""
     _create_table(
         os.environ["ENDPOINTS_TABLE"],
         [{"AttributeName": "endpoint_id", "KeyType": "HASH"}],

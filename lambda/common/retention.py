@@ -1,4 +1,7 @@
-"""How long each kind of data is kept (enforced by the table TTL, see terraform/dynamo.tf)."""
+"""How long each kind of data is kept.
+
+Enforced by the table TTL: see terraform/modules/data/main.tf.
+"""
 
 from datetime import timedelta
 

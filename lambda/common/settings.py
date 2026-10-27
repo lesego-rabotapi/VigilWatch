@@ -2,7 +2,7 @@
 
 Values are validated when read. A misconfigured function should fail loudly and name the
 variable, rather than run with a nonsense value (an alert threshold of 0, a 10-minute probe
-timeout). The failure-threshold range mirrors terraform/variables.tf.
+timeout). The failure-threshold range mirrors terraform/modules/compute/variables.tf.
 """
 
 import math

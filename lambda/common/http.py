@@ -1,7 +1,7 @@
 """Helpers for API Gateway HTTP API (payload format 2.0) events.
 
 CORS headers are deliberately absent: the HTTP API's cors_configuration is the
-single source of truth (terraform/api_gateway.tf).
+single source of truth (terraform/modules/api/main.tf).
 """
 
 import base64
