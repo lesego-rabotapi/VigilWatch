@@ -45,6 +45,33 @@ def test_parses_numbers_booleans_strings_lists_and_comments():
     }
 
 
+def test_parses_lists_written_over_several_lines():
+    text = 'enabled_alarms = [\n  "checker-errors", # first\n  "api-5xx",\n]\nx = 1\n'
+    assert free_tier_budget.parse_tfvars(text) == {
+        "enabled_alarms": ["checker-errors", "api-5xx"],
+        "x": 1,
+    }
+
+
+def test_every_hcl_comment_style_is_ignored():
+    text = "// line\na = 1 // trailing\n/* block\n b = 2 */\nc = 3 # hash\n"
+    assert free_tier_budget.parse_tfvars(text) == {"a": 1, "c": 3}
+
+
+def test_a_hash_or_slashes_inside_a_string_are_part_of_the_string():
+    text = 'origin = "http://localhost:3000/#x"\nlist = ["a#b", "c//d"]\n'
+    assert free_tier_budget.parse_tfvars(text) == {
+        "origin": "http://localhost:3000/#x",
+        "list": ["a#b", "c//d"],
+    }
+
+
+@pytest.mark.negative
+def test_syntax_it_cannot_read_is_an_error_not_a_wrong_answer():
+    with pytest.raises(ValueError, match="tags"):
+        free_tier_budget.parse_tfvars('tags = { a = "b" }\n')
+
+
 def test_the_committed_sizes_fit(tmp_path):
     envs = write_envs(tmp_path, dev=DEV, prod=PROD)
     assert free_tier_budget.violations(envs) == []
