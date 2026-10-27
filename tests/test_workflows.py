@@ -238,7 +238,15 @@ def test_the_production_smoke_test_is_read_only(deploy):
     smoke = next(s for s in wf["jobs"]["apply"]["steps"] if "pytest -m e2e" in str(s.get("run")))
     assert "--env=prod" in smoke["run"]
     assert "--env=dev" not in smoke["run"]
-    assert set(smoke["env"]) == {"API_URL_PROD", "DASHBOARD_URL_PROD"}
+    assert set(smoke["env"]) == {"API_URL_PROD", "DASHBOARD_URL_PROD", "E2E_READONLY_URL"}
+
+
+def test_the_production_smoke_test_is_given_a_url_it_can_read(deploy):
+    """Prod is read-only, so it cannot register a URL to read back: one must be supplied, or the
+    read test would skip on every deploy."""
+    _, wf = deploy
+    smoke = next(s for s in wf["jobs"]["apply"]["steps"] if "pytest -m e2e" in str(s.get("run")))
+    assert smoke["env"]["E2E_READONLY_URL"] == "${{ vars.E2E_READONLY_URL }}"
 
 
 def test_aws_jobs_also_wait_for_the_state_bucket(deploy):

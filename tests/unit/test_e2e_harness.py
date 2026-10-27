@@ -6,7 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from tests.e2e.config import ENVIRONMENTS, api_url, dashboard_url, get_environment
+from tests.e2e.config import ENVIRONMENTS, api_url, dashboard_url, get_environment, unavailable
 from tests.proxies import create_proxy_for_environment
 from tests.proxies.base_proxy import ApiProxy, ProxyError, ReadOnlyEnvironmentError
 from tests.proxies.dev_proxy import DevProxy
@@ -51,6 +51,19 @@ def test_urls_come_from_the_environment_never_from_code(monkeypatch):
     )
     monkeypatch.setenv("API_URL_DEV", "http://specific.test")
     assert api_url(dev) == "http://specific.test", "environment-specific variable wins"
+
+
+def test_a_missing_address_skips_on_a_developer_machine(monkeypatch):
+    monkeypatch.delenv("CI", raising=False)
+    with pytest.raises(pytest.skip.Exception, match="E2E_READONLY_URL"):
+        unavailable("set E2E_READONLY_URL")
+
+
+@pytest.mark.negative
+def test_a_missing_address_fails_in_ci_because_a_skipped_smoke_test_proves_nothing(monkeypatch):
+    monkeypatch.setenv("CI", "true")
+    with pytest.raises(pytest.fail.Exception, match="E2E_READONLY_URL"):
+        unavailable("set E2E_READONLY_URL")
 
 
 # ---- proxies -----------------------------------------------------------------------------------
