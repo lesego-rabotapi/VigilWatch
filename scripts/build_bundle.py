@@ -9,6 +9,7 @@ Files are read from the commit (HEAD by default), not from disk, so a CRLF check
 file cannot change the bytes: commit first.
 
     python scripts/build_bundle.py --out terraform/.build/vigilwatch.zip
+    python scripts/build_bundle.py --describe stored.zip     # variables for a bundle built earlier
 """
 
 import argparse
@@ -103,8 +104,16 @@ def build(source: Path, out: Path, rev: str | None = None) -> Manifest:
             info.external_attr = FILE_MODE
             info.create_system = 3  # Unix, whatever machine builds it
             bundle.writestr(info, files[name])
-    digest = hashlib.sha256(out.read_bytes()).digest()
-    return Manifest(out, digest.hex(), base64.b64encode(digest).decode())
+    return describe(out)
+
+
+def describe(bundle: Path) -> Manifest:
+    """The manifest of an existing bundle, such as the one dev stored and prod now deploys."""
+    bundle = Path(bundle).resolve()
+    if not bundle.is_file():
+        raise FileNotFoundError(f"bundle not found: {bundle}")
+    digest = hashlib.sha256(bundle.read_bytes()).digest()
+    return Manifest(bundle, digest.hex(), base64.b64encode(digest).decode())
 
 
 def main(argv=None) -> int:
@@ -124,7 +133,16 @@ def main(argv=None) -> int:
         action="store_true",
         help="build HEAD even though the source has uncommitted changes (they are left out)",
     )
+    parser.add_argument(
+        "--describe",
+        type=Path,
+        metavar="ZIP",
+        help="do not build: write the Terraform variables for this existing bundle",
+    )
     args = parser.parse_args(argv)
+    if args.describe:
+        _print_vars(describe(args.describe))
+        return 0
     if not args.from_worktree and args.rev == "HEAD":
         left_out = _uncommitted(args.source)
         if left_out:
@@ -134,14 +152,18 @@ def main(argv=None) -> int:
                 print(f"{what}\n{hint}", file=sys.stderr)
                 return 1
             print(f"warning: {what}; building HEAD without them", file=sys.stderr)
-    manifest = build(args.source, args.out, rev=None if args.from_worktree else args.rev)
-    # The keys are Terraform variable names: pass the file with -var-file.
+    _print_vars(build(args.source, args.out, rev=None if args.from_worktree else args.rev))
+    return 0
+
+
+def _print_vars(manifest: Manifest) -> None:
+    """Print the variables and write them next to the bundle; the keys are Terraform variable
+    names, so the file is passed with -var-file."""
     printed = {"bundle_path": str(manifest.path), "bundle_sha256": manifest.base64sha256}
-    args.out.with_name(args.out.stem + ".tfvars.json").write_text(
+    manifest.path.with_name(manifest.path.stem + ".tfvars.json").write_text(
         json.dumps(printed, indent=2) + "\n", encoding="utf-8"
     )
     print(json.dumps(printed))
-    return 0
 
 
 if __name__ == "__main__":
