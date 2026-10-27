@@ -1,0 +1,2 @@
+# The Lambda bundle hash must not depend on the OS that checked the code out.
+lambda/** text eol=lf
