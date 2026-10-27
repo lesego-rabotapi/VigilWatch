@@ -1,0 +1,32 @@
+name: Roll back prod
+
+# Redeploys an earlier commit to prod: its Terraform and the bundle dev stored for it, through the
+# same plan, production approval, smoke test and release record as a promotion. Use the commit of
+# a previous release (the release tags point at them). Local fallback: docs/RUNBOOK.md, section 6.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full commit id to roll prod back to (a commit dev has deployed)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false # never interrupt a running apply
+
+jobs:
+  deploy:
+    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' && vars.TF_STATE_BUCKET != '' }}
+    uses: ./.github/workflows/deploy-environment.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      environment: prod
+      sha: ${{ inputs.sha }}
+      require_dev_release: false

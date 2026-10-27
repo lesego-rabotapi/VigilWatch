@@ -1,0 +1,33 @@
+name: Deploy dev
+
+# Every push to main deploys dev: CI first, then deploy-environment.yml builds the commit's bundle,
+# stores it, plans, applies, smoke-tests and records the release. Promote it with promote-prod.yml.
+# Until AWS_DEPLOY_ROLE_ARN, AWS_ACCOUNT_ID and TF_STATE_BUCKET are set, the deploy is skipped.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false # never interrupt a running apply
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: [ci]
+    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' && vars.TF_STATE_BUCKET != '' }}
+    uses: ./.github/workflows/deploy-environment.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      environment: dev
+      sha: ${{ github.sha }}
+      build: true

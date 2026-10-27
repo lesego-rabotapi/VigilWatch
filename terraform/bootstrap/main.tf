@@ -120,10 +120,12 @@ resource "aws_iam_role" "deploy" {
       Action    = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = { "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com" }
-        # Only the main branch (plan) and the approved production environment (apply).
+        # Only workflows on main (plan, record, resolve) and the environments' apply jobs, whose
+        # subject becomes environment:<name>; production needs a reviewer's approval.
         StringLike = {
           "token.actions.githubusercontent.com:sub" = [
             "repo:${var.github_repository}:ref:refs/heads/main",
+            "repo:${var.github_repository}:environment:development",
             "repo:${var.github_repository}:environment:production",
           ]
         }

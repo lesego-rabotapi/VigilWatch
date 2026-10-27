@@ -1,0 +1,87 @@
+name: Promote to prod
+
+# Deploys to prod the commit dev last deployed successfully (or the commit given, which must be
+# that one), using the bundle dev built and stored for it: the same bytes, never rebuilt. The apply
+# waits for a reviewer of the "production" environment. A release is tagged once prod passes its
+# smoke test.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full commit id to promote (empty = the commit dev last released)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false # never interrupt a running apply
+
+env:
+  AWS_REGION: af-south-1
+
+jobs:
+  resolve:
+    name: Choose the commit
+    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' && vars.TF_STATE_BUCKET != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Refuse any account but the configured one
+        env:
+          EXPECTED: ${{ vars.AWS_ACCOUNT_ID }}
+        run: |
+          if [ "$(aws sts get-caller-identity --query Account --output text)" != "$EXPECTED" ]; then
+            echo "::error::these credentials are not for the account in AWS_ACCOUNT_ID"
+            exit 1
+          fi
+      - id: sha
+        env:
+          REQUESTED: ${{ inputs.sha }}
+          BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        run: |
+          if [ -n "$REQUESTED" ]; then
+            sha="$REQUESTED"
+          elif ! sha="$(aws s3 cp "s3://$BUCKET/releases/dev" -)"; then
+            echo "::error::dev has no recorded release yet: deploy dev first"
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Promoting $sha" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: [resolve]
+    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' && vars.TF_STATE_BUCKET != '' }}
+    uses: ./.github/workflows/deploy-environment.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      environment: prod
+      sha: ${{ needs.resolve.outputs.sha }}
+      require_dev_release: true
+
+  release:
+    name: Tag the release
+    needs: [resolve, deploy]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create the release at the promoted commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.resolve.outputs.sha }}
+          TAG: v2.${{ github.run_number }}
+        run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$SHA" --title "$TAG" --generate-notes

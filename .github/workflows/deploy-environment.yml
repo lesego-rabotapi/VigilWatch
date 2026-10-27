@@ -1,0 +1,293 @@
+name: Deploy one environment
+
+# Called by deploy-dev.yml, promote-prod.yml and rollback.yml with an environment and a commit.
+# Build once: dev builds the commit's bundle and stores it in the state bucket under
+# bundles/<sha>.zip; prod deploys those stored bytes and never builds. A deploy that passed its
+# smoke test is recorded in releases/<environment>, which is what promotion and drift read.
+#
+# Repository configuration (Settings -> Secrets and variables -> Variables):
+#   AWS_DEPLOY_ROLE_ARN  output deploy_role_arn of terraform/bootstrap
+#   AWS_ACCOUNT_ID       the account every job must be in (checked before any AWS call)
+#   TF_STATE_BUCKET      output state_bucket of terraform/bootstrap (state, bundles, releases)
+#   NOTIFICATION_EMAIL   optional alert recipient
+#   E2E_READONLY_URL     a URL already monitored in prod, read back by the read-only smoke test;
+#                        set it after the first prod deploy (that first smoke run fails until then)
+# Environments (Settings -> Environments): "production" with required reviewers (the approval
+# gate) and "development" without.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: dev or prod
+        required: true
+        type: string
+      sha:
+        description: the full commit id to deploy
+        required: true
+        type: string
+      build:
+        description: build the commit's bundle and store it (dev); otherwise fetch the stored one
+        type: boolean
+        default: false
+      require_dev_release:
+        description: refuse unless this commit is the one dev last deployed successfully
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: af-south-1
+  TF_VERSION: "1.16.6"
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  ENVIRONMENT: ${{ inputs.environment }}
+  SHA: ${{ inputs.sha }}
+  BUCKET: ${{ vars.TF_STATE_BUCKET }}
+  BUNDLE: ${{ github.workspace }}/terraform/.build/vigilwatch.zip
+
+jobs:
+  plan:
+    name: Plan ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: terraform/envs/${{ inputs.environment }}
+    steps:
+      - name: Check the inputs
+        working-directory: .
+        run: |
+          case "$ENVIRONMENT" in
+            dev|prod) ;;
+            *) echo "::error::environment must be dev or prod, got '$ENVIRONMENT'"; exit 1 ;;
+          esac
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::sha must be a full 40-character commit id"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+      - name: Deploy only commits that are on main
+        working-directory: .
+        run: |
+          if ! git merge-base --is-ancestor "$SHA" origin/main; then
+            echo "::error::$SHA is not on main"
+            exit 1
+          fi
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Refuse any account but the configured one
+        env:
+          EXPECTED: ${{ vars.AWS_ACCOUNT_ID }}
+        run: |
+          if [ "$(aws sts get-caller-identity --query Account --output text)" != "$EXPECTED" ]; then
+            echo "::error::these credentials are not for the account in AWS_ACCOUNT_ID"
+            exit 1
+          fi
+      - name: Promote only what dev last deployed successfully
+        if: ${{ inputs.require_dev_release }}
+        run: |
+          released="$(aws s3 cp "s3://$BUCKET/releases/dev" -)"
+          if [ "$released" != "$SHA" ]; then
+            echo "::error::dev last released ${released:-nothing}, not $SHA: deploy it to dev first"
+            exit 1
+          fi
+      - name: Build the bundle and store it
+        if: ${{ inputs.build }}
+        working-directory: .
+        run: |
+          python scripts/build_bundle.py --out "$BUNDLE"
+          key="bundles/$SHA.zip"
+          if aws s3api head-object --bucket "$BUCKET" --key "$key" > /dev/null 2>&1; then
+            aws s3 cp "s3://$BUCKET/$key" "$RUNNER_TEMP/stored.zip" --only-show-errors
+            if ! cmp "$RUNNER_TEMP/stored.zip" "$BUNDLE"; then
+              echo "::error::$key exists with different bytes: the build is not reproducible"
+              exit 1
+            fi
+          else
+            aws s3 cp "$BUNDLE" "s3://$BUCKET/$key" --only-show-errors
+          fi
+      - name: Fetch the stored bundle
+        if: ${{ !inputs.build }}
+        working-directory: .
+        run: |
+          mkdir -p "$(dirname "$BUNDLE")"
+          if ! aws s3 cp "s3://$BUCKET/bundles/$SHA.zip" "$BUNDLE" --only-show-errors; then
+            echo "::error::no stored bundle for $SHA: only commits deployed to dev can go to prod"
+            exit 1
+          fi
+      - name: Describe the bundle for Terraform
+        working-directory: .
+        run: |
+          python scripts/build_bundle.py --describe "$BUNDLE"
+          echo "bundle for $SHA: $(python -c "import json,sys; print(json.load(open(sys.argv[1]))['bundle_sha256'])" "${BUNDLE%.zip}.tfvars.json")" >> "$GITHUB_STEP_SUMMARY"
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - name: terraform init
+        run: >
+          terraform init
+          -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+          -backend-config="key=vigilwatch/envs/${{ inputs.environment }}.tfstate"
+          -backend-config="region=${{ env.AWS_REGION }}"
+          -backend-config="encrypt=true"
+          -backend-config="use_lockfile=true"
+      - name: terraform plan
+        env:
+          ACCOUNT: ${{ vars.AWS_ACCOUNT_ID }}
+          EMAIL: ${{ vars.NOTIFICATION_EMAIL }}
+        run: >
+          terraform plan -out=tfplan
+          -var-file="$GITHUB_WORKSPACE/terraform/.build/vigilwatch.tfvars.json"
+          -var "allowed_account_ids=[\"$ACCOUNT\"]"
+          -var "notification_email=$EMAIL"
+      - name: Plan summary
+        run: |
+          {
+            echo "### Terraform plan: $ENVIRONMENT at $SHA"
+            echo '```'
+            terraform show -no-color tfplan | tail -n 200
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      # The saved plan references the bundle, so ship both.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ inputs.environment }}
+          path: |
+            terraform/envs/${{ inputs.environment }}/tfplan
+            terraform/.build/
+          retention-days: 5
+          include-hidden-files: true
+
+  apply:
+    name: Apply ${{ inputs.environment }}
+    needs: [plan]
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment == 'prod' && 'production' || 'development' }}
+      url: ${{ steps.outputs.outputs.dashboard_url }}
+    outputs:
+      api_base_url: ${{ steps.outputs.outputs.api_base_url }}
+      dashboard_url: ${{ steps.outputs.outputs.dashboard_url }}
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: terraform/envs/${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ inputs.environment }}
+          path: terraform
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Refuse any account but the configured one
+        env:
+          EXPECTED: ${{ vars.AWS_ACCOUNT_ID }}
+        run: |
+          if [ "$(aws sts get-caller-identity --query Account --output text)" != "$EXPECTED" ]; then
+            echo "::error::these credentials are not for the account in AWS_ACCOUNT_ID"
+            exit 1
+          fi
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - name: terraform init
+        run: >
+          terraform init
+          -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+          -backend-config="key=vigilwatch/envs/${{ inputs.environment }}.tfstate"
+          -backend-config="region=${{ env.AWS_REGION }}"
+          -backend-config="encrypt=true"
+          -backend-config="use_lockfile=true"
+      - name: terraform apply (exactly the reviewed plan)
+        run: terraform apply tfplan
+      - name: Read outputs
+        id: outputs
+        run: |
+          echo "dashboard_url=$(terraform output -raw dashboard_url)" >> "$GITHUB_OUTPUT"
+          echo "api_base_url=$(terraform output -raw api_base_url)" >> "$GITHUB_OUTPUT"
+          echo "distribution_id=$(terraform output -raw cloudfront_distribution_id)" >> "$GITHUB_OUTPUT"
+      - name: Invalidate CloudFront cache
+        env:
+          DISTRIBUTION: ${{ steps.outputs.outputs.distribution_id }}
+        run: aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" --paths "/*"
+
+  # Its own job, with no AWS access: after a failure it can be re-run on its own, whereas re-running
+  # the apply job would replay a saved plan that is already stale.
+  smoke:
+    name: Smoke test ${{ inputs.environment }}
+    needs: [apply]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check the read-only smoke test configuration
+        if: ${{ inputs.environment == 'prod' }}
+        env:
+          E2E_READONLY_URL: ${{ vars.E2E_READONLY_URL }}
+        run: |
+          if [ -z "$E2E_READONLY_URL" ]; then
+            echo "::error::Set the repository variable E2E_READONLY_URL to a URL already monitored in prod (docs/RUNBOOK.md, section 1), then re-run this job."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Production is read-only: the harness refuses to register anything there.
+      - name: Post-deploy smoke test
+        env:
+          API_URL_DEV: ${{ needs.apply.outputs.api_base_url }}
+          DASHBOARD_URL_DEV: ${{ needs.apply.outputs.dashboard_url }}
+          API_URL_PROD: ${{ needs.apply.outputs.api_base_url }}
+          DASHBOARD_URL_PROD: ${{ needs.apply.outputs.dashboard_url }}
+          E2E_READONLY_URL: ${{ vars.E2E_READONLY_URL }}
+        run: |
+          pip install -r requirements-dev.txt
+          pytest -m e2e tests/e2e --env="$ENVIRONMENT" -v
+
+  record:
+    name: Record the release of ${{ inputs.environment }}
+    needs: [smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Refuse any account but the configured one
+        env:
+          EXPECTED: ${{ vars.AWS_ACCOUNT_ID }}
+        run: |
+          if [ "$(aws sts get-caller-identity --query Account --output text)" != "$EXPECTED" ]; then
+            echo "::error::these credentials are not for the account in AWS_ACCOUNT_ID"
+            exit 1
+          fi
+      - name: Record the commit this environment now runs
+        run: printf '%s' "$SHA" | aws s3 cp - "s3://$BUCKET/releases/$ENVIRONMENT"

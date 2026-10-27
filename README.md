@@ -97,7 +97,8 @@ frontend/          Static dashboard (no build step) + node:test/jsdom tests
 tests/             unit/, integration/ (moto), contract/ (API schema), e2e/ (post-deploy), policy tests
 scripts/           local_api.py (dashboard + API locally, AWS mocked), build_bundle.py (reproducible Lambda zip)
 docs/              Architecture, runbook, ADRs
-.github/workflows  ci.yml (quality gates), deploy.yml (OIDC, plan -> approval -> apply)
+.github/workflows  ci.yml (quality gates); deploy-dev.yml (every push to main), promote-prod.yml and
+                   rollback.yml (by hand, approval), all through deploy-environment.yml (OIDC, plan -> apply)
 ```
 
 ## Running it
