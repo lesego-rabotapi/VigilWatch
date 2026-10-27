@@ -20,6 +20,20 @@ OUTPUTS = {
 }
 
 
+def _terraform_paths_named_in_code():
+    for path in sorted([*(ROOT / "lambda").rglob("*.py"), *(ROOT / "scripts").glob("*.py")]):
+        for named in re.findall(r"terraform/[\w./-]*\w", path.read_text(encoding="utf-8")):
+            if "/.build/" not in named:  # build output, created by scripts/build_bundle.py
+                yield pytest.param(path, named, id=f"{path.name}:{named}")
+
+
+@pytest.mark.parametrize("source, named", list(_terraform_paths_named_in_code()))
+def test_terraform_files_named_in_code_comments_exist(source, named):
+    """Comments that point at a moved file send the next maintainer to the wrong place, for
+    example to keep a Python range in step with a Terraform validation."""
+    assert (ROOT / named).exists(), f"{source.relative_to(ROOT)} names {named}, which is gone"
+
+
 def test_required_documents_exist():
     for name in ("README.md", "docs/README.md", "docs/RUNBOOK.md", "systemOverview.md"):
         assert (ROOT / name).exists(), name
