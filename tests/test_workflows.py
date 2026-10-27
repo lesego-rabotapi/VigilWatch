@@ -383,6 +383,12 @@ def test_no_workflow_can_quietly_ignore_a_failure_or_skip_a_review(name):
         assert forbidden not in text, f"{name} uses {forbidden}"
 
 
+def test_each_deploy_shows_the_release_checklist_before_and_after(deploy):
+    _, wf = deploy
+    assert "python scripts/checklist.py pre" in steps_text(wf["jobs"]["plan"])
+    assert "python scripts/checklist.py post" in steps_text(wf["jobs"]["smoke"])
+
+
 def test_the_deploy_pins_the_account_in_terraform(deploy):
     _, wf = deploy
     assert "allowed_account_ids" in steps_text(wf["jobs"]["plan"])
