@@ -72,6 +72,15 @@ def test_bundled_sources_are_checked_out_with_lf_line_endings(path):
     assert out.strip().endswith("eol: lf"), out
 
 
+@pytest.mark.negative
+@pytest.mark.parametrize("path", ["lambda/certs/ca.der", "lambda/data/model.bin"])
+def test_binary_files_in_the_bundle_are_not_forced_to_be_text(path):
+    """Forcing text on a binary would rewrite its CRLF byte pairs on commit and corrupt it."""
+    _tracked_files()
+    out = _git("check-attr", "text", "eol", "--", path).stdout
+    assert "text: set" not in out and "eol: lf" not in out, out
+
+
 def test_gitignore_comments_describe_the_current_build():
     text = (ROOT / ".gitignore").read_text(encoding="utf-8")
     assert "archive_file" not in text, "bundles come from scripts/build_bundle.py now"
