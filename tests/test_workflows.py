@@ -131,6 +131,16 @@ def test_the_free_tier_is_checked_once_by_the_test_suite_not_again_by_a_ci_step(
     assert "free_tier_budget.py" not in text
 
 
+def test_each_job_saves_its_own_provider_cache_entry(ci):
+    """Two jobs saving one key race, and one save fails with 'Unable to reserve cache'."""
+    _, wf = ci
+    keys = []
+    for job in ("python", "terraform"):
+        cache = next(s for s in wf["jobs"][job]["steps"] if "actions/cache@" in s.get("uses", ""))
+        keys.append(cache["with"]["key"])
+    assert len(set(keys)) == 2, keys
+
+
 def test_ci_verifies_the_bundle_inside_the_lambda_runtime_image(ci):
     """Lessons 3 and 4: run the package where Lambda runs it, not only from the repository."""
     _, wf = ci
