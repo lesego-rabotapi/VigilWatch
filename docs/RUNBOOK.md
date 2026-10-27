@@ -4,7 +4,8 @@ Commands assume a shell at the repository root with AWS credentials for the targ
 
 ## 1. Bootstrap (once per AWS account)
 
-The bootstrap stack creates the Terraform state bucket and the GitHub Actions deploy role. It
+The bootstrap stack creates the Terraform state bucket (which also holds the built bundles and the
+release records), the GitHub Actions deploy role and a read-only plan role. It
 uses local state because it creates the remote state location. Its state is small and
 contains no secrets; keep a copy somewhere safe (password manager or a private store).
 
@@ -16,18 +17,21 @@ contains no secrets; keep a copy somewhere safe (password manager or a private s
    terraform -chdir=terraform/bootstrap apply
    terraform -chdir=terraform/bootstrap output -raw state_bucket
    terraform -chdir=terraform/bootstrap output -raw deploy_role_arn
+   terraform -chdir=terraform/bootstrap output -raw plan_role_arn
    ```
 
 3. Create `terraform/envs/dev/backend.hcl` and `terraform/envs/prod/backend.hcl` from the `backend.hcl.example` next to
    each, with the bucket name. Each environment has its own state key (`vigilwatch/envs/dev.tfstate`, `vigilwatch/envs/prod.tfstate`).
 4. In GitHub (Settings -> Secrets and variables -> Actions -> Variables) add:
-   `AWS_DEPLOY_ROLE_ARN`, `TF_STATE_BUCKET`, `AWS_ACCOUNT_ID` (the only account Terraform may touch; never committed), and
+   `AWS_DEPLOY_ROLE_ARN`, `TF_STATE_BUCKET`, `AWS_ACCOUNT_ID` (the only account Terraform may touch; never committed),
+   `AWS_PLAN_ROLE_ARN` (pull request plans and the drift check; without it they are skipped), and
    optionally `NOTIFICATION_EMAIL`. After the first prod deploy, register one URL on the prod dashboard and add it as
    `E2E_READONLY_URL`. Prod's smoke test is read-only, so it reads that URL back instead of registering one. It fails
    without it, so the first prod smoke job is expected to fail with that message: set the variable, then re-run only
    the smoke job (it has no AWS access and does not apply anything again).
 5. In GitHub (Settings -> Environments) create `production` and add yourself as a required
-   reviewer. This is the approval gate before every apply.
+   reviewer: the approval gate before every prod apply. Create `development` with no reviewers (dev
+   applies run in it; the deploy role trusts exactly these two environments and `main`).
 6. Cost backstop: in AWS Billing -> Budgets, create a budget from the "Zero spend budget"
    template. Two budgets are free.
 
@@ -69,8 +73,17 @@ credentials. Rewriting history (`git filter-repo`) is possible but not required.
 
 ## 3. First deploy (new account)
 
-After bootstrap, either push to `main` (CI -> plan -> approval -> apply), or locally. Build the bundle once;
-the same file goes to every environment you deploy:
+**Through the pipeline (the normal path).** Every pull request gets a read-only dev plan as a comment
+(`pr-plan.yml`). Merging to `main` deploys dev (`deploy-dev.yml`): CI, then the commit's bundle is built
+and stored as `bundles/<sha>.zip` in the state bucket, planned, applied, smoke-tested, and recorded in
+`releases/dev`. To ship it, run **Promote to prod** (Actions -> Promote to prod -> Run workflow) with
+the commit field empty: it deploys the commit in `releases/dev` with the stored bundle, never a
+rebuild, waits for your approval on the `production` environment, runs the read-only smoke test,
+records `releases/prod` and tags a release with its changelog. Each run's summary shows the release
+checklist (docs/RELEASE_CHECKLIST.md).
+
+**Locally** (before the pipeline is configured). Build the bundle once; the same file goes to every
+environment you deploy:
 
 ```bash
 python scripts/build_bundle.py          # prints bundle_path and bundle_sha256, writes vigilwatch.tfvars.json
@@ -93,6 +106,8 @@ API_URL_DEV=$(terraform output -raw api_base_url) DASHBOARD_URL_DEV=$(terraform 
 | Remove a monitored URL | Delete its item from the `endpoints` table (history expires via TTL). The cap counter (`_system#count` in the same table) is bookkeeping: leave it alone, it repairs itself the next time a registration is rejected as over the limit |
 | Change check interval / thresholds / cap / throttling | Set `check_interval_minutes`, `failure_threshold`, `recovery_threshold`, `reminder_minutes`, `max_endpoints`, `api_throttle_rate` or `api_throttle_burst` in that environment's `terraform.tfvars` (unset means the module default), then plan/apply in `terraform/envs/<env>` |
 | Inspect failed runs | `aws sqs receive-message --queue-url "$(terraform -chdir=terraform/envs/prod output -raw checker_dlq_url)"` |
+| A "Infrastructure drift detected" issue | The weekly `drift.yml` found a resource that differs from its state (a console change). Read the plan in the issue, then either put the change into code and deploy it, or undo it by redeploying the released commit (`rollback.yml` with the commit in `releases/prod`). Close the issue once the next drift run is clean |
+| Which commit runs where | `aws s3 cp s3://<state bucket>/releases/dev -` (and `releases/prod`) |
 
 ## 5. Alarms
 
@@ -109,9 +124,12 @@ alarms that use free Lambda metrics (ADR 0005).
 
 ## 6. Rollback
 
-- **Application or infrastructure change:** revert the commit on `main` (`git revert <sha>`)
-  and push. The pipeline plans the previous configuration and applies it after approval. The
-  Lambda bundle is built from the same commit, so code and infrastructure roll back together.
+- **Prod, fastest:** run **Roll back prod** (`rollback.yml`) with the full commit id of the last good
+  release (`git rev-list -n 1 v2.<n>`). It redeploys that commit's Terraform and the bundle dev
+  stored for it, through the same plan, `production` approval and smoke test, and records it in
+  `releases/prod`. Code and infrastructure roll back together. Then fix forward on `main`.
+- **Through main:** revert the commit (`git revert <sha>`) and push. Dev deploys the revert;
+  promote it as usual.
 - **Urgent, pipeline unavailable:** check out the last good commit locally, rebuild its bundle and
   apply it from the environment directory with the same backend. Pass the alert address the
   pipeline uses (`NOTIFICATION_EMAIL`): without it the plan deletes the email subscription.

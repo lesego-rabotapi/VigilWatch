@@ -83,6 +83,23 @@ def test_the_scheduled_check_diagram_shows_the_connectivity_controls():
     assert "Business error" in diagram and "Unexpected error" in diagram
 
 
+def test_pipeline_adr_records_promotion_rollback_drift_and_what_was_not_adopted():
+    text = (ROOT / "docs" / "adr" / "0009-pipeline-and-promotion.md").read_text(encoding="utf-8")
+    for term in (
+        "bundles/<sha>.zip",
+        "releases/dev",
+        "rollback.yml",
+        "-refresh-only",
+        "vigilwatch-github-plan",
+        "check_junit",
+        "verify_package",
+        "CHANGELOG.md",
+        "shared root",
+        "NEEDS-AWS",
+    ):
+        assert term in text, f"ADR 0009 does not mention {term!r}"
+
+
 def test_environments_adr_records_the_decisions_and_the_free_tier_arithmetic():
     text = (ROOT / "docs" / "adr" / "0005-environments-and-modules.md").read_text(encoding="utf-8")
     for term in (
