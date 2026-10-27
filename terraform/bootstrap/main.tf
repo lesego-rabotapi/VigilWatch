@@ -129,8 +129,8 @@ resource "aws_iam_role" "deploy" {
   })
 }
 
-# Scoped to the services and name prefixes the stack uses. IAM is limited to
-# roles named vigilwatch-* so the pipeline cannot escalate elsewhere.
+# Scoped to the services and name prefixes the stack uses. IAM is limited to the
+# environments' function roles, and denied on this role, so the pipeline cannot escalate.
 resource "aws_iam_role_policy" "deploy" {
   name = "vigilwatch-deploy"
   role = aws_iam_role.deploy.id
@@ -180,7 +180,19 @@ resource "aws_iam_role_policy" "deploy" {
           "iam:GetRolePolicy", "iam:PutRolePolicy", "iam:DeleteRolePolicy",
           "iam:ListInstanceProfilesForRole", "iam:UpdateAssumeRolePolicy", "iam:PassRole",
         ]
-        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-*"
+        # The function roles of each environment (<project>-<env>-<function>), never vigilwatch-*:
+        # that would include this role itself.
+        Resource = [
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-dev-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-prod-*",
+        ]
+      },
+      {
+        # An explicit deny wins over any allow, including one added to this policy by mistake.
+        Sid      = "NeverItself"
+        Effect   = "Deny"
+        Action   = ["iam:*"]
+        Resource = [aws_iam_role.deploy.arn]
       },
       {
         Sid      = "Identity"
