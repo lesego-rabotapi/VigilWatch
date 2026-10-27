@@ -9,9 +9,3 @@ variable "github_repository" {
   type        = string
   default     = "lesego-rabotapi/VigilWatch"
 }
-
-variable "project_name" {
-  description = "Must match project_name in the main stack (IAM role name prefix)."
-  type        = string
-  default     = "vigilwatch"
-}

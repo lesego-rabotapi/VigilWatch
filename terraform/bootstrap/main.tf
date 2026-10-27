@@ -27,6 +27,9 @@ provider "aws" {
 data "aws_caller_identity" "current" {}
 
 locals {
+  # Fixed, not a variable: the environments always use the stack module's default prefix, so any
+  # other value here would scope the deploy role to names nothing creates.
+  project_name = "vigilwatch"
   state_bucket = "vigilwatch-tfstate-${data.aws_caller_identity.current.account_id}"
 }
 
@@ -167,8 +170,8 @@ resource "aws_iam_role_policy" "deploy" {
         ]
         Resource = [
           # One dashboard bucket per environment: <project>-<env>-frontend-<account>.
-          "arn:aws:s3:::${var.project_name}-*-frontend-${data.aws_caller_identity.current.account_id}",
-          "arn:aws:s3:::${var.project_name}-*-frontend-${data.aws_caller_identity.current.account_id}/*",
+          "arn:aws:s3:::${local.project_name}-*-frontend-${data.aws_caller_identity.current.account_id}",
+          "arn:aws:s3:::${local.project_name}-*-frontend-${data.aws_caller_identity.current.account_id}/*",
         ]
       },
       {
@@ -183,8 +186,8 @@ resource "aws_iam_role_policy" "deploy" {
         # The function roles of each environment (<project>-<env>-<function>), never vigilwatch-*:
         # that would include this role itself.
         Resource = [
-          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-dev-*",
-          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-prod-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${local.project_name}-dev-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${local.project_name}-prod-*",
         ]
       },
       {
