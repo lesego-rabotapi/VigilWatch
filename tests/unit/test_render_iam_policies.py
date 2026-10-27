@@ -59,6 +59,26 @@ def test_a_failing_console_reinitialises_once_then_retries(terraform):
     assert calls == ["console", "init", "console"]
 
 
+def test_the_retry_upgrades_providers_so_a_stale_lock_file_cannot_block_it(monkeypatch):
+    """The module's lock file is git-ignored, so an old one can pin a provider no longer cached."""
+    calls = []
+
+    def fake(*args, stdin=None):
+        calls.append(args)
+        if args[0] == "console" and len(calls) == 1:
+            raise RuntimeError("inconsistent dependency lock file")
+        return console_output({"x": POLICY})
+
+    monkeypatch.setattr(render_iam_policies, "_terraform", fake)
+    render_iam_policies.clear_cache()
+    try:
+        render_iam_policies.render()
+    finally:
+        render_iam_policies.clear_cache()
+    init = next(c for c in calls if c[0] == "init")
+    assert "-upgrade" in init
+
+
 @pytest.mark.negative
 def test_a_console_that_keeps_failing_raises_after_one_retry(terraform):
     calls, script = terraform

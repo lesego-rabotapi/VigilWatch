@@ -99,6 +99,26 @@ def test_removing_an_action_drops_empty_statements():
 # ---- The rendered documents ------------------------------------------------------------------
 
 
+@pytest.mark.negative
+def test_a_render_failure_becomes_one_case_with_a_short_name(monkeypatch):
+    """The case id is printed on every report line: it must not be terraform's whole stderr."""
+    monkeypatch.setattr(render_iam_policies, "available", lambda: True)
+    stderr = "Error: something\n" + "detail " * 200
+    monkeypatch.setattr(render_iam_policies, "render_or_error", lambda: (None, stderr))
+    cases = _necessary_actions()
+    assert [case.id for case in cases] == [RENDER_FAILED]
+
+
+@pytest.mark.negative
+def test_the_policies_fixture_reports_a_render_failure_with_terraforms_message(monkeypatch):
+    """Every test using the policies fails with the reason, instead of an unrelated error."""
+    monkeypatch.setattr(
+        render_iam_policies, "render_or_error", lambda: (None, "Error: no provider")
+    )
+    with pytest.raises(pytest.fail.Exception, match="could not render.*no provider"):
+        _policies_or_fail()
+
+
 def test_terraform_is_available_where_it_must_run():
     """A silently skipped enforcement test would be a green build that proves nothing."""
     if os.environ.get("CI"):
