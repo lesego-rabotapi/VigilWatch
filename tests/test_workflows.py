@@ -433,6 +433,43 @@ def test_the_release_notes_are_the_changelog_since_the_previous_release(promote)
     assert "--generate-notes" not in text
 
 
+# ---- Plan on pull requests ---------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def pr_plan():
+    return load("pr-plan.yml")
+
+
+def test_every_pull_request_from_this_repository_gets_a_dev_plan(pr_plan):
+    _, wf = pr_plan
+    assert set(wf["on"]) == {"pull_request"}
+    plan = wf["jobs"]["plan"]
+    guard = str(plan["if"])
+    assert "github.event.pull_request.head.repo.full_name == github.repository" in guard
+    assert "vars.AWS_PLAN_ROLE_ARN != ''" in guard
+    assert plan["defaults"]["run"]["working-directory"] == "terraform/envs/dev"
+
+
+@pytest.mark.security
+def test_the_pull_request_path_can_read_but_never_change_anything(pr_plan):
+    text, wf = pr_plan
+    plan = wf["jobs"]["plan"]
+    assert plan["permissions"] == {"contents": "read", "id-token": "write"}
+    assert "vars.AWS_PLAN_ROLE_ARN" in text and "AWS_DEPLOY_ROLE_ARN" not in text
+    assert "terraform apply" not in text
+    assert "-lock=false" in steps_text(plan), "a read-only role cannot take the state lock"
+    assert "-detailed-exitcode" in steps_text(plan)
+
+
+def test_the_plan_is_posted_by_a_job_that_holds_no_aws_access(pr_plan):
+    _, wf = pr_plan
+    comment = wf["jobs"]["comment"]
+    assert comment["permissions"] == {"pull-requests": "write"}
+    assert "plan" in comment["needs"]
+    assert "gh pr comment" in steps_text(comment)
+
+
 # ---- Every workflow -----------------------------------------------------------------------------
 
 

@@ -222,6 +222,37 @@ def test_the_deploy_role_trusts_main_and_each_environments_deploy_job_only():
     assert subjects == {"ref:refs/heads/main", "environment:development", "environment:production"}
 
 
+def _plan_role() -> tuple[str, str]:
+    text = (TF / "bootstrap" / "main.tf").read_text(encoding="utf-8")
+    role = re.search(r'resource "aws_iam_role" "plan"(.*?)\n\}', text, re.S)
+    policy = re.search(r'resource "aws_iam_role_policy" "plan"(.*?)\n\}', text, re.S)
+    assert role and policy, "bootstrap has no read-only plan role"
+    return role.group(1), policy.group(1)
+
+
+@pytest.mark.security
+def test_pull_requests_and_drift_checks_get_a_separate_read_only_role():
+    """A pull request's code is not reviewed yet: it may read, never change, the account."""
+    role, policy = _plan_role()
+    assert (
+        'name                 = "vigilwatch-github-plan"' in role
+        or '"vigilwatch-github-plan"' in role
+    )
+    subjects = set(re.findall(r'"repo:\$\{var\.github_repository\}:([^"]+)"', role))
+    assert subjects == {"pull_request", "ref:refs/heads/main"}
+    actions = re.findall(r'"([a-z0-9-]+:[A-Za-z*]+)"', policy)
+    assert actions, "the plan role grants nothing"
+    read_only = re.compile(r"^[a-z0-9-]+:(Get|List|Describe|Head)[A-Za-z]*\*?$|^apigateway:GET$")
+    writes = [a for a in actions if not read_only.match(a)]
+    assert writes == [], f"the plan role may only read: {writes}"
+    assert "Deny" not in policy, "read-only by construction, not by exception"
+
+
+def test_the_plan_role_is_an_output_for_the_repository_variable():
+    outputs = (TF / "bootstrap" / "outputs.tf").read_text(encoding="utf-8")
+    assert 'output "plan_role_arn"' in outputs and "AWS_PLAN_ROLE_ARN" in outputs
+
+
 @pytest.mark.security
 def test_the_deploy_role_cannot_edit_its_own_permissions():
     """Its own name is vigilwatch-github-deploy: a vigilwatch-* grant would let a pipeline run
