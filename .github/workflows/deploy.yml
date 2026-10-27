@@ -5,6 +5,7 @@ name: Deploy
 #   AWS_ACCOUNT_ID       the account Terraform may touch (the provider refuses any other)
 #   TF_STATE_BUCKET      output state_bucket of terraform/bootstrap
 #   NOTIFICATION_EMAIL   optional alert recipient
+# Until the first three are set, plan, apply and release are skipped rather than failing.
 # and an Environment named "production" with required reviewers (the approval gate).
 
 on:
@@ -31,7 +32,7 @@ jobs:
 
   plan:
     name: Terraform plan
-    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' }}
+    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' && vars.TF_STATE_BUCKET != '' }}
     needs: [ci]
     runs-on: ubuntu-latest
     permissions:
@@ -93,7 +94,7 @@ jobs:
 
   apply:
     name: Terraform apply (approval required)
-    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' }}
+    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' && vars.TF_STATE_BUCKET != '' }}
     needs: [plan]
     runs-on: ubuntu-latest
     environment:
@@ -143,18 +144,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # Production: read-only checks only, nothing is registered.
       - name: Post-deploy smoke test
         working-directory: .
         env:
-          API_URL: ${{ steps.outputs.outputs.api_base_url }}
-          DASHBOARD_URL: ${{ steps.outputs.outputs.dashboard_url }}
+          API_URL_PROD: ${{ steps.outputs.outputs.api_base_url }}
+          DASHBOARD_URL_PROD: ${{ steps.outputs.outputs.dashboard_url }}
         run: |
           pip install -r requirements-dev.txt
-          pytest -m e2e tests/e2e --env=dev -v
+          pytest -m e2e tests/e2e --env=prod -v
 
   release:
     name: Tag release
-    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' }}
+    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' && vars.TF_STATE_BUCKET != '' }}
     needs: [apply]
     runs-on: ubuntu-latest
     permissions:
