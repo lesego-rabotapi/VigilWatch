@@ -236,3 +236,19 @@ def test_allow_dirty_builds_the_commit_anyway_and_says_what_was_left_out(tmp_pat
     assert "scratch.py" in capsys.readouterr().err
     with zipfile.ZipFile(tmp_path / "b.zip") as z:
         assert z.read("handler.py") == b"X = 1\n"
+
+
+@pytest.mark.negative
+def test_a_renamed_file_is_listed_by_its_real_paths(tmp_path, capsys):
+    """A rename is two -z records: the second is a bare path with no status in front of it."""
+    src = committed_tree(tmp_path, dirty=False)
+    git(src.parent, "mv", "lambda/handler.py", "lambda/renamed.py")
+    assert build_bundle.main(["--source", str(src), "--out", str(tmp_path / "b.zip")]) == 1
+    listed = capsys.readouterr().err.splitlines()[0].split(": ", 1)[1]
+    assert set(listed.split(", ")) == {"lambda/handler.py", "lambda/renamed.py"}
+
+
+@pytest.mark.negative
+def test_a_missing_source_is_reported_as_such_by_the_command(tmp_path):
+    with pytest.raises(FileNotFoundError, match="source directory not found"):
+        build_bundle.main(["--source", str(tmp_path / "nope"), "--out", str(tmp_path / "b.zip")])
