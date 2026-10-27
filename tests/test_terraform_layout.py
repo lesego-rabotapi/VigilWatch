@@ -182,7 +182,9 @@ def test_every_committed_lock_file_can_verify_the_provider_on_every_platform_we_
     reference = hashes["envs/prod/.terraform.lock.hcl"]
     assert all(len(h) >= 4 for h in reference.values()), "linux, windows and two darwin builds"
     for name, found in hashes.items():
-        assert found == reference, f"{name} records different provider hashes"
+        for provider, needed in reference.items():
+            missing = needed - found.get(provider, set())
+            assert not missing, f"{name} cannot verify {provider} on every platform: {missing}"
 
 
 def test_environment_tfvars_are_committed_not_ignored():
