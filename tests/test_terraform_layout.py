@@ -209,8 +209,10 @@ def test_the_deploy_role_s3_grant_stays_inside_this_projects_buckets():
 
 # ---- Every setting of an environment can be changed from that environment ----------------------
 
-# Set by the environment root itself, not by the operator.
-FIXED_BY_THE_ROOT = {"frontend_dir"}
+# Set by the environment root itself, not by the operator. project_name stays at the module default:
+# the bootstrap deploy role and the provider's Project tag are tied to "vigilwatch", so another
+# prefix would plan cleanly and then fail with AccessDenied on apply.
+FIXED_BY_THE_ROOT = {"frontend_dir", "project_name"}
 
 
 def _declared(path: Path) -> set[str]:
@@ -226,6 +228,14 @@ def test_every_stack_setting_is_exposed_and_passed_by_the_environment(env):
     main = (base / "main.tf").read_text(encoding="utf-8")
     unpassed = [v for v in stack if not re.search(rf"^\s*{v}\s*=\s*var\.{v}\s*$", main, re.M)]
     assert not unpassed, f"envs/{env} declares but does not pass {sorted(unpassed)}"
+
+
+@pytest.mark.parametrize("env", ENVS)
+def test_an_environment_cannot_rename_the_project(env):
+    """Only the bootstrap stack may choose the prefix, because its deploy role is scoped to it."""
+    base = TF / "envs" / env
+    assert "project_name" not in _declared(base / "variables.tf")
+    assert "project_name" not in (base / "main.tf").read_text(encoding="utf-8")
 
 
 def test_settings_the_runbook_tells_operators_to_change_exist_in_every_environment():
@@ -244,3 +254,34 @@ def test_the_runbook_uses_per_environment_names_and_paths():
     rollback = runbook[runbook.index("## 6. Rollback") : runbook.index("## 7.")]
     assert "terraform/envs/prod" in rollback and "vigilwatch.tfvars.json" in rollback
     assert "allowed_account_ids" in rollback
+
+
+def _section(runbook: str, heading: str) -> str:
+    start = runbook.index(heading)
+    end = runbook.find("\n## ", start + len(heading))
+    return runbook[start : end if end != -1 else None]
+
+
+def test_the_urgent_rollback_keeps_the_alert_email_subscription():
+    """Without notification_email the plan deletes prod's SNS email subscription mid-incident."""
+    runbook = (ROOT / "docs" / "RUNBOOK.md").read_text(encoding="utf-8")
+    rollback = _section(runbook, "## 6. Rollback")
+    plans = [line for line in rollback.splitlines() if "terraform plan" in line]
+    assert plans, "the rollback has no terraform plan"
+    for line in plans:
+        assert "notification_email" in line, line
+
+
+@pytest.mark.parametrize("heading", ["## 3. First deploy"])
+def test_paths_in_runbook_commands_exist_from_the_directory_they_run_in(heading):
+    """Follow each `cd` in the section's commands and check every tests/ path from there."""
+    runbook = (ROOT / "docs" / "RUNBOOK.md").read_text(encoding="utf-8")
+    cwd, checked = ROOT, []
+    for line in _section(runbook, heading).splitlines():
+        command = line.split("#")[0].strip()
+        if command.startswith("cd "):
+            cwd = (cwd / command.split()[1]).resolve()
+        for token in re.findall(r"(?:\.\./)*tests/[\w/]+", command):
+            checked.append(token)
+            assert (cwd / token).exists(), f"{token} does not exist from {cwd.relative_to(ROOT)}"
+    assert checked, "the section runs no tests"
