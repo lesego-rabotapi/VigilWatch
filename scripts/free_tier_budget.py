@@ -95,8 +95,21 @@ def load(envs: Path) -> dict[str, dict]:
     }
 
 
+REQUIRED = ("dynamodb_capacity", "enabled_alarms", "metrics_enabled")
+
+
 def violations(envs: Path = ENVS) -> list[str]:
     environments = load(envs)
+    if not environments:
+        return [f"no environments found under {envs} (expected */terraform.tfvars)"]
+    missing = [
+        f"{name}: {key} is not set"
+        for name, values in environments.items()
+        for key in REQUIRED
+        if key not in values
+    ]
+    if missing:
+        return missing
     problems = []
 
     units = sum(TABLES_PER_ENVIRONMENT * v["dynamodb_capacity"] for v in environments.values())
@@ -125,7 +138,7 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     problems = violations(args.envs)
     for problem in problems:
-        print(f"over the free tier: {problem}")
+        print(f"free tier check failed: {problem}")
     if not problems:
         print(f"free tier: OK for {sorted(load(args.envs))}")
     return 1 if problems else 0
