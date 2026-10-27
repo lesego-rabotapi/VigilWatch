@@ -127,6 +127,23 @@ def test_the_command_line_prints_a_manifest_terraform_can_read(tmp_path, capsys)
     assert json.loads(out.with_name("b.tfvars.json").read_text()) == printed
 
 
+def test_a_stored_bundle_is_described_without_rebuilding_it(tmp_path, capsys):
+    """Prod deploys the bytes dev stored: it only needs their path and hash for Terraform."""
+    src = make_tree(tmp_path)
+    stored = tmp_path / "fetched" / "vigilwatch.zip"
+    manifest = build_bundle.build(src, stored)
+    assert build_bundle.main(["--describe", str(stored)]) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed == {"bundle_path": str(stored), "bundle_sha256": manifest.base64sha256}
+    assert json.loads(stored.with_name("vigilwatch.tfvars.json").read_text()) == printed
+
+
+@pytest.mark.negative
+def test_describing_a_missing_bundle_is_an_error(tmp_path):
+    with pytest.raises(FileNotFoundError, match="bundle not found"):
+        build_bundle.main(["--describe", str(tmp_path / "nope.zip")])
+
+
 def test_entries_are_stored_uncompressed_so_no_zlib_version_can_change_the_bytes(tmp_path):
     """Deflate output differs between zlib builds; a dev laptop and a CI runner must agree."""
     build_bundle.build(make_tree(tmp_path), tmp_path / "b.zip")
