@@ -8,6 +8,7 @@ job can run it without installing anything.
 """
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -22,19 +23,68 @@ TABLES_PER_ENVIRONMENT = 2
 CHECKER_CUSTOM_METRICS = 7  # see lambda/uptime_check.py _emf
 
 
+_TOKEN = re.compile(
+    r"""
+      (?P<skip>\s+|\#[^\n]*|//[^\n]*|/\*.*?\*/)
+    | (?P<string>"(?:[^"\\]|\\.)*")
+    | (?P<number>-?\d+(?:\.\d+)?)
+    | (?P<word>[A-Za-z_][\w-]*)
+    | (?P<punct>[=\[\],{}()])
+    """,
+    re.VERBOSE | re.DOTALL,
+)
+
+
+def _tokens(text: str) -> list[tuple[str, str]]:
+    tokens, pos = [], 0
+    while pos < len(text):
+        match = _TOKEN.match(text, pos)
+        if not match:
+            raise ValueError(f"cannot read {text[pos : pos + 20]!r}")
+        if match.lastgroup != "skip":
+            tokens.append((match.lastgroup, match.group()))
+        pos = match.end()
+    return tokens
+
+
+def _value(kind: str, raw: str):
+    if kind == "string":
+        return json.loads(raw)
+    if kind == "number":
+        return float(raw) if "." in raw else int(raw)
+    if raw in ("true", "false"):
+        return raw == "true"
+    raise ValueError(f"unsupported value {raw!r}")
+
+
 def parse_tfvars(text: str) -> dict:
-    """The flat HCL subset the environment files use: numbers, booleans, strings, string lists."""
-    values = {}
-    for key, raw in re.findall(r"^(\w+)\s*=\s*(.+?)\s*$", text, flags=re.MULTILINE):
-        raw = raw.split("#")[0].strip()
-        if raw.startswith("["):
-            values[key] = re.findall(r'"([^"]*)"', raw)
-        elif raw.startswith('"'):
-            values[key] = raw.strip('"')
-        elif raw in ("true", "false"):
-            values[key] = raw == "true"
+    """The HCL subset the environment files use: numbers, booleans, strings and lists of them,
+    with any comment style. Anything else (maps, expressions) is an error, never a guess."""
+    tokens, values, i = _tokens(text), {}, 0
+    while i < len(tokens):
+        if tokens[i][0] != "word" or tokens[i + 1 : i + 2] != [("punct", "=")]:
+            raise ValueError(f"expected 'name = value' at {tokens[i][1]!r}")
+        key, i = tokens[i][1], i + 2
+        if i >= len(tokens):
+            raise ValueError(f"{key} has no value")
+        if tokens[i] == ("punct", "["):
+            items, i = [], i + 1
+            while i < len(tokens) and tokens[i] != ("punct", "]"):
+                if tokens[i] != ("punct", ","):
+                    try:
+                        items.append(_value(*tokens[i]))
+                    except ValueError as error:
+                        raise ValueError(f"{key}: {error}") from None
+                i += 1
+            if i == len(tokens):
+                raise ValueError(f"{key}: list is not closed")
+            values[key] = items
         else:
-            values[key] = float(raw) if "." in raw else int(raw)
+            try:
+                values[key] = _value(*tokens[i])
+            except ValueError as error:
+                raise ValueError(f"{key}: {error}") from None
+        i += 1
     return values
 
 
