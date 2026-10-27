@@ -207,6 +207,47 @@ def test_the_deploy_role_may_manage_each_environments_dashboard_bucket(env):
     assert any(fnmatch.fnmatchcase(bucket + "/index.html", r) for r in resources), resources
 
 
+def _bootstrap_statement(sid: str) -> str:
+    text = (TF / "bootstrap" / "main.tf").read_text(encoding="utf-8")
+    block = re.search(rf'Sid\s*=\s*"{sid}"(.*?)\n\s*\}}', text, re.S)
+    assert block, f"bootstrap has no {sid} statement"
+    return block.group(1)
+
+
+def _iam_resources(sid: str) -> list[str]:
+    arns = re.findall(r'"(arn:aws:iam::[^"]+)"', _bootstrap_statement(sid))
+    return [
+        a.replace("${data.aws_caller_identity.current.account_id}", "123456789012")
+        .replace("${local.project_name}", "vigilwatch")
+        .replace("${var.project_name}", "vigilwatch")
+        for a in arns
+    ]
+
+
+@pytest.mark.security
+def test_the_deploy_role_cannot_edit_its_own_permissions():
+    """Its own name is vigilwatch-github-deploy: a vigilwatch-* grant would let a pipeline run
+    attach '*' to itself and become account admin."""
+    import fnmatch
+
+    deploy_role = "arn:aws:iam::123456789012:role/vigilwatch-github-deploy"
+    granted = _iam_resources("OwnRolesOnly")
+    assert not any(fnmatch.fnmatchcase(deploy_role, r) for r in granted), granted
+    deny = _bootstrap_statement("NeverItself")
+    assert re.search(r'Effect\s*=\s*"Deny"', deny), "belt and braces: an explicit deny on itself"
+    assert '"iam:*"' in deny and "aws_iam_role.deploy.arn" in deny
+
+
+@pytest.mark.parametrize("env", ENVS)
+def test_the_deploy_role_may_manage_each_environments_function_roles(env):
+    import fnmatch
+
+    granted = _iam_resources("OwnRolesOnly")
+    for fn in ("uptime-check", "register-endpoint", "get-checks"):
+        role = f"arn:aws:iam::123456789012:role/vigilwatch-{env}-{fn}"
+        assert any(fnmatch.fnmatchcase(role, r) for r in granted), (role, granted)
+
+
 def test_the_deploy_role_s3_grant_stays_inside_this_projects_buckets():
     for resource in _bootstrap_s3_resources():
         assert resource.startswith("arn:aws:s3:::vigilwatch-"), resource
