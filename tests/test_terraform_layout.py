@@ -285,6 +285,16 @@ def test_an_environment_cannot_rename_the_project(env):
     assert "project_name" not in (base / "main.tf").read_text(encoding="utf-8")
 
 
+def test_bootstrap_cannot_choose_a_prefix_the_environments_do_not_use():
+    """The environments always use the module default; a different bootstrap prefix would scope
+    the deploy role to names nothing creates, and the first apply would fail with AccessDenied."""
+    assert "project_name" not in _declared(TF / "bootstrap" / "variables.tf")
+    stack = (TF / "modules" / "vigilwatch" / "variables.tf").read_text(encoding="utf-8")
+    default = re.search(r'variable "project_name"\s*\{[^}]*default\s*=\s*"([^"]+)"', stack, re.S)
+    bootstrap = (TF / "bootstrap" / "main.tf").read_text(encoding="utf-8")
+    assert re.search(rf'project_name\s*=\s*"{default.group(1)}"', bootstrap), "same prefix"
+
+
 def test_settings_the_runbook_tells_operators_to_change_exist_in_every_environment():
     runbook = (ROOT / "docs" / "RUNBOOK.md").read_text(encoding="utf-8")
     named = set(re.findall(r"`([a-z]+(?:_[a-z0-9]+)+)`", runbook))
