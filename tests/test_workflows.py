@@ -131,6 +131,18 @@ def test_the_free_tier_is_checked_once_by_the_test_suite_not_again_by_a_ci_step(
     assert "free_tier_budget.py" not in text
 
 
+def test_ci_verifies_the_bundle_inside_the_lambda_runtime_image(ci):
+    """Lessons 3 and 4: run the package where Lambda runs it, not only from the repository."""
+    _, wf = ci
+    steps = wf["jobs"]["package"]["steps"]
+    text = steps_text(wf["jobs"]["package"])
+    assert "scripts/build_bundle.py" in text
+    run = next(s["run"] for s in steps if "docker run" in str(s.get("run", "")))
+    assert "public.ecr.aws/lambda/python:3.12" in run
+    assert "verify_package.py" in run and ":ro" in run, "the bundle is mounted read-only"
+    assert "--network none" in run, "verification needs no network, so it gets none"
+
+
 @pytest.mark.parametrize("job", ["python", "terraform"])
 def test_terraform_providers_come_from_a_cache_between_runs(ci, job):
     """Module lock files are not committed, so without a cache every run downloads the AWS
