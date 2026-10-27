@@ -17,8 +17,6 @@ ROOT = Path(__file__).resolve().parent.parent
 TF = ROOT / "terraform"
 MODULES = ("alerts", "data", "compute", "api", "frontend", "monitoring", "vigilwatch")
 ENVS = ("dev", "prod")
-FREE_ALARMS = 10
-FREE_CAPACITY = 25
 KNOWN_ALARMS = {"checker-errors", "checker-not-running", "checker-dlq", "checker-blind", "api-5xx"}
 
 
@@ -111,25 +109,14 @@ def test_no_account_ids_or_addresses_are_hardcoded_in_infrastructure_code():
 
 
 def test_the_committed_environments_fit_one_free_tier():
+    """The sums themselves live in scripts/free_tier_budget.py (unit-tested there)."""
     assert free_tier_budget.violations() == []
 
 
-def test_provisioned_capacity_of_both_environments_fits_one_free_tier():
-    total = sum(2 * tfvars(env)["dynamodb_capacity"] for env in ENVS)  # two tables each
-    assert total <= FREE_CAPACITY, f"{total} units for both environments, free tier is 25"
-
-
-def test_alarms_of_both_environments_fit_one_free_tier():
-    names = {env: tfvars(env)["enabled_alarms"] for env in ENVS}
-    assert sum(len(v) for v in names.values()) <= FREE_ALARMS, names
-    for env, alarms in names.items():
-        assert set(alarms) <= KNOWN_ALARMS, (env, set(alarms) - KNOWN_ALARMS)
-
-
-def test_only_one_environment_publishes_custom_metrics():
-    """Ten custom metrics are free and one environment already publishes seven."""
-    publishing = [env for env in ENVS if tfvars(env)["metrics_enabled"]]
-    assert publishing == ["prod"]
+@pytest.mark.parametrize("env", ENVS)
+def test_every_enabled_alarm_is_one_the_monitoring_module_knows(env):
+    alarms = set(tfvars(env)["enabled_alarms"])
+    assert alarms <= KNOWN_ALARMS, alarms - KNOWN_ALARMS
 
 
 def test_an_environment_without_metrics_has_no_alarm_that_needs_them():
