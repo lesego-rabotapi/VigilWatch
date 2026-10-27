@@ -19,7 +19,7 @@ contains no secrets; keep a copy somewhere safe (password manager or a private s
    ```
 
 3. Create `terraform/envs/dev/backend.hcl` and `terraform/envs/prod/backend.hcl` from the `backend.hcl.example` next to
-   each, with the bucket name. Each environment has its own state key (`vigilwatch/dev.tfstate`, `vigilwatch/prod.tfstate`).
+   each, with the bucket name. Each environment has its own state key (`vigilwatch/envs/dev.tfstate`, `vigilwatch/envs/prod.tfstate`).
 4. In GitHub (Settings -> Secrets and variables -> Actions -> Variables) add:
    `AWS_DEPLOY_ROLE_ARN`, `TF_STATE_BUCKET`, `AWS_ACCOUNT_ID` (the only account Terraform may touch; never committed), and
    optionally `NOTIFICATION_EMAIL`.
@@ -42,6 +42,8 @@ address) and carries the environment in its name (`vigilwatch-prod-...`). Moving
 `terraform state mv` and renaming live resources would be riskier than starting clean, and there is
 almost nothing to carry over (the old table held a single seed row; monitored URLs are re-registered).
 So the new environments are created next to the old stack, and the old stack is retired afterwards.
+The environments use state keys under `vigilwatch/envs/`, which no earlier pipeline wrote. A state object directly under `vigilwatch/` in
+the state bucket belongs to the old stack: leave it alone until step 4.
 `NEEDS-AWS`: this procedure has not been run.
 
 1. Back up `terraform/terraform.tfstate`, then pull/merge.
@@ -120,7 +122,7 @@ alarms that use free Lambda metrics (ADR 0005).
   terraform apply tfplan
   ```
 - **Corrupted state:** the state bucket is versioned. List versions with
-  `aws s3api list-object-versions --bucket <state bucket> --prefix vigilwatch/prod.tfstate`,
+  `aws s3api list-object-versions --bucket <state bucket> --prefix vigilwatch/envs/prod.tfstate`,
   then restore by copying the last good version over the current object. Run `terraform plan`
   and confirm it shows no unexpected changes before applying anything.
 - **Stuck lock:** with S3 native locking the lock is a `.tflock` object next to the state.

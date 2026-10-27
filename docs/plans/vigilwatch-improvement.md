@@ -61,7 +61,7 @@ Lesson 5 "deploy despite failing tests" (gates stay strict); HATEOAS (two routes
 | Region | `af-south-1` (variable) | `af-south-1` |
 | Trigger | auto on push to `main` (`deploy-dev.yml`) | manual (`promote-prod.yml`), same commit SHA and same bundle bytes as DEV |
 | Approval | none | `production` environment reviewer + signed UAT checklist |
-| State key | `vigilwatch/dev.tfstate` | `vigilwatch/prod.tfstate` |
+| State key | `vigilwatch/envs/dev.tfstate` | `vigilwatch/envs/prod.tfstate` |
 | DynamoDB capacity (RCU/WCU per table) | 2 | 5 (14 of 25 free units used; a policy test sums the tfvars) |
 | Alarms | 2 (checker-errors, checker-not-running: the ones that use free Lambda metrics) | 5 (adds checker-dlq, checker-blind, api-5xx); 7 of 10 free |
 | Custom metrics | off (`metrics_enabled = false`) | 7 of the 10 free (a second environment would make 14) |

@@ -64,7 +64,7 @@ jobs:
         run: >
           terraform init
           -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
-          -backend-config="key=vigilwatch/prod.tfstate"
+          -backend-config="key=vigilwatch/envs/prod.tfstate"
           -backend-config="region=${{ env.AWS_REGION }}"
           -backend-config="encrypt=true"
           -backend-config="use_lockfile=true"
@@ -124,7 +124,7 @@ jobs:
         run: >
           terraform init
           -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
-          -backend-config="key=vigilwatch/prod.tfstate"
+          -backend-config="key=vigilwatch/envs/prod.tfstate"
           -backend-config="region=${{ env.AWS_REGION }}"
           -backend-config="encrypt=true"
           -backend-config="use_lockfile=true"
