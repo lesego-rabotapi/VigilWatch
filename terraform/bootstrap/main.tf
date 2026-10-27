@@ -208,3 +208,84 @@ resource "aws_iam_role_policy" "deploy" {
     ]
   })
 }
+
+# ---- Read-only role: pull request plans and drift checks ------------------
+
+# A pull request's code has not been reviewed yet, so its plan runs with a role that can read the
+# state and the stack's resources and change nothing. The weekly drift check (on main) uses it too.
+resource "aws_iam_role" "plan" {
+  name                 = "vigilwatch-github-plan"
+  max_session_duration = 3600
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Federated = aws_iam_openid_connect_provider.github.arn }
+      Action    = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = { "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com" }
+        StringLike = {
+          "token.actions.githubusercontent.com:sub" = [
+            "repo:${var.github_repository}:pull_request",
+            "repo:${var.github_repository}:ref:refs/heads/main",
+          ]
+        }
+      }
+    }]
+  })
+}
+
+# Only Get/List/Describe actions: what `terraform plan` needs to refresh the stack. Plans run with
+# -lock=false, so the state is only ever read.
+resource "aws_iam_role_policy" "plan" {
+  name = "vigilwatch-plan"
+  role = aws_iam_role.plan.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "ReadState"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket", "s3:GetObject"]
+        Resource = [aws_s3_bucket.state.arn, "${aws_s3_bucket.state.arn}/*"]
+      },
+      {
+        Sid    = "ReadStack"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:Describe*", "dynamodb:List*", "lambda:Get*", "lambda:List*", "apigateway:GET",
+          "events:Describe*", "events:List*", "sns:Get*", "sns:List*", "sqs:Get*", "sqs:List*",
+          "logs:Describe*", "logs:List*", "cloudwatch:Describe*", "cloudwatch:List*",
+          "cloudwatch:Get*", "cloudfront:Get*", "cloudfront:List*",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "ReadDashboardBuckets"
+        Effect = "Allow"
+        Action = ["s3:Get*", "s3:List*"]
+        Resource = [
+          "arn:aws:s3:::${local.project_name}-*-frontend-${data.aws_caller_identity.current.account_id}",
+          "arn:aws:s3:::${local.project_name}-*-frontend-${data.aws_caller_identity.current.account_id}/*",
+        ]
+      },
+      {
+        Sid    = "ReadFunctionRoles"
+        Effect = "Allow"
+        Action = ["iam:GetRole", "iam:GetRolePolicy", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies"]
+        Resource = [
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${local.project_name}-dev-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${local.project_name}-prod-*",
+        ]
+      },
+      {
+        Sid      = "Identity"
+        Effect   = "Allow"
+        Action   = ["sts:GetCallerIdentity"]
+        Resource = "*"
+      },
+    ]
+  })
+}

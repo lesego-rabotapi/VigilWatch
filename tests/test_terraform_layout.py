@@ -234,10 +234,7 @@ def _plan_role() -> tuple[str, str]:
 def test_pull_requests_and_drift_checks_get_a_separate_read_only_role():
     """A pull request's code is not reviewed yet: it may read, never change, the account."""
     role, policy = _plan_role()
-    assert (
-        'name                 = "vigilwatch-github-plan"' in role
-        or '"vigilwatch-github-plan"' in role
-    )
+    assert '"vigilwatch-github-plan"' in role
     subjects = set(re.findall(r'"repo:\$\{var\.github_repository\}:([^"]+)"', role))
     assert subjects == {"pull_request", "ref:refs/heads/main"}
     actions = re.findall(r'"([a-z0-9-]+:[A-Za-z*]+)"', policy)
