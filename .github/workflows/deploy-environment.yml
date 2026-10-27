@@ -84,6 +84,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Pre-deployment checklist
+        working-directory: .
+        run: python scripts/checklist.py pre >> "$GITHUB_STEP_SUMMARY"
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
@@ -272,6 +275,8 @@ jobs:
           pip install -r requirements-dev.txt
           pytest -m "$MARKERS" tests/e2e --env="$ENVIRONMENT" -v --junitxml=e2e.xml
           python scripts/check_junit.py e2e.xml --min-tests "$MIN_TESTS"
+      - name: Post-deployment checklist
+        run: python scripts/checklist.py post >> "$GITHUB_STEP_SUMMARY"
 
   record:
     name: Record the release of ${{ inputs.environment }}

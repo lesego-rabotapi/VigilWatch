@@ -2,8 +2,9 @@
 
 from pathlib import Path
 
-import checklist
 import pytest
+
+import checklist
 
 pytestmark = pytest.mark.req("VW-017")
 
