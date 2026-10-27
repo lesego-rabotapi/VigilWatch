@@ -37,8 +37,8 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ${{ env.TF_PLUGIN_CACHE_DIR }}
-          key: terraform-providers-${{ runner.os }}-${{ hashFiles('terraform/**/versions.tf', 'terraform/**/.terraform.lock.hcl') }}
-          restore-keys: terraform-providers-${{ runner.os }}-
+          key: terraform-providers-python-${{ runner.os }}-${{ hashFiles('terraform/**/versions.tf', 'terraform/**/.terraform.lock.hcl') }}
+          restore-keys: terraform-providers-python-${{ runner.os }}-
       - run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
       - run: ruff check .
       - run: ruff format --check .
@@ -57,8 +57,8 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ${{ env.TF_PLUGIN_CACHE_DIR }}
-          key: terraform-providers-${{ runner.os }}-${{ hashFiles('terraform/**/versions.tf', 'terraform/**/.terraform.lock.hcl') }}
-          restore-keys: terraform-providers-${{ runner.os }}-
+          key: terraform-providers-terraform-${{ runner.os }}-${{ hashFiles('terraform/**/versions.tf', 'terraform/**/.terraform.lock.hcl') }}
+          restore-keys: terraform-providers-terraform-${{ runner.os }}-
       - run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
       - run: terraform fmt -check -recursive terraform
       # The free tier shared by dev and prod is checked by the Python job's test suite
