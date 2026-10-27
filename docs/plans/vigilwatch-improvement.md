@@ -76,7 +76,7 @@ Lesson 5 "deploy despite failing tests" (gates stay strict); HATEOAS (two routes
 | 2 | Requirements, design and traceability | 1 | M | no | ✅ COMPLETE |
 | 3 | Quality foundation (taxonomy, SOLID, cold start, errors, E2E harness) | 2 | L | no | ✅ COMPLETE |
 | 4 | Honest checker, alert state machine, atomic cap | 3 | M | no | ✅ COMPLETE |
-| 5 | Terraform modules and environments | 3 | L | no | ⏳ PENDING |
+| 5 | Terraform modules and environments | 3 | L | no | ✅ COMPLETE (CI run pending) |
 | 6 | Pipeline, promotion, rollback, drift, gate integrity | 5 | L | partly (runs) | ⏳ PENDING |
 | 7 | Resilience, observability, SLOs | 4, 5 | M | partly (drill) | ⏳ PENDING |
 | 8 | Authentication (Cognito) | 3, 5 | L | partly (login) | ⏳ PENDING |
@@ -375,3 +375,8 @@ prove that the policy, package-verification and gate-integrity checks fail when 
 | 2026-10-25 | 4.5 | Alert polish: retry of an undelivered DOWN alert (a gap this stage found), `RECOVERY_THRESHOLD` flap damping, optional `REMINDER_MINUTES` reminders; all off by default | `tests/unit/test_state_machine.py`, `terraform/tests` |
 | 2026-10-25 | 4.6 | ADR 0006 and the scheduled-check diagram updated. Limits recorded: single region, single Lambda. The diagram's syntax is covered by the structural docs test; it was not re-rendered in Mermaid after this edit | `tests/test_design_docs.py` |
 | 2026-10-25 | 4 gate | 577 of 578 pytest tests passed before the matrix refresh (the one failure was the stale traceability matrix, since regenerated); coverage 95.49%; ruff clean; 17 terraform and 26 frontend tests | local run |
+| 2026-10-25 | 5.0 | `METRICS_ENABLED` switch: two environments would publish 14 custom metrics against 10 free, so only prod does (dev has no `checker-blind` alarm; recorded as a gap in ADR 0005) | `tests/unit/test_boundaries.py`, `tests/mock/test_checker_honesty.py` |
+| 2026-10-25 | 5.1-5.3 | Six modules plus a composing `vigilwatch` module, each with its own `terraform test`; thin `envs/dev` and `envs/prod` with separate state keys, required `allowed_account_ids` and names carrying the environment; free-tier arithmetic summed across both environments | `terraform/**/tests`, `tests/test_terraform_layout.py` |
+| 2026-10-25 | 5.4 | `scripts/build_bundle.py` is byte-reproducible; Terraform deploys the prebuilt file and its hash; deploy builds in plan and reuses in apply | `tests/unit/test_build_bundle.py`, `tests/test_workflows.py` |
+| 2026-10-25 | 5.5 | Each handler runs on moto as an IAM user holding exactly the rendered policy; removing any one action breaks it. Found an unused `dynamodb:GetItem` grant on the checker, removed. moto enforces actions, not resource ARNs (those are asserted by `terraform test`) | `tests/mock/test_iam_policies.py` |
+| 2026-10-25 | 5.6 | ADR 0005 written; runbook migration rewritten (old stack cannot be adopted in place; `NEEDS-AWS`) | `tests/test_design_docs.py` |
