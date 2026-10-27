@@ -7,6 +7,7 @@ users in moto and runs the handlers as those users.
     python scripts/render_iam_policies.py            # prints {function: policy}
 """
 
+import functools
 import json
 import shutil
 import subprocess
@@ -51,17 +52,41 @@ def _terraform(*args: str, stdin: str | None = None) -> str:
     return result.stdout
 
 
-def render(overrides: dict | None = None) -> dict[str, dict]:
-    values = {**DEFAULTS, **(overrides or {})}
-    if not (MODULE / ".terraform").exists():
+def _console(values: tuple) -> str:
+    flags = [f"-var={name}={value}" for name, value in values]
+    return _terraform("console", "-no-color", *flags, stdin="jsonencode(local.function_policies)\n")
+
+
+@functools.cache
+def _render(values: tuple) -> str:
+    try:
+        printed = _console(values)
+    except RuntimeError:
+        # Missing, stale or half-initialised .terraform: initialise once and try again.
         _terraform("init", "-backend=false", "-input=false", "-no-color")
-    flags = [f"-var={name}={value}" for name, value in values.items()]
-    printed = _terraform(
-        "console", "-no-color", *flags, stdin="jsonencode(local.function_policies)\n"
-    )
+        printed = _console(values)
+    return printed
+
+
+def render(overrides: dict | None = None) -> dict[str, dict]:
+    """{function: policy document}, rendered once per set of values (a fresh copy every call)."""
+    values = tuple(sorted({**DEFAULTS, **(overrides or {})}.items()))
     # The console prints the value as a quoted string literal, which is also valid JSON.
-    documents = json.loads(json.loads(printed.strip()))
+    documents = json.loads(json.loads(_render(values).strip()))
     return {name: json.loads(document) for name, document in documents.items()}
+
+
+def render_or_error(overrides: dict | None = None) -> tuple[dict | None, str | None]:
+    """For test collection, where an exception would abort the whole run: (policies, None) or
+    (None, why)."""
+    try:
+        return render(overrides), None
+    except (RuntimeError, OSError, ValueError) as error:
+        return None, str(error)
+
+
+def clear_cache() -> None:
+    _render.cache_clear()
 
 
 if __name__ == "__main__":

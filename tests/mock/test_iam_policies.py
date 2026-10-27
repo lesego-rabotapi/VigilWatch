@@ -267,10 +267,16 @@ def test_each_function_works_with_exactly_the_permissions_terraform_grants(
     assert run_as(function, rendered[function], enforcement, monkeypatch) == EXPECTED[function]
 
 
+RENDER_FAILED = "terraform could not render the policies"
+
+
 def _necessary_actions():
+    """Evaluated at collection: a render failure becomes one failing case, not an aborted run."""
     if not render_iam_policies.available():
         return []
-    policies = render_iam_policies.render()
+    policies, error = render_iam_policies.render_or_error()
+    if error:
+        return [(RENDER_FAILED, error)]
     return [
         (name, action) for name, policy in sorted(policies.items()) for action in exercised(policy)
     ]
@@ -284,6 +290,7 @@ def test_removing_any_single_permission_breaks_the_function(
     function, action, rendered, enforcement, scenario_env, monkeypatch
 ):
     """Every granted action is used: if one could be removed unnoticed, it is over-privilege."""
+    assert function != RENDER_FAILED, f"{RENDER_FAILED}: {action}"
     outcome = run_as(function, without(rendered[function], action), enforcement, monkeypatch)
     assert outcome != EXPECTED[function], (
         f"{function} still works without {action}: not needed, or not exercised"
