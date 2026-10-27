@@ -319,6 +319,24 @@ def test_the_urgent_rollback_keeps_the_alert_email_subscription():
         assert "notification_email" in line, line
 
 
+# The root module of the old stack, as on main before this branch (terraform/variable.tf and
+# provider.tf there). Retiring it runs in that checkout, where only these variables exist.
+OLD_STACK_VARIABLES = {"vpc_cidr", "project_name", "check_interval_minutes", "notification_email"}
+OLD_STACK_VARIABLES |= {"aws_region"}
+
+
+def test_retiring_the_old_stack_only_passes_variables_the_old_stack_declares():
+    """Terraform refuses an undeclared -var, so the retirement would stop at its first command."""
+    runbook = (ROOT / "docs" / "RUNBOOK.md").read_text(encoding="utf-8")
+    section = _section(runbook, "## 2. Migrating an existing deployment")
+    commands = [
+        line.strip() for line in section.splitlines() if line.strip().startswith("terraform")
+    ]
+    assert any("destroy" in c for c in commands), "the section must still retire the old stack"
+    passed = {name for c in commands for name in re.findall(r"-var[ =]'?(\w+)=", c)}
+    assert passed <= OLD_STACK_VARIABLES, sorted(passed - OLD_STACK_VARIABLES)
+
+
 @pytest.mark.parametrize("heading", ["## 3. First deploy"])
 def test_paths_in_runbook_commands_exist_from_the_directory_they_run_in(heading):
     """Follow each `cd` in the section's commands and check every tests/ path from there."""
