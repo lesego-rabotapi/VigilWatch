@@ -18,6 +18,9 @@ import build_bundle
 pytestmark = pytest.mark.req("VW-017")
 
 ROOT = Path(__file__).resolve().parent.parent.parent
+# SHA-256 of the bundle of one file, handler.py containing "X = 1" and a newline. CI checks the same
+# value on Linux, so a platform-dependent byte would fail there.
+PINNED_DIGEST = "b38c26f7d55003c096a0b54b7647a867e6768946c4e4d4876ae25a1ddf6fcdd5"
 
 
 def make_tree(base: Path) -> Path:

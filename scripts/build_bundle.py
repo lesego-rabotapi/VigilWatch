@@ -2,7 +2,9 @@
 
 The same bytes must reach every environment: development runs the bundle, production deploys
 that very file. That only works if building is reproducible, so entries are sorted, timestamps
-and permissions are fixed, and nothing about the build machine ends up in the archive.
+and permissions are fixed, and nothing about the build machine ends up in the archive. Entries are
+stored, not deflated: deflate output depends on the zlib build, so a laptop and a CI runner could
+otherwise produce different bytes from the same source. The bundle is small, so size is no concern.
 
     python scripts/build_bundle.py --out terraform/.build/vigilwatch.zip
 """
@@ -42,20 +44,20 @@ def _sources(source: Path) -> list[Path]:
 
 
 def build(source: Path, out: Path) -> Manifest:
-    source, out = Path(source), Path(out)
+    source, out = Path(source), Path(out).resolve()
     if not source.is_dir():
         raise FileNotFoundError(f"source directory not found: {source}")
     files = _sources(source)
     if not files:
         raise ValueError(f"nothing to package in {source}")
     out.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as bundle:
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_STORED) as bundle:
         for path in files:
             info = zipfile.ZipInfo(path.relative_to(source).as_posix(), FIXED_TIME)
-            info.compress_type = zipfile.ZIP_DEFLATED
+            info.compress_type = zipfile.ZIP_STORED
             info.external_attr = FILE_MODE
             info.create_system = 3  # Unix, whatever machine builds it
-            bundle.writestr(info, path.read_bytes(), compresslevel=9)
+            bundle.writestr(info, path.read_bytes())
     digest = hashlib.sha256(out.read_bytes()).digest()
     return Manifest(out, digest.hex(), base64.b64encode(digest).decode())
 
