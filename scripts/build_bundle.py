@@ -69,6 +69,12 @@ def _from_commit(source: Path, rev: str) -> dict[str, bytes]:
     }
 
 
+def _uncommitted(source: Path) -> list[str]:
+    """Modified, staged or untracked files under source: what a build of HEAD would leave out."""
+    status = _git("status", "--porcelain=v1", "-z", "--untracked-files=all", "--", ".", cwd=source)
+    return sorted(entry[3:] for entry in status.decode().split("\0") if entry)
+
+
 def build(source: Path, out: Path, rev: str | None = None) -> Manifest:
     """Bundle source as committed in rev, or as it is on disk when rev is None."""
     source, out = Path(source), Path(out).resolve()
@@ -101,7 +107,21 @@ def main(argv=None) -> int:
         action="store_true",
         help="bundle the files on disk instead, uncommitted changes included (not reproducible)",
     )
+    parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help="build HEAD even though the source has uncommitted changes (they are left out)",
+    )
     args = parser.parse_args(argv)
+    if not args.from_worktree and args.rev == "HEAD":
+        left_out = _uncommitted(args.source)
+        if left_out:
+            what = f"uncommitted changes in {args.source} are not in HEAD: {', '.join(left_out)}"
+            if not args.allow_dirty:
+                hint = "commit them, or pass --allow-dirty to build HEAD without them"
+                print(f"{what}\n{hint}", file=sys.stderr)
+                return 1
+            print(f"warning: {what}; building HEAD without them", file=sys.stderr)
     manifest = build(args.source, args.out, rev=None if args.from_worktree else args.rev)
     # The keys are Terraform variable names: pass the file with -var-file.
     printed = {"bundle_path": str(manifest.path), "bundle_sha256": manifest.base64sha256}

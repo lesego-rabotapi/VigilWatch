@@ -220,7 +220,7 @@ def test_a_source_at_the_repository_root_keeps_whole_entry_names(tmp_path):
 @pytest.mark.negative
 @pytest.mark.parametrize("path", ["handler.py", "new_module.py"], ids=["modified", "untracked"])
 def test_the_command_line_refuses_to_silently_drop_uncommitted_work(tmp_path, capsys, path):
-    """Building HEAD over local edits would deploy the old code while the developer tests the new."""
+    """Building HEAD over local edits would deploy old code while the developer tests the new."""
     src = committed_tree(tmp_path, dirty=False)
     (src / path).write_bytes(b"X = 2\n")
     assert build_bundle.main(["--source", str(src), "--out", str(tmp_path / "b.zip")]) == 1
