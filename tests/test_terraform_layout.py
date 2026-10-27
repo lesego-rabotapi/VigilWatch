@@ -209,3 +209,42 @@ def test_the_deploy_role_s3_grant_stays_inside_this_projects_buckets():
     for resource in _bootstrap_s3_resources():
         assert resource.startswith("arn:aws:s3:::vigilwatch-"), resource
         assert "-frontend-123456789012" in resource, resource
+
+
+# ---- Every setting of an environment can be changed from that environment ----------------------
+
+# Set by the environment root itself, not by the operator.
+FIXED_BY_THE_ROOT = {"frontend_dir"}
+
+
+def _declared(path: Path) -> set[str]:
+    return set(re.findall(r'^variable\s+"(\w+)"', path.read_text(encoding="utf-8"), re.M))
+
+
+@pytest.mark.parametrize("env", ENVS)
+def test_every_stack_setting_is_exposed_and_passed_by_the_environment(env):
+    stack = _declared(TF / "modules" / "vigilwatch" / "variables.tf") - FIXED_BY_THE_ROOT
+    base = TF / "envs" / env
+    missing = stack - _declared(base / "variables.tf")
+    assert not missing, f"envs/{env} cannot set {sorted(missing)}"
+    main = (base / "main.tf").read_text(encoding="utf-8")
+    unpassed = [v for v in stack if not re.search(rf"^\s*{v}\s*=\s*var\.{v}\s*$", main, re.M)]
+    assert not unpassed, f"envs/{env} declares but does not pass {sorted(unpassed)}"
+
+
+def test_settings_the_runbook_tells_operators_to_change_exist_in_every_environment():
+    runbook = (ROOT / "docs" / "RUNBOOK.md").read_text(encoding="utf-8")
+    named = set(re.findall(r"`([a-z]+(?:_[a-z0-9]+)+)`", runbook))
+    stack = _declared(TF / "modules" / "vigilwatch" / "variables.tf")
+    for env in ENVS:
+        settable = _declared(TF / "envs" / env / "variables.tf")
+        assert (named & stack) <= settable, sorted((named & stack) - settable)
+
+
+def test_the_runbook_uses_per_environment_names_and_paths():
+    runbook = (ROOT / "docs" / "RUNBOOK.md").read_text(encoding="utf-8")
+    for stale in ("/aws/lambda/vigilwatch-uptime-check", "/aws/apigateway/vigilwatch-http"):
+        assert stale not in runbook, stale
+    rollback = runbook[runbook.index("## 6. Rollback") : runbook.index("## 7.")]
+    assert "terraform/envs/prod" in rollback and "vigilwatch.tfvars.json" in rollback
+    assert "allowed_account_ids" in rollback
