@@ -62,3 +62,11 @@ def test_gitignore_covers(path):
 def test_provider_lock_file_is_not_ignored():
     _tracked_files()
     assert _git("check-ignore", "-q", "--no-index", "terraform/.terraform.lock.hcl").returncode == 1
+
+
+@pytest.mark.parametrize("path", ["lambda/uptime_check.py", "lambda/common/state.py"])
+def test_bundled_sources_are_checked_out_with_lf_line_endings(path):
+    """The bundle hash must not depend on the OS that checked the code out (core.autocrlf)."""
+    _tracked_files()  # skip if not a git checkout
+    out = _git("check-attr", "eol", "--", path).stdout
+    assert out.strip().endswith("eol: lf"), out
