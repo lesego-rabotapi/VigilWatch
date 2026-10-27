@@ -77,7 +77,7 @@ Lesson 5 "deploy despite failing tests" (gates stay strict); HATEOAS (two routes
 | 3 | Quality foundation (taxonomy, SOLID, cold start, errors, E2E harness) | 2 | L | no | ✅ COMPLETE |
 | 4 | Honest checker, alert state machine, atomic cap | 3 | M | no | ✅ COMPLETE |
 | 5 | Terraform modules and environments | 3 | L | no | ✅ COMPLETE (CI run pending) |
-| 6 | Pipeline, promotion, rollback, drift, gate integrity | 5 | L | partly (runs) | ⏳ PENDING |
+| 6 | Pipeline, promotion, rollback, drift, gate integrity | 5 | L | partly (runs) | ✅ COMPLETE offline (runs are `NEEDS-AWS`) |
 | 7 | Resilience, observability, SLOs | 4, 5 | M | partly (drill) | ⏳ PENDING |
 | 8 | Authentication (Cognito) | 3, 5 | L | partly (login) | ⏳ PENDING |
 | 9 | Documentation and portfolio packaging | 4 to 8 | M | no | ⏳ PENDING |
@@ -380,3 +380,12 @@ prove that the policy, package-verification and gate-integrity checks fail when 
 | 2026-10-25 | 5.4 | `scripts/build_bundle.py` is byte-reproducible; Terraform deploys the prebuilt file and its hash; deploy builds in plan and reuses in apply | `tests/unit/test_build_bundle.py`, `tests/test_workflows.py` |
 | 2026-10-25 | 5.5 | Each handler runs on moto as an IAM user holding exactly the rendered policy; removing any one action breaks it. Found an unused `dynamodb:GetItem` grant on the checker, removed. moto enforces actions, not resource ARNs (those are asserted by `terraform test`) | `tests/mock/test_iam_policies.py` |
 | 2026-10-25 | 5.6 | ADR 0005 written; runbook migration rewritten (old stack cannot be adopted in place; `NEEDS-AWS`) | `tests/test_design_docs.py` |
+| 2026-10-27 | 5 follow-up | Three review rounds before push: metrics dimensioned by function name (dev never feeds prod's alarm), deploy role can no longer edit itself, new `vigilwatch/envs/` state keys, smoke test in its own re-runnable job, IAM necessity checked at run time not collection. CI on the pushed commit then failed: bootstrap's lock file lacked the Linux provider hash the new provider cache needs (fixed in Stage 6) | `tests/test_terraform_layout.py`, `tests/test_workflows.py`, CI run on `2da55b5` |
+| 2026-10-27 | 6.1, 6.4 | `deploy.yml` split into `deploy-dev.yml`, `promote-prod.yml`, `rollback.yml` over one reusable `deploy-environment.yml`. Dev stores `bundles/<sha>.zip`; prod fetches it and promotes only `releases/dev`; prod deploys only commits on `main`; every job that assumes a role checks the account first | `tests/test_workflows.py` |
+| 2026-10-27 | 6.2 | `pr-plan.yml` plans dev on every same-repository pull request with the new read-only `vigilwatch-github-plan` role (`-lock=false`); a job with only `pull-requests: write` posts it | `tests/test_workflows.py`, `tests/test_terraform_layout.py` |
+| 2026-10-27 | 6.3 | `scripts/verify_package.py` imports and calls every handler from the bundle alone, in CI inside `public.ecr.aws/lambda/python:3.12` with no network. Mutation checks pass locally (missing `common/status.py`; a handler answering 500); the in-image run is CI evidence after push | `tests/unit/test_verify_package.py` |
+| 2026-10-27 | 6.5 | `drift.yml`: weekly refresh-only plan of each released commit; one open issue, written by a job with only `issues: write` | `tests/test_workflows.py` |
+| 2026-10-27 | 6.6 | Rollback through `rollback.yml`; release notes from `scripts/changelog.py` (test commits left out). Deviation: no committed `CHANGELOG.md` (ADR 0009) | `tests/unit/test_changelog.py` |
+| 2026-10-27 | 6.7 | `scripts/check_junit.py` fails a smoke run on any skip or a short run (prod 4, dev 6, checked against what pytest collects); an unset address fails in CI (proven by a subprocess run); `continue-on-error`, `\|\| true`, `set +e`, `-auto-approve` forbidden | `tests/unit/test_check_junit.py`, `tests/test_workflows.py` |
+| 2026-10-27 | 6.8 | `docs/RELEASE_CHECKLIST.md`, printed into each deploy's job summary | `tests/unit/test_checklist.py` |
+| 2026-10-27 | 6 docs | ADR 0009; runbook updated for promotion, rollback, drift and the new variables (`AWS_PLAN_ROLE_ARN`, `development` environment). Duplicated env roots kept deliberately (ADR 0009) | `tests/test_design_docs.py` |
