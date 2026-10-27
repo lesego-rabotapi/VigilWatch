@@ -121,3 +121,28 @@ def test_the_command_line_prints_a_manifest_terraform_can_read(tmp_path, capsys)
     assert printed["bundle_path"] == str(out)
     assert printed["bundle_sha256"] == build_bundle.build(src, tmp_path / "c.zip").base64sha256
     assert json.loads(out.with_name("b.tfvars.json").read_text()) == printed
+
+
+def test_entries_are_stored_uncompressed_so_no_zlib_version_can_change_the_bytes(tmp_path):
+    """Deflate output differs between zlib builds; a dev laptop and a CI runner must agree."""
+    build_bundle.build(make_tree(tmp_path), tmp_path / "b.zip")
+    assert {i.compress_type for i in entries(tmp_path / "b.zip")} == {zipfile.ZIP_STORED}
+
+
+def test_the_bytes_match_a_known_digest_on_every_machine(tmp_path):
+    """Pinned: if this changes, the archive format changed and promoted builds would differ."""
+    src = tmp_path / "lambda"
+    src.mkdir()
+    (src / "handler.py").write_bytes(b"X = 1\n")
+    manifest = build_bundle.build(src, tmp_path / "pinned.zip")
+    assert manifest.sha256_hex == PINNED_DIGEST
+
+
+def test_a_relative_output_path_is_written_as_an_absolute_one(tmp_path, monkeypatch, capsys):
+    """Terraform resolves bundle_path from terraform/envs/<env>, not from where the script ran."""
+    src = make_tree(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert build_bundle.main(["--source", str(src), "--out", "out/b.zip"]) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert Path(printed["bundle_path"]).is_absolute()
+    assert Path(printed["bundle_path"]) == (tmp_path / "out" / "b.zip").resolve()
