@@ -470,6 +470,51 @@ def test_the_plan_is_posted_by_a_job_that_holds_no_aws_access(pr_plan):
     assert "gh pr comment" in steps_text(comment)
 
 
+# ---- Drift -------------------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def drift():
+    return load("drift.yml")
+
+
+def test_drift_is_checked_weekly_in_every_environment(drift):
+    _, wf = drift
+    assert {"schedule", "workflow_dispatch"} == set(wf["on"])
+    detect = wf["jobs"]["detect"]
+    assert detect["strategy"]["matrix"]["environment"] == ["dev", "prod"]
+    assert detect["strategy"]["fail-fast"] is False, "drift in one must not hide the other"
+
+
+@pytest.mark.security
+def test_drift_detection_only_reads(drift):
+    text, wf = drift
+    detect = wf["jobs"]["detect"]
+    assert detect["permissions"] == {"contents": "read", "id-token": "write"}
+    assert "vars.AWS_PLAN_ROLE_ARN" in text and "AWS_DEPLOY_ROLE_ARN" not in text
+    plan = steps_text(detect)
+    for flag in ("-refresh-only", "-detailed-exitcode", "-lock=false"):
+        assert flag in plan, flag
+    assert "terraform apply" not in text
+
+
+def test_drift_compares_against_what_was_actually_released(drift):
+    _, wf = drift
+    plan = steps_text(wf["jobs"]["detect"])
+    assert "releases/${{ matrix.environment }}" in plan or "releases/$ENVIRONMENT" in plan
+    assert "bundles/" in plan and "--describe" in plan
+
+
+def test_drift_opens_an_issue_from_a_job_that_holds_no_aws_access(drift):
+    """issues: write on the reporting job only (DevOps 6.5)."""
+    _, wf = drift
+    report = wf["jobs"]["report"]
+    assert report["permissions"] == {"issues": "write"}
+    assert "detect" in report["needs"]
+    text = steps_text(report)
+    assert "gh issue create" in text and "gh issue list" in text, "one open issue, not one a week"
+
+
 # ---- Every workflow -----------------------------------------------------------------------------
 
 
