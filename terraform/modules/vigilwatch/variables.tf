@@ -1,6 +1,7 @@
 variable "project_name" {
   description = "Project part of every resource name."
   type        = string
+  nullable    = false
   default     = "vigilwatch"
 
   validation {
@@ -49,42 +50,49 @@ variable "notification_email" {
 variable "check_interval_minutes" {
   description = "Minutes between scheduled uptime checks."
   type        = number
+  nullable    = false
   default     = 5
 }
 
 variable "max_endpoints" {
   description = "Maximum number of monitored URLs. Bounds checker runtime and cost."
   type        = number
+  nullable    = false
   default     = 10
 }
 
 variable "failure_threshold" {
   description = "Consecutive DOWN checks before an incident is opened and an alert is sent."
   type        = number
+  nullable    = false
   default     = 2
 }
 
 variable "recovery_threshold" {
   description = "Consecutive healthy checks before an incident closes."
   type        = number
+  nullable    = false
   default     = 1
 }
 
 variable "reminder_minutes" {
   description = "While an incident stays open, send a 'still down' email this often. 0 turns reminders off."
   type        = number
+  nullable    = false
   default     = 0
 }
 
 variable "degraded_ms" {
   description = "Latency (ms) at or above which a correct response is reported as DEGRADED."
   type        = number
+  nullable    = false
   default     = 1000
 }
 
 variable "extra_control_urls" {
   description = "Independent sites the checker probes to tell 'my target is down' from 'I cannot reach the internet'. This environment's own health file is always added."
   type        = list(string)
+  nullable    = false
   default     = ["https://www.cloudflare.com/cdn-cgi/trace"]
 
   validation {
@@ -125,18 +133,21 @@ variable "dynamodb_deletion_protection" {
 variable "log_retention_days" {
   description = "CloudWatch Logs retention for all log groups."
   type        = number
+  nullable    = false
   default     = 14
 }
 
 variable "api_throttle_rate" {
   description = "Steady-state requests per second allowed on the public API."
   type        = number
+  nullable    = false
   default     = 5
 }
 
 variable "api_throttle_burst" {
   description = "Burst requests allowed on the public API."
   type        = number
+  nullable    = false
   default     = 10
 }
 

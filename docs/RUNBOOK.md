@@ -83,11 +83,11 @@ API_URL=$(terraform output -raw api_base_url) DASHBOARD_URL=$(terraform output -
 
 | Task | How |
 |---|---|
-| See recent checker runs | CloudWatch Logs group `/aws/lambda/vigilwatch-uptime-check` |
+| See recent checker runs | CloudWatch Logs group `/aws/lambda/vigilwatch-<env>-uptime-check` |
 | Run the checker now | `aws lambda invoke --function-name "$(terraform -chdir=terraform/envs/prod output -raw checker_function_name)" out.json` |
 | Disable a monitored URL | Set `enabled` to false on its item in the `endpoints` table |
 | Remove a monitored URL | Delete its item from the `endpoints` table (history expires via TTL). The cap counter (`_system#count` in the same table) is bookkeeping: leave it alone, it repairs itself the next time a registration is rejected as over the limit |
-| Change check interval / threshold / cap | Variables `check_interval_minutes`, `failure_threshold`, `max_endpoints`, then plan/apply |
+| Change check interval / thresholds / cap / throttling | Set `check_interval_minutes`, `failure_threshold`, `recovery_threshold`, `reminder_minutes`, `max_endpoints`, `api_throttle_rate` or `api_throttle_burst` in that environment's `terraform.tfvars` (unset means the module default), then plan/apply in `terraform/envs/<env>` |
 | Inspect failed runs | `aws sqs receive-message --queue-url "$(terraform -chdir=terraform/envs/prod output -raw checker_dlq_url)"` |
 
 ## 5. Alarms
@@ -101,15 +101,23 @@ alarms that use free Lambda metrics (ADR 0005).
 | `vigilwatch-<env>-checker-not-running` | No checker invocation for 30 minutes. Monitoring is blind | Check the EventBridge rule is enabled, the target exists, and the Lambda permission is present (`terraform plan` shows drift) |
 | `vigilwatch-<env>-checker-dlq` | A scheduled run failed and was dead-lettered | Inspect the DLQ message for the error, fix, then purge the queue |
 | `vigilwatch-<env>-checker-blind` | Every target failed and none of the control URLs answered: the checker cannot see the internet. Targets are shown INCONCLUSIVE and no target alerts go out meanwhile (ADR 0006). Prod only, because only prod publishes the metric | Check the Lambda has outbound access, then the control URLs in the function environment; the dashboard shows the INCONCLUSIVE pill while it lasts |
-| `vigilwatch-<env>-api-5xx` | The public API returned 5 or more server errors in 5 minutes | Check API access logs (`/aws/apigateway/vigilwatch-http`) and the function logs |
+| `vigilwatch-<env>-api-5xx` | The public API returned 5 or more server errors in 5 minutes | Check API access logs (`/aws/apigateway/vigilwatch-<env>-http`) and the function logs |
 
 ## 6. Rollback
 
 - **Application or infrastructure change:** revert the commit on `main` (`git revert <sha>`)
   and push. The pipeline plans the previous configuration and applies it after approval. The
   Lambda bundle is built from the same commit, so code and infrastructure roll back together.
-- **Urgent, pipeline unavailable:** check out the last good commit locally and run
-  `terraform plan -out=tfplan` then `terraform apply tfplan` with the same backend.
+- **Urgent, pipeline unavailable:** check out the last good commit locally, rebuild its bundle and
+  apply it from the environment directory with the same backend:
+
+  ```bash
+  python scripts/build_bundle.py
+  cd terraform/envs/prod
+  terraform init -backend-config=backend.hcl
+  terraform plan -out=tfplan -var-file=../../.build/vigilwatch.tfvars.json -var 'allowed_account_ids=["<your-account-id>"]'
+  terraform apply tfplan
+  ```
 - **Corrupted state:** the state bucket is versioned. List versions with
   `aws s3api list-object-versions --bucket <state bucket> --prefix vigilwatch/prod.tfstate`,
   then restore by copying the last good version over the current object. Run `terraform plan`

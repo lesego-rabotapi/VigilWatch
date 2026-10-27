@@ -15,4 +15,15 @@ module "stack" {
   metrics_enabled              = var.metrics_enabled
   enabled_alarms               = var.enabled_alarms
   extra_cors_origins           = var.extra_cors_origins
+  project_name                 = var.project_name
+  check_interval_minutes       = var.check_interval_minutes
+  max_endpoints                = var.max_endpoints
+  failure_threshold            = var.failure_threshold
+  recovery_threshold           = var.recovery_threshold
+  reminder_minutes             = var.reminder_minutes
+  degraded_ms                  = var.degraded_ms
+  extra_control_urls           = var.extra_control_urls
+  log_retention_days           = var.log_retention_days
+  api_throttle_rate            = var.api_throttle_rate
+  api_throttle_burst           = var.api_throttle_burst
 }

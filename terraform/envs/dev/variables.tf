@@ -60,3 +60,71 @@ variable "extra_cors_origins" {
   type        = list(string)
   default     = []
 }
+
+# Optional tuning. Each is null unless set in terraform.tfvars or with -var, and the stack module
+# then applies its own default, so defaults live in one place.
+variable "project_name" {
+  description = "Project part of every resource name. Unset (null) keeps the module default."
+  type        = string
+  default     = null
+}
+
+variable "check_interval_minutes" {
+  description = "Minutes between scheduled uptime checks. Unset (null) keeps the module default."
+  type        = number
+  default     = null
+}
+
+variable "max_endpoints" {
+  description = "Maximum number of monitored URLs. Unset (null) keeps the module default."
+  type        = number
+  default     = null
+}
+
+variable "failure_threshold" {
+  description = "Consecutive DOWN checks before an incident opens and an alert is sent. Unset (null) keeps the module default."
+  type        = number
+  default     = null
+}
+
+variable "recovery_threshold" {
+  description = "Consecutive healthy checks before an incident closes. Unset (null) keeps the module default."
+  type        = number
+  default     = null
+}
+
+variable "reminder_minutes" {
+  description = "Send a 'still down' reminder this often while an incident is open; 0 is off. Unset (null) keeps the module default."
+  type        = number
+  default     = null
+}
+
+variable "degraded_ms" {
+  description = "Latency (ms) at or above which a correct response is DEGRADED. Unset (null) keeps the module default."
+  type        = number
+  default     = null
+}
+
+variable "extra_control_urls" {
+  description = "Independent sites probed to tell a down target from a blind checker. Unset (null) keeps the module default."
+  type        = list(string)
+  default     = null
+}
+
+variable "log_retention_days" {
+  description = "CloudWatch Logs retention for all log groups. Unset (null) keeps the module default."
+  type        = number
+  default     = null
+}
+
+variable "api_throttle_rate" {
+  description = "Steady-state requests per second allowed on the public API. Unset (null) keeps the module default."
+  type        = number
+  default     = null
+}
+
+variable "api_throttle_burst" {
+  description = "Burst requests allowed on the public API. Unset (null) keeps the module default."
+  type        = number
+  default     = null
+}
