@@ -69,14 +69,33 @@ def test_root_level_tests_moved_into_the_modules_they_describe():
 # ---- Environments are isolated ----------------------------------------------
 
 
-def test_each_environment_has_its_own_state_key():
+def state_keys() -> dict[str, str]:
     keys = {}
     for env in ENVS:
         text = (TF / "envs" / env / "backend.hcl.example").read_text(encoding="utf-8")
         match = re.search(r'^key\s*=\s*"([^"]+)"', text, re.M)
         assert match, env
         keys[env] = match.group(1)
-    assert keys == {"dev": "vigilwatch/dev.tfstate", "prod": "vigilwatch/prod.tfstate"}
+    return keys
+
+
+def test_each_environment_has_its_own_state_key():
+    """Not vigilwatch/prod.tfstate: the earlier flat-root pipeline used that key, and the new
+    layout reading its state would plan to destroy whatever that pipeline created."""
+    assert state_keys() == {
+        "dev": "vigilwatch/envs/dev.tfstate",
+        "prod": "vigilwatch/envs/prod.tfstate",
+    }
+
+
+def test_the_pipeline_and_the_runbook_use_the_environments_state_keys():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+    used = re.findall(r"key=([\w/.-]+\.tfstate)", workflow)
+    assert used, "the deploy workflow names no state key"
+    assert set(used) <= set(state_keys().values()), used
+    runbook = (ROOT / "docs" / "RUNBOOK.md").read_text(encoding="utf-8")
+    named = set(re.findall(r"vigilwatch/[\w/.-]+\.tfstate", runbook))
+    assert named and named <= set(state_keys().values()), named
 
 
 @pytest.mark.parametrize("env", ENVS)
