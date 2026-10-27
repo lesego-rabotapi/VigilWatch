@@ -8,6 +8,7 @@ import base64
 import hashlib
 import json
 import os
+import subprocess
 import zipfile
 from pathlib import Path
 
@@ -119,7 +120,7 @@ def test_the_real_lambda_tree_bundles_every_handler_and_no_secrets(tmp_path):
 def test_the_command_line_prints_a_manifest_terraform_can_read(tmp_path, capsys):
     src = make_tree(tmp_path)
     out = tmp_path / "out" / "b.zip"
-    assert build_bundle.main(["--source", str(src), "--out", str(out)]) == 0
+    assert build_bundle.main(["--source", str(src), "--out", str(out), "--from-worktree"]) == 0
     printed = json.loads(capsys.readouterr().out)
     assert printed["bundle_path"] == str(out)
     assert printed["bundle_sha256"] == build_bundle.build(src, tmp_path / "c.zip").base64sha256
@@ -145,7 +146,60 @@ def test_a_relative_output_path_is_written_as_an_absolute_one(tmp_path, monkeypa
     """Terraform resolves bundle_path from terraform/envs/<env>, not from where the script ran."""
     src = make_tree(tmp_path)
     monkeypatch.chdir(tmp_path)
-    assert build_bundle.main(["--source", str(src), "--out", "out/b.zip"]) == 0
+    assert build_bundle.main(["--source", str(src), "--out", "out/b.zip", "--from-worktree"]) == 0
     printed = json.loads(capsys.readouterr().out)
     assert Path(printed["bundle_path"]).is_absolute()
     assert Path(printed["bundle_path"]) == (tmp_path / "out" / "b.zip").resolve()
+
+
+# ---- Built from the commit, not from whatever is on disk ---------------------------------------
+
+
+def git(repo: Path, *args: str) -> str:
+    config = ["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "core.autocrlf=false"]
+    return subprocess.run(
+        ["git", *config, *args], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout
+
+
+def committed_tree(base: Path) -> Path:
+    """A repository whose lambda/ holds one committed file, then a dirty working copy of it."""
+    repo = base / "repo"
+    (repo / "lambda").mkdir(parents=True)
+    git(repo, "init", "-q")
+    (repo / "lambda" / "handler.py").write_bytes(b"X = 1\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "one")
+    (repo / "lambda" / "handler.py").write_bytes(b"X = 1\r\n")  # a Windows checkout
+    (repo / "lambda" / "scratch.py").write_bytes(b"secret = 1\n")  # never committed
+    return repo / "lambda"
+
+
+def test_a_build_from_a_commit_ignores_line_endings_and_untracked_files_on_disk(tmp_path):
+    """A CRLF checkout or a stray file must not change what is deployed."""
+    src = committed_tree(tmp_path)
+    manifest = build_bundle.build(src, tmp_path / "b.zip", rev="HEAD")
+    with zipfile.ZipFile(tmp_path / "b.zip") as z:
+        assert z.namelist() == ["handler.py"]
+        assert z.read("handler.py") == b"X = 1\n"
+    assert manifest.sha256_hex == PINNED_DIGEST, "same bytes as the same file built anywhere else"
+
+
+def test_the_command_line_builds_the_checked_out_commit_by_default(tmp_path, capsys):
+    src = committed_tree(tmp_path)
+    assert build_bundle.main(["--source", str(src), "--out", str(tmp_path / "b.zip")]) == 0
+    printed = json.loads(capsys.readouterr().out)
+    expected = build_bundle.build(src, tmp_path / "c.zip", rev="HEAD").base64sha256
+    assert printed["bundle_sha256"] == expected
+
+
+@pytest.mark.negative
+def test_a_source_outside_a_repository_cannot_be_built_from_a_commit(tmp_path):
+    with pytest.raises(ValueError, match="git"):
+        build_bundle.build(make_tree(tmp_path), tmp_path / "b.zip", rev="HEAD")
+
+
+def test_the_real_bundle_has_lf_line_endings_whatever_the_checkout(tmp_path):
+    build_bundle.build(ROOT / "lambda", tmp_path / "real.zip", rev="HEAD")
+    with zipfile.ZipFile(tmp_path / "real.zip") as z:
+        assert [n for n in z.namelist() if b"\r\n" in z.read(n)] == []
