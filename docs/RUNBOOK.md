@@ -22,7 +22,9 @@ contains no secrets; keep a copy somewhere safe (password manager or a private s
    each, with the bucket name. Each environment has its own state key (`vigilwatch/envs/dev.tfstate`, `vigilwatch/envs/prod.tfstate`).
 4. In GitHub (Settings -> Secrets and variables -> Actions -> Variables) add:
    `AWS_DEPLOY_ROLE_ARN`, `TF_STATE_BUCKET`, `AWS_ACCOUNT_ID` (the only account Terraform may touch; never committed), and
-   optionally `NOTIFICATION_EMAIL`.
+   optionally `NOTIFICATION_EMAIL`. After the first prod deploy, register one URL on the prod dashboard and add it as
+   `E2E_READONLY_URL`. Prod's smoke test is read-only, so it reads that URL back instead of registering one. It fails
+   without it, so the first prod smoke run is expected to fail at that one test: set the variable, then re-run the job.
 5. In GitHub (Settings -> Environments) create `production` and add yourself as a required
    reviewer. This is the approval gate before every apply.
 6. Cost backstop: in AWS Billing -> Budgets, create a budget from the "Zero spend budget"

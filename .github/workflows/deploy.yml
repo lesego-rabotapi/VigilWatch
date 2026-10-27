@@ -150,6 +150,7 @@ jobs:
         env:
           API_URL_PROD: ${{ steps.outputs.outputs.api_base_url }}
           DASHBOARD_URL_PROD: ${{ steps.outputs.outputs.dashboard_url }}
+          E2E_READONLY_URL: ${{ vars.E2E_READONLY_URL }}
         run: |
           pip install -r requirements-dev.txt
           pytest -m e2e tests/e2e --env=prod -v

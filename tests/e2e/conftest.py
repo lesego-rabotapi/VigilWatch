@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from tests.e2e.config import dashboard_url, get_environment
+from tests.e2e.config import dashboard_url, get_environment, unavailable
 from tests.proxies import ApiProxy, ProxyError, create_proxy_for_environment
 
 TARGET = "https://example.com/"
@@ -20,14 +20,14 @@ def proxy(env_config):
     try:
         return create_proxy_for_environment(env_config.name)
     except ProxyError as exc:
-        pytest.skip(str(exc))
+        unavailable(str(exc))
 
 
 @pytest.fixture(scope="session")
 def dashboard(env_config):
     url = dashboard_url(env_config)
     if url is None:
-        pytest.skip(f"no dashboard address: set {env_config.dashboard_var} (or DASHBOARD_URL)")
+        unavailable(f"no dashboard address: set {env_config.dashboard_var} (or DASHBOARD_URL)")
     return ApiProxy(url, read_only=True, timeout=env_config.timeout)
 
 
@@ -44,7 +44,7 @@ def monitored_url(env_config, proxy):
     if env_config.read_only:
         url = os.environ.get("E2E_READONLY_URL")
         if not url:
-            pytest.skip("set E2E_READONLY_URL to a URL that is already monitored")
+            unavailable("set E2E_READONLY_URL to a URL that is already monitored")
         return url
     response = proxy.register(TARGET)
     assert response.status in (200, 201), response.text

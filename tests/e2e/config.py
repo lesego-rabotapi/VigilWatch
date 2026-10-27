@@ -10,6 +10,9 @@ Production is read-only: the harness refuses to write there.
 
 import os
 from dataclasses import dataclass
+from typing import NoReturn
+
+import pytest
 
 
 @dataclass(frozen=True)
@@ -44,6 +47,14 @@ def get_environment(name: str | None = None) -> EnvironmentConfig:
 def _url(specific: str, generic: str) -> str | None:
     value = os.environ.get(specific) or os.environ.get(generic)
     return value.rstrip("/") if value else None
+
+
+def unavailable(reason: str) -> NoReturn:
+    """A missing address skips on a developer machine and fails in CI: a smoke run that skipped
+    its checks would be a green deploy that proved nothing."""
+    if os.environ.get("CI"):
+        pytest.fail(reason, pytrace=False)
+    pytest.skip(reason)
 
 
 def api_url(env: EnvironmentConfig) -> str | None:
