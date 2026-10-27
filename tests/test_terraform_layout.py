@@ -321,8 +321,13 @@ def test_the_urgent_rollback_keeps_the_alert_email_subscription():
 
 # The root module of the old stack, as on main before this branch (terraform/variable.tf and
 # provider.tf there). Retiring it runs in that checkout, where only these variables exist.
-OLD_STACK_VARIABLES = {"vpc_cidr", "project_name", "check_interval_minutes", "notification_email"}
-OLD_STACK_VARIABLES |= {"aws_region"}
+OLD_STACK_VARIABLES = {
+    "aws_region",
+    "vpc_cidr",
+    "project_name",
+    "check_interval_minutes",
+    "notification_email",
+}
 
 
 def test_retiring_the_old_stack_only_passes_variables_the_old_stack_declares():

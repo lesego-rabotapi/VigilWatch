@@ -58,8 +58,7 @@ the state bucket belongs to the old stack: leave it alone until step 4.
    ```bash
    cd terraform
    terraform init
-   terraform apply -var dynamodb_deletion_protection=false   # lift table protection first
-   terraform plan -destroy                                    # read it: only old-stack resources
+   terraform plan -destroy    # read it: only old-stack resources (its tables were never protected)
    terraform destroy
    ```
 
