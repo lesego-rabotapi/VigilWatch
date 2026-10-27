@@ -129,9 +129,19 @@ def test_oidc_jobs_request_id_token(deploy):
 
 def test_post_deploy_smoke_and_cache_invalidation(deploy):
     _, wf = deploy
-    text = steps_text(wf["jobs"]["apply"])
-    assert "cloudfront create-invalidation" in text
-    assert "pytest -m e2e" in text
+    assert "cloudfront create-invalidation" in steps_text(wf["jobs"]["apply"])
+    assert "pytest -m e2e" in steps_text(wf["jobs"]["smoke"])
+
+
+def test_the_smoke_test_is_its_own_job_so_it_can_be_rerun_without_reapplying(deploy):
+    """Re-running a job that holds `terraform apply tfplan` fails: the saved plan is stale."""
+    _, wf = deploy
+    apply, smoke = wf["jobs"]["apply"], wf["jobs"]["smoke"]
+    assert "pytest" not in steps_text(apply)
+    assert "terraform" not in steps_text(smoke)
+    assert smoke["needs"] == ["apply"] or smoke["needs"] == "apply"
+    assert "id-token" not in smoke.get("permissions", {}), "the smoke test needs no AWS access"
+    assert {"api_base_url", "dashboard_url"} <= set(apply["outputs"])
 
 
 def test_only_release_job_can_write_contents(deploy):
@@ -140,7 +150,7 @@ def test_only_release_job_can_write_contents(deploy):
         n for n, j in wf["jobs"].items() if j.get("permissions", {}).get("contents") == "write"
     ]
     assert writers == ["release"]
-    assert "apply" in wf["jobs"]["release"]["needs"]
+    assert "smoke" in wf["jobs"]["release"]["needs"], "only a deploy that passed its smoke test"
 
 
 def test_terraform_version_supports_native_state_locking(deploy, ci):
@@ -178,7 +188,7 @@ def test_terraform_version_has_a_single_source_of_truth():
 def test_aws_jobs_are_skipped_not_failed_until_the_repository_is_configured(deploy):
     """A fresh merge must show 'skipped', not a red run, before bootstrap is done."""
     _, wf = deploy
-    for name in ("plan", "apply", "release"):
+    for name in ("plan", "apply", "smoke", "release"):
         condition = str(wf["jobs"][name].get("if", ""))
         assert "vars.AWS_DEPLOY_ROLE_ARN" in condition, f"{name} has no configuration guard"
         assert "!=" in condition and "''" in condition, f"{name}: {condition}"
@@ -227,7 +237,7 @@ def test_the_python_job_installs_terraform_for_the_policy_enforcement_tests(ci):
 def test_a_half_configured_repository_skips_instead_of_failing(deploy):
     """The plan needs both the role and the account id; missing either must mean 'skipped'."""
     _, wf = deploy
-    for name in ("plan", "apply", "release"):
+    for name in ("plan", "apply", "smoke", "release"):
         condition = str(wf["jobs"][name].get("if", ""))
         assert "vars.AWS_ACCOUNT_ID != ''" in condition, f"{name}: {condition}"
 
@@ -235,7 +245,7 @@ def test_a_half_configured_repository_skips_instead_of_failing(deploy):
 def test_the_production_smoke_test_is_read_only(deploy):
     """apply deploys prod: its smoke test must never register endpoints there."""
     _, wf = deploy
-    smoke = next(s for s in wf["jobs"]["apply"]["steps"] if "pytest -m e2e" in str(s.get("run")))
+    smoke = next(s for s in wf["jobs"]["smoke"]["steps"] if "pytest -m e2e" in str(s.get("run")))
     assert "--env=prod" in smoke["run"]
     assert "--env=dev" not in smoke["run"]
     assert set(smoke["env"]) == {"API_URL_PROD", "DASHBOARD_URL_PROD", "E2E_READONLY_URL"}
@@ -245,14 +255,14 @@ def test_the_production_smoke_test_is_given_a_url_it_can_read(deploy):
     """Prod is read-only, so it cannot register a URL to read back: one must be supplied, or the
     read test would skip on every deploy."""
     _, wf = deploy
-    smoke = next(s for s in wf["jobs"]["apply"]["steps"] if "pytest -m e2e" in str(s.get("run")))
+    smoke = next(s for s in wf["jobs"]["smoke"]["steps"] if "pytest -m e2e" in str(s.get("run")))
     assert smoke["env"]["E2E_READONLY_URL"] == "${{ vars.E2E_READONLY_URL }}"
 
 
 def test_aws_jobs_also_wait_for_the_state_bucket(deploy):
     """Without it terraform init has no backend to use and the run fails instead of skipping."""
     _, wf = deploy
-    for name in ("plan", "apply", "release"):
+    for name in ("plan", "apply", "smoke", "release"):
         condition = str(wf["jobs"][name].get("if", ""))
         assert "vars.TF_STATE_BUCKET != ''" in condition, f"{name}: {condition}"
 
@@ -261,3 +271,12 @@ def test_the_terraform_job_checks_the_free_tier_across_environments(ci):
     """terraform validate sees one environment at a time; the shared account needs the sum."""
     _, wf = ci
     assert "python scripts/free_tier_budget.py" in steps_text(wf["jobs"]["terraform"])
+
+
+def test_a_missing_read_only_url_is_reported_first_and_listed_in_the_header(deploy):
+    """Prod has already changed when the smoke job runs: say plainly what is missing."""
+    text, wf = deploy
+    header = text.split("\non:", 1)[0]
+    assert "E2E_READONLY_URL" in header
+    first = next(s for s in wf["jobs"]["smoke"]["steps"] if "run" in s)
+    assert "E2E_READONLY_URL" in first["run"] and "::error" in first["run"]
