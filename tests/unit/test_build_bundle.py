@@ -204,3 +204,11 @@ def test_the_real_bundle_has_lf_line_endings_whatever_the_checkout(tmp_path):
     build_bundle.build(ROOT / "lambda", tmp_path / "real.zip", rev="HEAD")
     with zipfile.ZipFile(tmp_path / "real.zip") as z:
         assert [n for n in z.namelist() if b"\r\n" in z.read(n)] == []
+
+
+def test_a_source_at_the_repository_root_keeps_whole_entry_names(tmp_path):
+    """The root is prefix '.', which must not cost every name its first two characters."""
+    repo = committed_tree(tmp_path).parent
+    build_bundle.build(repo, tmp_path / "b.zip", rev="HEAD")
+    with zipfile.ZipFile(tmp_path / "b.zip") as z:
+        assert z.namelist() == ["lambda/handler.py"]
