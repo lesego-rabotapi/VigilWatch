@@ -64,5 +64,8 @@ proxy under test, and the end-to-end harness reaches it only by a configured add
 - The same code in dev and prod means dev exercises what prod runs, except where the table above says it does
   not: dev has no custom metrics, so the honest-checker alarm is exercised only in prod. That gap is
   recorded rather than hidden.
+- Production no longer accepts browser calls from `http://localhost:3000`: the old single stack allowed it by
+  default, and prod sets `extra_cors_origins = []`. Local dashboard work points at dev, which keeps that
+  origin. To allow it in prod again, add it to `extra_cors_origins` in `envs/prod/terraform.tfvars`.
 - `NEEDS-AWS`: everything here is proven with a mocked provider. Whether the first real apply of both
   environments succeeds is verified in Stage 10.

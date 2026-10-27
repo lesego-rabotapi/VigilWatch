@@ -16,7 +16,7 @@ override.tf.json
 # The provider lock file IS committed so every run uses the same provider builds.
 !.terraform.lock.hcl
 
-# Build output (Lambda bundles are produced by terraform archive_file)
+# Build output: the Lambda bundle from scripts/build_bundle.py
 .build/
 *.zip
 

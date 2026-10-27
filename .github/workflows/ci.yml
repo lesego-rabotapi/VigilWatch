@@ -44,6 +44,9 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
       - run: terraform fmt -check -recursive terraform
+      # Dev and prod share one account's free tier; terraform validate sees one at a time.
+      - name: Free tier across environments
+        run: python scripts/free_tier_budget.py
       - name: Validate and test every module and every environment
         run: |
           set -euo pipefail

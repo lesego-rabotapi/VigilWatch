@@ -3,6 +3,8 @@
 `terraform validate` sees one environment at a time and cannot do this sum.
 """
 
+import json
+
 import pytest
 
 import free_tier_budget
@@ -16,11 +18,12 @@ dynamodb_deletion_protection = false
 metrics_enabled              = false
 enabled_alarms               = ["checker-errors", "checker-not-running"]
 """
-PROD = """
+ALL_ALARMS = ["checker-errors", "checker-not-running", "checker-dlq", "checker-blind", "api-5xx"]
+PROD = f"""
 environment       = "prod"
 dynamodb_capacity = 5
 metrics_enabled   = true
-enabled_alarms    = ["checker-errors", "checker-not-running", "checker-dlq", "checker-blind", "api-5xx"]
+enabled_alarms    = {json.dumps(ALL_ALARMS)}
 """
 
 
@@ -59,10 +62,10 @@ def test_capacity_is_summed_across_environments(tmp_path, capacity, fits):
 
 @pytest.mark.negative
 def test_alarms_beyond_ten_in_total_are_reported(tmp_path):
-    dev = DEV.replace(
-        '["checker-errors", "checker-not-running"]',
-        '["checker-errors", "checker-not-running", "checker-dlq", "api-5xx", "checker-blind", "x", "y"]',
+    six = (
+        '["checker-errors", "checker-not-running", "checker-dlq", "api-5xx", "checker-blind", "x"]'
     )
+    dev = DEV.replace('["checker-errors", "checker-not-running"]', six)
     problems = free_tier_budget.violations(write_envs(tmp_path, dev=dev, prod=PROD))
     assert any("alarms" in p for p in problems)
 

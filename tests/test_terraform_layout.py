@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+import free_tier_budget
+
 pytestmark = pytest.mark.req("VW-013", "VW-016", "VW-017")
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -21,19 +23,9 @@ KNOWN_ALARMS = {"checker-errors", "checker-not-running", "checker-dlq", "checker
 
 
 def tfvars(env: str) -> dict:
-    values = {}
-    text = (TF / "envs" / env / "terraform.tfvars").read_text(encoding="utf-8")
-    for key, raw in re.findall(r"^(\w+)\s*=\s*(.+?)\s*$", text, flags=re.MULTILINE):
-        raw = raw.split("#")[0].strip()
-        if raw.startswith("["):
-            values[key] = re.findall(r'"([^"]*)"', raw)
-        elif raw.startswith('"'):
-            values[key] = raw.strip('"')
-        elif raw in ("true", "false"):
-            values[key] = raw == "true"
-        else:
-            values[key] = float(raw) if "." in raw else int(raw)
-    return values
+    return free_tier_budget.parse_tfvars(
+        (TF / "envs" / env / "terraform.tfvars").read_text(encoding="utf-8")
+    )
 
 
 def terraform_files(*, include_tests=False):
@@ -116,6 +108,10 @@ def test_no_account_ids_or_addresses_are_hardcoded_in_infrastructure_code():
 
 
 # ---- Free-tier arithmetic across environments --------------------------------
+
+
+def test_the_committed_environments_fit_one_free_tier():
+    assert free_tier_budget.violations() == []
 
 
 def test_provisioned_capacity_of_both_environments_fits_one_free_tier():
