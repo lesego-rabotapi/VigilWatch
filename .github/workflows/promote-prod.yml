@@ -78,10 +78,26 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      SHA: ${{ needs.resolve.outputs.sha }}
+      TAG: v2.${{ github.run_number }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags and history, to find the previous release
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Write the changelog since the previous release
+        run: |
+          if previous="$(git describe --tags --abbrev=0 --match 'v*' "$SHA^")"; then
+            range="$previous..$SHA"
+          else
+            range="$SHA"
+          fi
+          python scripts/changelog.py "$range" --version "$TAG" > notes.md
+          cat notes.md >> "$GITHUB_STEP_SUMMARY"
       - name: Create the release at the promoted commit
         env:
           GH_TOKEN: ${{ github.token }}
-          SHA: ${{ needs.resolve.outputs.sha }}
-          TAG: v2.${{ github.run_number }}
-        run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$SHA" --title "$TAG" --generate-notes
+        run: gh release create "$TAG" --target "$SHA" --title "$TAG" --notes-file notes.md

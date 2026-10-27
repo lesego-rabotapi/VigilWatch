@@ -2,8 +2,9 @@
 
 import subprocess
 
-import changelog
 import pytest
+
+import changelog
 
 pytestmark = pytest.mark.req("VW-017")
 
