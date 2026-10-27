@@ -164,6 +164,27 @@ def test_no_archive_provider_is_required():
 # ---- Hygiene -------------------------------------------------------------------
 
 
+def _lock_hashes(path: Path) -> dict[str, set[str]]:
+    text = path.read_text(encoding="utf-8")
+    return {
+        provider: set(re.findall(r'"(h1:[^"]+)"', block))
+        for provider, block in re.findall(r'provider "([^"]+)" \{(.*?)\n\}', text, re.S)
+    }
+
+
+def test_every_committed_lock_file_can_verify_the_provider_on_every_platform_we_use():
+    """CI reuses providers from a cache of unpacked plugins, which Terraform verifies with the
+    platform's h1 hash only. A lock file written on one OS has just that OS's h1 hash, and CI on
+    Linux then fails with 'doesn't match any of the checksums' (it did, for bootstrap)."""
+    locks = sorted(TF.glob("*/.terraform.lock.hcl")) + sorted(TF.glob("envs/*/.terraform.lock.hcl"))
+    assert {p.parent.name for p in locks} >= {"bootstrap", "dev", "prod"}
+    hashes = {p.relative_to(TF).as_posix(): _lock_hashes(p) for p in locks}
+    reference = hashes["envs/prod/.terraform.lock.hcl"]
+    assert all(len(h) >= 4 for h in reference.values()), "linux, windows and two darwin builds"
+    for name, found in hashes.items():
+        assert found == reference, f"{name} records different provider hashes"
+
+
 def test_environment_tfvars_are_committed_not_ignored():
     import subprocess
 
