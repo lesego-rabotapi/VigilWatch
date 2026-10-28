@@ -393,6 +393,25 @@ def test_a_failed_plan_fails_the_job_and_shows_why(tmp_path):
     assert "no valid credential sources" in ran.output
 
 
+# ---- Tagging the release -----------------------------------------------------------------------
+
+TAG = ("promote-prod.yml", "release", "Choose the tag")
+
+
+def test_the_tag_is_the_next_free_v2_number(tmp_path):
+    ran = run(find_step(*TAG)["run"], tmp_path)
+    assert ran.status == 0, ran.output
+    assert ran.env["TAG"].startswith("v2.")
+
+
+@pytest.mark.negative
+def test_a_failure_choosing_the_tag_stops_the_step(tmp_path):
+    """echo "TAG=$(...)" succeeds even when the command inside fails, leaving TAG empty."""
+    ran = run(find_step(*TAG)["run"], tmp_path, stubs={"python": "exit 1"})
+    assert ran.status != 0
+    assert "TAG" not in ran.env
+
+
 # ---- Choosing the commit to promote -------------------------------------------------------------
 
 RESOLVE = ("promote-prod.yml", "resolve", "Choose the commit to promote")
