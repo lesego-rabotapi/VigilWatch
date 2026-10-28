@@ -17,7 +17,7 @@ defaults:
 # A new push to a pull request, or to a branch other than main, cancels its superseded run. A run
 # on main (called by deploy-dev.yml) gets a group of its own: nothing a deploy waits on is cancelled.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || (github.ref != 'refs/heads/main' && github.ref) || github.run_id }}
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || (github.ref != 'refs/heads/main' && github.ref) || github.run_id }}
   cancel-in-progress: true
 
 env:

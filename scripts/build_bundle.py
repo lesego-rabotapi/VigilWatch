@@ -107,7 +107,8 @@ def build(source: Path, out: Path, rev: str | None = None) -> Manifest:
 
 
 def describe(bundle: Path) -> Manifest:
-    """The manifest of an existing bundle, such as the one dev stored and prod now deploys."""
+    """The manifest of a bundle just built: its path and digests. (The pipeline hashes stored
+    bundles with openssl, not with this.)"""
     bundle = Path(bundle).resolve()
     if not bundle.is_file():
         raise FileNotFoundError(f"bundle not found: {bundle}")

@@ -96,7 +96,7 @@ jobs:
             echo "::error::bundles/$SHA.zip has sha256 $stored, but $ENVIRONMENT released $DIGEST"
             exit 1
           fi
-          python -c 'import json, sys; json.dump({"bundle_path": sys.argv[1], "bundle_sha256": sys.argv[2]}, open(sys.argv[3], "w"))' \
+          python -c 'import json, sys; f = open(sys.argv[3], "w"); json.dump({"bundle_path": sys.argv[1], "bundle_sha256": sys.argv[2]}, f); f.close()' \
             "$BUNDLE" "$stored" "${BUNDLE%.zip}.tfvars.json"
       - uses: hashicorp/setup-terraform@v3
         if: steps.release.outputs.sha
@@ -160,16 +160,22 @@ jobs:
           TITLE: Infrastructure drift detected
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          shopt -s nullglob # no results (every leg failed early) means nothing to report
           : > body.md
-          for file in drift-*/drift.md; do
-            if [ "$(cat "$file")" != "none" ]; then
+          unchecked=""
+          for environment in dev prod; do
+            file="drift-$environment/drift.md"
+            if [ ! -f "$file" ]; then
+              unchecked="${unchecked:+$unchecked }$environment" # its detect job failed early
+            elif [ "$(cat "$file")" != "none" ]; then
               cat "$file" >> body.md
               echo >> body.md
             fi
           done
+          if [ -n "$unchecked" ]; then
+            echo "::warning::not checked: $unchecked (see the failed drift job)"
+          fi
           if [ ! -s body.md ]; then
-            echo "No drift."
+            echo "No drift in the environments checked."
             exit 0
           fi
           echo "Found by $RUN. Reconcile by changing the code and deploying, or revert the change made outside the pipeline." >> body.md

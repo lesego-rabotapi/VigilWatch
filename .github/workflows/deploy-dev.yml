@@ -7,6 +7,7 @@ name: Deploy dev
 on:
   push:
     branches: [main]
+  workflow_dispatch: # the first deploy after the repository variables are set
 
 permissions:
   contents: read
@@ -16,8 +17,10 @@ defaults:
   run:
     shell: bash
 
+# A dispatch from another branch fails at its first deploy step; its own group keeps it from
+# taking the queue's pending slot meanwhile.
 concurrency:
-  group: deploy-dev
+  group: deploy-dev${{ github.ref != 'refs/heads/main' && format('-{0}', github.run_id) || '' }}
   cancel-in-progress: false # never interrupt a running apply
 
 jobs:

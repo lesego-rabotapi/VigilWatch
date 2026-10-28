@@ -178,7 +178,7 @@ jobs:
             echo "::error::bundles/$SHA.zip has sha256 $digest, but dev released $DEV_BUNDLE_SHA256: refusing other bytes"
             exit 1
           fi
-          python -c 'import json, sys; json.dump({"bundle_path": sys.argv[1], "bundle_sha256": sys.argv[2]}, open(sys.argv[3], "w"))' \
+          python -c 'import json, sys; f = open(sys.argv[3], "w"); json.dump({"bundle_path": sys.argv[1], "bundle_sha256": sys.argv[2]}, f); f.close()' \
             "$BUNDLE" "$digest" "${BUNDLE%.zip}.tfvars.json"
           echo "sha256=$digest" >> "$GITHUB_OUTPUT"
           echo "bundle for $SHA: sha256 $digest" >> "$GITHUB_STEP_SUMMARY"
