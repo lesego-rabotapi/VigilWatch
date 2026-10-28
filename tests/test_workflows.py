@@ -721,6 +721,23 @@ def test_the_rebuild_check_builds_the_deployed_commit_not_the_working_tree(deplo
 
 
 @pytest.mark.parametrize("name", all_workflows())
+def test_every_job_that_runs_a_repository_script_checks_the_repository_out_first(name):
+    """A job starts with an empty workspace: without a checkout, `scripts/...` does not exist.
+    (The step tests run from the repository root, so they cannot see this.)"""
+    _, wf = load(name)
+    for job_name, job in wf["jobs"].items():
+        steps = job.get("steps", [])
+        checkout = next(
+            (i for i, s in enumerate(steps) if "actions/checkout" in s.get("uses", "")), None
+        )
+        for i, step in enumerate(steps):
+            if re.search(r"(^|[\s/])scripts/", str(step.get("run", ""))):
+                assert checkout is not None and checkout < i, (
+                    f"{name}:{job_name}:{step.get('name')}"
+                )
+
+
+@pytest.mark.parametrize("name", all_workflows())
 def test_no_workflow_has_static_credentials(name):
     text, _ = load(name)
     assert "aws-access-key-id" not in text and "AWS_SECRET_ACCESS_KEY" not in text

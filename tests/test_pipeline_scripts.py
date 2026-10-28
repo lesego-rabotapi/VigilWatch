@@ -765,6 +765,15 @@ def test_dev_never_goes_behind_the_commit_it_runs(tmp_path, history, released, d
         assert "::error::" in ran.output and "behind" in ran.output
 
 
+def test_without_a_marker_the_behind_check_compares_with_the_last_release(tmp_path, history):
+    """A missing marker (deleted, or a bucket from before markers) must not let dev go behind."""
+    repo, shas = history
+    _store(tmp_path, "releases/dev", f"{shas[1]} {'A' * 43}=")
+    ran = run(find_step(*BEHIND)["run"], tmp_path, env={"SHA": shas[0]}, cwd=repo)
+    assert ran.status == 1
+    assert "behind" in ran.output
+
+
 @pytest.mark.negative
 def test_an_unknown_running_commit_fails_the_behind_check_closed(tmp_path, history):
     """merge-base exits 128 for a commit the clone does not have: that is not 'not behind'."""
