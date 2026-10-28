@@ -3,3 +3,6 @@
 lambda/**/*.py text eol=lf
 lambda/**/*.json text eol=lf
 lambda/**/*.txt text eol=lf
+
+# bash fails on a carriage return.
+*.sh text eol=lf

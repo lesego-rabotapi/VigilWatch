@@ -48,16 +48,19 @@ jobs:
             echo "::error::these credentials are not for the account in AWS_ACCOUNT_ID"
             exit 1
           fi
+      # For scripts/release.sh; the released commit is checked out over it below.
+      - uses: actions/checkout@v4
       - name: Find the released commit
         id: release
         run: |
-          if record="$(aws s3 cp "s3://$BUCKET/releases/$ENVIRONMENT" -)"; then
-            read -r sha digest <<< "$record"
-            echo "sha=$sha" >> "$GITHUB_OUTPUT"
-            echo "digest=$digest" >> "$GITHUB_OUTPUT"
-          else
+          record="$(bash scripts/release.sh "$BUCKET" "$ENVIRONMENT")"
+          if [ -z "$record" ]; then
             echo "::notice::$ENVIRONMENT has no release yet: nothing to compare"
+            exit 0
           fi
+          read -r sha digest <<< "$record"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         if: steps.release.outputs.sha
         with:

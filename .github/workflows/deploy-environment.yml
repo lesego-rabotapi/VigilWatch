@@ -105,8 +105,13 @@ jobs:
       # The record is "<commit> <bundle sha256>": the digest of the bytes dev ran is checked below.
       - name: Promote only what dev last deployed successfully
         if: ${{ inputs.require_dev_release }}
+        working-directory: .
         run: |
-          record="$(aws s3 cp "s3://$BUCKET/releases/dev" -)"
+          record="$(bash scripts/release.sh "$BUCKET" dev)"
+          if [ -z "$record" ]; then
+            echo "::error::dev has no release yet: deploy $SHA to dev first"
+            exit 1
+          fi
           read -r released digest <<< "$record"
           if [ "$released" != "$SHA" ]; then
             echo "::error::dev last released ${released:-nothing}, not $SHA: deploy it to dev first"

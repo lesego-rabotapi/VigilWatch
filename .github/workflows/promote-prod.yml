@@ -24,9 +24,10 @@ env:
   AWS_REGION: af-south-1
 
 jobs:
+  # Only reads the release record, so it uses the read-only role.
   resolve:
     name: Choose the commit
-    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' && vars.TF_STATE_BUCKET != '' }}
+    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' && vars.TF_STATE_BUCKET != '' && vars.AWS_PLAN_ROLE_ARN != '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -34,9 +35,10 @@ jobs:
     outputs:
       sha: ${{ steps.sha.outputs.sha }}
     steps:
+      - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Refuse any account but the configured one
         env:
@@ -46,16 +48,21 @@ jobs:
             echo "::error::these credentials are not for the account in AWS_ACCOUNT_ID"
             exit 1
           fi
-      - id: sha
+      - name: Choose the commit to promote
+        id: sha
         env:
           REQUESTED: ${{ inputs.sha }}
           BUCKET: ${{ vars.TF_STATE_BUCKET }}
         run: |
           if [ -n "$REQUESTED" ]; then
             sha="$REQUESTED"
-          elif ! sha="$(aws s3 cp "s3://$BUCKET/releases/dev" -)"; then
-            echo "::error::dev has no recorded release yet: deploy dev first"
-            exit 1
+          else
+            record="$(bash scripts/release.sh "$BUCKET" dev)"
+            if [ -z "$record" ]; then
+              echo "::error::dev has no release yet: deploy dev first"
+              exit 1
+            fi
+            sha="${record%% *}"
           fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "Promoting $sha" >> "$GITHUB_STEP_SUMMARY"

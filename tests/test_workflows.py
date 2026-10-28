@@ -212,7 +212,7 @@ def test_promotion_deploys_the_commit_dev_last_released_and_its_stored_bundle(pr
     assert job["with"]["sha"] == "${{ needs.resolve.outputs.sha }}"
     assert job["with"]["require_dev_release"] is True
     assert job["with"].get("build", False) is False, "prod never builds: it deploys dev's bytes"
-    assert "releases/dev" in steps_text(wf["jobs"]["resolve"])
+    assert 'scripts/release.sh "$BUCKET" dev' in steps_text(wf["jobs"]["resolve"])
 
 
 def test_rollback_redeploys_a_given_commit_through_the_same_approval(rollback):
@@ -291,7 +291,7 @@ def test_promotion_refuses_anything_but_what_dev_last_released(deploy):
     check = next(
         s for s in wf["jobs"]["plan"]["steps"] if s.get("if") == "${{ inputs.require_dev_release }}"
     )
-    assert "releases/dev" in check["run"] and "exit 1" in check["run"]
+    assert 'scripts/release.sh "$BUCKET" dev' in check["run"] and "exit 1" in check["run"]
 
 
 def test_apply_requires_approval_for_prod_and_uses_the_reviewed_plan(deploy):
@@ -509,7 +509,7 @@ def test_drift_detection_only_reads(drift):
 def test_drift_compares_against_what_was_actually_released(drift):
     _, wf = drift
     plan = steps_text(wf["jobs"]["detect"])
-    assert "releases/${{ matrix.environment }}" in plan or "releases/$ENVIRONMENT" in plan
+    assert 'scripts/release.sh "$BUCKET" "$ENVIRONMENT"' in plan
     assert "bundles/" in plan and "--describe" in plan
 
 
