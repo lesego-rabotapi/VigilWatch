@@ -639,7 +639,30 @@ def test_every_step_runs_in_bash_with_pipefail(name):
 @pytest.mark.parametrize("name", all_workflows())
 def test_the_bundle_digest_is_read_by_one_script_not_parsed_inline(name):
     text, _ = load(name)
-    assert "json.load" not in text, f"{name}: use scripts/build_bundle.py --describe --sha256"
+    assert "json.load" not in text, f"{name}: hash the bundle with openssl instead"
+
+
+# Options of scripts/build_bundle.py that every commit with a stored bundle has. The deploy and
+# drift jobs run the deployed commit's own copy of the script, so a newer option would break a
+# rollback to, or the drift check of, an older release.
+STABLE_BUILD_OPTIONS = {"--out", "--describe", "--allow-dirty"}
+
+
+@pytest.mark.parametrize("name", ["deploy-environment.yml", "drift.yml"])
+def test_the_deployed_commits_build_script_is_called_only_with_options_it_has(name):
+    text, _ = load(name)
+    calls = re.findall(r"scripts/build_bundle\.py(.*)", text)
+    assert calls, name
+    for options in calls:
+        assert set(re.findall(r"--[a-z-]+", options)) <= STABLE_BUILD_OPTIONS, options
+    assert "openssl dgst -sha256 -binary" in text, "the digest needs no script at all"
+
+
+def test_the_rebuild_check_builds_the_commit_even_with_local_edits(deploy):
+    """It builds HEAD's content, never the working tree, so uncommitted files do not matter."""
+    text, _ = deploy
+    rebuild = next(line for line in text.splitlines() if "rebuilt/vigilwatch.zip" in line)
+    assert "--allow-dirty" in rebuild
 
 
 @pytest.mark.parametrize("name", all_workflows())

@@ -138,18 +138,6 @@ def test_a_stored_bundle_is_described_without_rebuilding_it(tmp_path, capsys):
     assert json.loads(stored.with_name("vigilwatch.tfvars.json").read_text()) == printed
 
 
-def test_the_digest_alone_can_be_printed_for_the_pipeline_to_compare(tmp_path, capsys):
-    """The deploy and drift jobs compare it with the release record; one parser, here."""
-    src = make_tree(tmp_path)
-    stored = tmp_path / "fetched" / "vigilwatch.zip"
-    manifest = build_bundle.build(src, stored)
-    assert build_bundle.main(["--describe", str(stored), "--sha256"]) == 0
-    assert capsys.readouterr().out == manifest.base64sha256 + "\n"
-    assert json.loads(stored.with_name("vigilwatch.tfvars.json").read_text())["bundle_sha256"] == (
-        manifest.base64sha256
-    ), "the Terraform variables are still written"
-
-
 @pytest.mark.negative
 def test_describing_a_missing_bundle_is_an_error(tmp_path):
     with pytest.raises(FileNotFoundError, match="bundle not found"):
