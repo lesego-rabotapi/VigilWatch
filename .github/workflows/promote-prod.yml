@@ -16,6 +16,11 @@ on:
 permissions:
   contents: read
 
+# bash -eo pipefail: without `shell:`, GitHub runs bash -e and ignores a failure mid-pipeline.
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: deploy-prod
   cancel-in-progress: false # never interrupt a running apply
