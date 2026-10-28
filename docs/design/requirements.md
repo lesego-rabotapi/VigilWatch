@@ -210,3 +210,13 @@ As an owner I want the DOWN email to arrive even if the first attempt failed, an
 - An incident closes only after RECOVERY_THRESHOLD consecutive healthy checks (default 1, so behaviour is unchanged); a failure in between restarts the count without raising a new alert.
 - With REMINDER_MINUTES above 0, a "still down" email is sent while the incident stays open and that long has passed since the last alert (default 0 = off).
 - The endpoint cap holds under concurrent registrations (the counter is updated in the same transaction as the endpoint).
+
+### VW-024: Recover the monitored list
+
+As an owner I want to get my monitored URLs back after a table is lost or damaged, without paying for point-in-time recovery.
+
+**Acceptance:**
+- A backup writes every item of the endpoints table to a file, lossless (DynamoDB types kept), in a stable order.
+- A restore writes a backup back and is idempotent: restoring twice leaves the same table.
+- A drill restores a backup into a scratch table, compares the item count and a sample with the backup, reports the time taken, and always deletes the scratch table.
+- History is not backed up: raw checks expire in 48 h and rollups and incidents in 31 d, so the checker rebuilds it.
