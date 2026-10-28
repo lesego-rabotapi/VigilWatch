@@ -441,6 +441,13 @@ def test_the_release_notes_are_the_changelog_since_the_previous_release(promote)
     assert "--generate-notes" not in text
 
 
+def test_the_release_tag_is_the_next_free_one_not_the_run_number(promote):
+    """github.run_number restarts when a workflow is renamed, and v2.<n> may already exist."""
+    text, wf = promote
+    assert "run_number" not in text
+    assert "scripts/next_version.py" in steps_text(wf["jobs"]["release"])
+
+
 # ---- Plan on pull requests ---------------------------------------------------------------------
 
 
