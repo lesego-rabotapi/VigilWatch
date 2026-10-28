@@ -50,8 +50,10 @@ check comments on the single open drift issue, or opens one. A normal plan is no
 report commits not yet promoted, which is not drift.
 
 **Gate integrity.** pytest exits 0 when every selected test skips. The smoke job therefore writes a JUnit report
-and `scripts/check_junit.py` fails it on any skip or on fewer tests than expected. Prod runs the four read-only
-smoke tests and dev runs all six. A policy test checks those minimums against what pytest collects. In CI, a
+and `scripts/check_junit.py` fails it on any skip or on fewer tests than the deployed commit collects (none at
+all fails too). Prod runs the read-only smoke tests and dev runs every e2e test. The minimum is counted from the
+checked-out commit, not written into the workflow: the workflow comes from `main`, but a rollback runs an older
+commit's tests, and a fixed number would fail it after the apply. In CI, a
 missing address fails instead of skipping. No workflow may use `continue-on-error`, `|| true`, `set +e` or
 `-auto-approve`.
 

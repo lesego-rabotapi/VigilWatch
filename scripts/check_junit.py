@@ -2,10 +2,11 @@
 
 pytest exits 0 when every selected test skipped, so a smoke job whose address was missing, or
 whose marker selected nothing, would look green. This reads pytest's JUnit report and holds the
-run to a minimum. Standard library only.
+run to a minimum: a fixed number, or every test the commit collects. Standard library only.
 
+    pytest --collect-only -q ... > collected.txt
     pytest ... --junitxml=e2e.xml
-    python scripts/check_junit.py e2e.xml --min-tests 4
+    python scripts/check_junit.py e2e.xml --collected collected.txt    # or --min-tests 4
 """
 
 import argparse
@@ -26,8 +27,15 @@ def counts(report: Path) -> dict[str, int]:
     return totals
 
 
+def collected(listing: Path) -> int:
+    """Tests in `pytest --collect-only -q` output: one node id ("path::name") per line."""
+    return sum("::" in line for line in listing.read_text(encoding="utf-8").splitlines())
+
+
 def problems(totals: dict[str, int], min_tests: int) -> list[str]:
     found = []
+    if min_tests < 1:
+        found.append("nothing was collected, so nothing was checked")
     if totals["skipped"]:
         found.append(f"{totals['skipped']} skipped: a skipped check proves nothing")
     if totals["tests"] < min_tests:
@@ -40,13 +48,19 @@ def problems(totals: dict[str, int], min_tests: int) -> list[str]:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("report", type=Path)
-    parser.add_argument("--min-tests", type=int, required=True)
+    minimum = parser.add_mutually_exclusive_group(required=True)
+    minimum.add_argument("--min-tests", type=int)
+    minimum.add_argument(
+        "--collected", type=Path, help="pytest --collect-only -q output: every test must run"
+    )
     args = parser.parse_args(argv)
-    if not args.report.is_file():
-        print(f"gate failed: no test report at {args.report}")
-        return 1
+    for path, what in ((args.report, "test report"), (args.collected, "collection listing")):
+        if path and not path.is_file():
+            print(f"gate failed: no {what} at {path}")
+            return 1
+    min_tests = collected(args.collected) if args.collected else args.min_tests
     totals = counts(args.report)
-    found = problems(totals, args.min_tests)
+    found = problems(totals, min_tests)
     for problem in found:
         print(f"gate failed: {problem}")
     if not found:
