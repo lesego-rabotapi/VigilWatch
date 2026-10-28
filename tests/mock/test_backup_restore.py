@@ -61,15 +61,16 @@ def test_two_backups_of_the_same_table_are_identical(table, tmp_path):
     assert (tmp_path / "1.jsonl").read_bytes() == (tmp_path / "2.jsonl").read_bytes()
 
 
-def test_a_wiped_table_is_restored_exactly(table, tmp_path):
+def test_a_wiped_table_is_restored_exactly_but_for_the_counter(table, tmp_path):
+    """The counter is rebuilt by the application (see the counter test below)."""
     out = tmp_path / "endpoints.jsonl"
     backup_tables.backup(TABLE, out)
     before = everything(table)
     for item in before:
         table.delete_item(Key={"endpoint_id": item["endpoint_id"]})
     assert everything(table) == []
-    assert restore_tables.restore(TABLE, out) == 3
-    assert everything(table) == before
+    assert restore_tables.restore(TABLE, out) == 2
+    assert everything(table) == [i for i in before if i["endpoint_id"] != COUNTER_ID]
 
 
 def test_restoring_twice_leaves_the_same_table(table, tmp_path):
@@ -117,7 +118,7 @@ def test_the_commands_print_what_they_did(table, tmp_path, capsys):
     assert backup_tables.main(["--table", TABLE, "--out", str(out)]) == 0
     assert "3 items" in capsys.readouterr().out
     assert restore_tables.main(["--table", TABLE, "--from", str(out)]) == 0
-    assert "3 items" in capsys.readouterr().out
+    assert "restored 2 items" in capsys.readouterr().out
 
 
 def test_the_cap_counter_is_rebuilt_from_the_real_count_not_restored_stale(table, tmp_path):

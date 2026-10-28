@@ -20,7 +20,7 @@ from pathlib import Path
 import boto3
 
 import restore_tables
-from backup_tables import canonical, key_names, scan
+from backup_tables import canonical, scan
 
 MAX_UNITS = 5
 # The drill log's header in docs/resilience.md; each run prints one row under it.
@@ -59,7 +59,7 @@ def compare(backup: list[dict], restored: list[dict], keys: list[str], sample: i
     return problems
 
 
-def _scratch_table(client, source: str, name: str) -> None:
+def _create_scratch_table(client, source: str, name: str) -> None:
     table = client.describe_table(TableName=source)["Table"]
     keys = {k["AttributeName"] for k in table["KeySchema"]}
     units = table.get("ProvisionedThroughput", {})
@@ -75,36 +75,49 @@ def _scratch_table(client, source: str, name: str) -> None:
             "WriteCapacityUnits": min(units.get("WriteCapacityUnits") or MAX_UNITS, MAX_UNITS),
         },
     )
-    client.get_waiter("table_exists").wait(TableName=name)
 
 
 def drill(source: str, backup_path: Path, client=None, sample: int = 25) -> DrillResult:
+    if sample < 1:
+        raise ValueError(f"sample must be at least 1, got {sample}")
     client = client or boto3.client("dynamodb")
-    keys = key_names(client, source)
-    items = restore_tables.read_backup(backup_path, keys)
+    keys = restore_tables.key_types(client, source)
+    # What a restore writes: the cap counter is rebuilt by the application, not restored.
+    items = restore_tables.restorable(restore_tables.read_backup(backup_path, keys))
     scratch = f"{source}-drill-{datetime.now(UTC):%Y%m%d%H%M%S}"
-    _scratch_table(client, source, scratch)
+    created = False
     try:
+        _create_scratch_table(client, source, scratch)
+        created = True  # from here on it exists, and costs capacity until deleted
+        client.get_waiter("table_exists").wait(TableName=scratch)
         started = time.monotonic()
         restore_tables.write(client, scratch, items)
         seconds = time.monotonic() - started
         restored = list(scan(client, scratch))
     finally:
-        client.delete_table(TableName=scratch)
+        if created:
+            client.delete_table(TableName=scratch)
     return DrillResult(
         scratch=scratch,
         items=len(items),
         sampled=len(choose(items, sample)),
         seconds=seconds,
-        problems=compare(items, restored, keys, sample),
+        problems=compare(items, restored, list(keys), sample),
     )
+
+
+def _at_least_one(text: str) -> int:
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError("the sample must be at least 1")
+    return value
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--table", required=True, help="the live table the backup came from")
     parser.add_argument("--from", dest="source", type=Path, required=True)
-    parser.add_argument("--sample", type=int, default=25)
+    parser.add_argument("--sample", type=_at_least_one, default=25)
     args = parser.parse_args(argv)
     result = drill(args.table, args.source, sample=args.sample)
     for problem in result.problems:

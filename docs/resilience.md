@@ -44,8 +44,11 @@ python scripts/restore_drill.py --table vigilwatch-prod-endpoints --from backups
 
 - The backup is one item per line in DynamoDB's typed JSON, so numbers, sets and nulls survive. The same
   table always gives the same bytes, and the command prints the file's SHA-256.
-- The restore checks the whole file before writing, puts whole items (restoring twice changes nothing), and
-  leaves items that are not in the backup alone.
+- The restore checks the whole file before writing (typed values, key types, no key twice), puts whole
+  items (restoring twice changes nothing), and leaves items that are not in the backup alone. It does not
+  restore the endpoint cap counter, which could be stale and too low: it deletes it, and the application
+  rebuilds it from the real count. A table that stays throttled fails the restore after eight attempts
+  instead of hanging.
 - The drill never touches the live table. It restores into a scratch table named
   `<table>-drill-<timestamp>`, compares the item count and a fixed sample with the backup, prints the
   time the restore took, and deletes the scratch table even when something fails. The scratch table uses

@@ -56,14 +56,9 @@ resource "aws_apigatewayv2_stage" "default" {
 
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.api_access.arn
-    format = jsonencode({
-      requestId = "$context.requestId"
-      ip        = "$context.identity.sourceIp"
-      route     = "$context.routeKey"
-      status    = "$context.status"
-      latencyMs = "$context.responseLatency"
-      error     = "$context.integrationErrorMessage"
-    })
+    # Written by hand, not with jsonencode, so status and latency are JSON numbers: the saved
+    # queries (modules/monitoring) compare them as numbers.
+    format = "{\"requestId\":\"$context.requestId\",\"ip\":\"$context.identity.sourceIp\",\"route\":\"$context.routeKey\",\"status\":$context.status,\"latencyMs\":$context.responseLatency,\"error\":\"$context.integrationErrorMessage\"}"
   }
 }
 

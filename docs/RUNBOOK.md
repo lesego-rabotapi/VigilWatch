@@ -112,7 +112,7 @@ API_URL_DEV=$(terraform output -raw api_base_url) DASHBOARD_URL_DEV=$(terraform 
 | Inspect failed runs | `aws sqs receive-message --queue-url "$(terraform -chdir=terraform/envs/prod output -raw checker_dlq_url)"` |
 | A "Infrastructure drift detected" issue | The weekly `drift.yml` found a resource that differs from its state (a console change). Read the plan in the issue, then either put the change into code and deploy it, or undo it by redeploying the released commit (`rollback.yml` with the commit in `releases/prod`). Close the issue once the next drift run is clean |
 | Back up the monitored URLs | `python scripts/backup_tables.py --table vigilwatch-prod-endpoints --out backups/endpoints-$(date +%F).jsonl` (after changing the list, and weekly; `docs/resilience.md`) |
-| Restore them | `python scripts/restore_tables.py --table vigilwatch-prod-endpoints --from backups/<file>.jsonl` (idempotent; recreate the table with `terraform apply` first if it is gone) |
+| Restore them | `python scripts/restore_tables.py --table vigilwatch-prod-endpoints --from backups/<file>.jsonl` (idempotent; recreate the table with `terraform apply` first if it is gone; the cap counter is not restored but rebuilt from the real count) |
 | Prove a backup restores | `python scripts/restore_drill.py --table vigilwatch-prod-endpoints --from backups/<file>.jsonl`, then paste its row into the drill log in `docs/resilience.md` |
 | Which commit runs where | `aws s3 cp s3://<state bucket>/releases/dev -` (and `releases/prod`): the commit, then the SHA-256 of its bundle |
 
@@ -213,7 +213,7 @@ and look at the `checker-not-running` and `checker-errors` alarms.
 
 ```bash
 aws apigatewayv2 get-routes --api-id "$(aws apigatewayv2 get-apis --query "Items[?Name=='vigilwatch-prod-http'].ApiId" --output=text)" --query "Items[].RouteKey"
-curl -sS "$API/checks?url=$URL" -o checks.json -w "%{http_code}\n"
+curl -sS -G "$API/checks" --data-urlencode "url=$URL" -o checks.json -w "%{http_code}\n"
 ```
 
 The routes must include `GET /checks` and `POST /register`. A 4xx names the problem in its `code` field. A

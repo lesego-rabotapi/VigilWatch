@@ -1,6 +1,7 @@
 # One golden-signals dashboard per environment (three dashboards of up to 50 metrics are free per
-# account; this one shows 27, 26 without the control metric) and saved Logs Insights queries for
-# triage, which are free. The objectives these signals measure are in docs/slo.md.
+# account; this one shows 27, 26 without the control metric, plus four metric math expressions) and
+# saved Logs Insights queries for triage, which are free. The objectives these signals measure are
+# in docs/slo.md.
 
 locals {
   functions = var.function_names
@@ -11,9 +12,19 @@ locals {
     for key, name in local.functions : ["AWS/Lambda", metric, "FunctionName", name, { label = key }]
   ] }
 
-  per_table = { for metric in ["ConsumedReadCapacityUnits", "ConsumedWriteCapacityUnits", "ReadThrottleEvents", "WriteThrottleEvents"] : metric => [
-    for table in var.tables : ["AWS/DynamoDB", metric, "TableName", table, { label = "${metric} ${table}" }]
-  ] }
+  # concat(...), not flatten(): flatten would split each metric line into loose strings.
+  table_throttles = concat([], [for table in var.tables : [
+    for metric in ["ReadThrottleEvents", "WriteThrottleEvents"] : ["AWS/DynamoDB", metric, "TableName", table, { label = "${metric} ${table}" }]
+  ]]...)
+
+  # Consumed units are a sum per period; divided by the period they are units per second, the unit
+  # the tables are provisioned in.
+  table_capacity = concat([], [for i, table in var.tables : [
+    ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", table, { id = "r${i}", visible = false }],
+    [{ id = "rs${i}", expression = "r${i}/PERIOD(r${i})", label = "read units per second ${table}" }],
+    ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", table, { id = "w${i}", visible = false }],
+    [{ id = "ws${i}", expression = "w${i}/PERIOD(w${i})", label = "write units per second ${table}" }],
+  ]]...)
 
   graphs = [
     {
@@ -42,9 +53,14 @@ locals {
       )
     },
     {
-      title   = "Saturation: function throttles, table capacity used and throttled"
+      title   = "Saturation: function and table throttles"
       stat    = "Sum"
-      metrics = concat(local.per_function["Throttles"], concat(values(local.per_table)...)) # not flatten: it would split each metric line
+      metrics = concat(local.per_function["Throttles"], local.table_throttles)
+    },
+    {
+      title   = "Saturation: table capacity used, units per second (compare with the provisioned capacity)"
+      stat    = "Sum"
+      metrics = local.table_capacity
     },
   ]
 }
@@ -107,7 +123,7 @@ locals {
       log_groups = [var.api_access_log_group]
       query      = <<-EOT
         fields @timestamp, requestId, route, status, error, latencyMs
-        | filter status like /^5/
+        | filter status >= 500
         | sort @timestamp desc
         | limit 50
       EOT
