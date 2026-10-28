@@ -56,6 +56,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    outputs:
+      bundle_sha256: ${{ steps.bundle.outputs.sha256 }}
     defaults:
       run:
         working-directory: terraform/envs/${{ inputs.environment }}
@@ -100,14 +102,17 @@ jobs:
             echo "::error::these credentials are not for the account in AWS_ACCOUNT_ID"
             exit 1
           fi
+      # The record is "<commit> <bundle sha256>": the digest of the bytes dev ran is checked below.
       - name: Promote only what dev last deployed successfully
         if: ${{ inputs.require_dev_release }}
         run: |
-          released="$(aws s3 cp "s3://$BUCKET/releases/dev" -)"
+          record="$(aws s3 cp "s3://$BUCKET/releases/dev" -)"
+          read -r released digest <<< "$record"
           if [ "$released" != "$SHA" ]; then
             echo "::error::dev last released ${released:-nothing}, not $SHA: deploy it to dev first"
             exit 1
           fi
+          echo "DEV_BUNDLE_SHA256=$digest" >> "$GITHUB_ENV"
       - name: Build the bundle and store it
         if: ${{ inputs.build }}
         working-directory: .
@@ -133,10 +138,17 @@ jobs:
             exit 1
           fi
       - name: Describe the bundle for Terraform
+        id: bundle
         working-directory: .
         run: |
           python scripts/build_bundle.py --describe "$BUNDLE"
-          echo "bundle for $SHA: $(python -c "import json,sys; print(json.load(open(sys.argv[1]))['bundle_sha256'])" "${BUNDLE%.zip}.tfvars.json")" >> "$GITHUB_STEP_SUMMARY"
+          digest="$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['bundle_sha256'])" "${BUNDLE%.zip}.tfvars.json")"
+          if [ -n "${DEV_BUNDLE_SHA256:-}" ] && [ "$digest" != "$DEV_BUNDLE_SHA256" ]; then
+            echo "::error::bundles/$SHA.zip has sha256 $digest, but dev released $DEV_BUNDLE_SHA256: refusing other bytes"
+            exit 1
+          fi
+          echo "sha256=$digest" >> "$GITHUB_OUTPUT"
+          echo "bundle for $SHA: sha256 $digest" >> "$GITHUB_STEP_SUMMARY"
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
@@ -279,7 +291,7 @@ jobs:
 
   record:
     name: Record the release of ${{ inputs.environment }}
-    needs: [smoke]
+    needs: [plan, smoke]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -298,4 +310,11 @@ jobs:
             exit 1
           fi
       - name: Record the commit this environment now runs
-        run: printf '%s' "$SHA" | aws s3 cp - "s3://$BUCKET/releases/$ENVIRONMENT"
+        env:
+          DIGEST: ${{ needs.plan.outputs.bundle_sha256 }}
+        run: |
+          if [ -z "$DIGEST" ]; then
+            echo "::error::the plan job passed on no bundle digest: nothing to record"
+            exit 1
+          fi
+          printf '%s %s' "$SHA" "$DIGEST" | aws s3 cp - "s3://$BUCKET/releases/$ENVIRONMENT"

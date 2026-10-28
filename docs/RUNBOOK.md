@@ -110,7 +110,7 @@ API_URL_DEV=$(terraform output -raw api_base_url) DASHBOARD_URL_DEV=$(terraform 
 | Change check interval / thresholds / cap / throttling | Set `check_interval_minutes`, `failure_threshold`, `recovery_threshold`, `reminder_minutes`, `max_endpoints`, `api_throttle_rate` or `api_throttle_burst` in that environment's `terraform.tfvars` (unset means the module default), then plan/apply in `terraform/envs/<env>` |
 | Inspect failed runs | `aws sqs receive-message --queue-url "$(terraform -chdir=terraform/envs/prod output -raw checker_dlq_url)"` |
 | A "Infrastructure drift detected" issue | The weekly `drift.yml` found a resource that differs from its state (a console change). Read the plan in the issue, then either put the change into code and deploy it, or undo it by redeploying the released commit (`rollback.yml` with the commit in `releases/prod`). Close the issue once the next drift run is clean |
-| Which commit runs where | `aws s3 cp s3://<state bucket>/releases/dev -` (and `releases/prod`) |
+| Which commit runs where | `aws s3 cp s3://<state bucket>/releases/dev -` (and `releases/prod`): the commit, then the SHA-256 of its bundle |
 
 ## 5. Alarms
 

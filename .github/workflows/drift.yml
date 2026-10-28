@@ -51,8 +51,10 @@ jobs:
       - name: Find the released commit
         id: release
         run: |
-          if sha="$(aws s3 cp "s3://$BUCKET/releases/$ENVIRONMENT" -)"; then
+          if record="$(aws s3 cp "s3://$BUCKET/releases/$ENVIRONMENT" -)"; then
+            read -r sha digest <<< "$record"
             echo "sha=$sha" >> "$GITHUB_OUTPUT"
+            echo "digest=$digest" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::$ENVIRONMENT has no release yet: nothing to compare"
           fi
@@ -68,10 +70,16 @@ jobs:
         if: steps.release.outputs.sha
         env:
           SHA: ${{ steps.release.outputs.sha }}
+          DIGEST: ${{ steps.release.outputs.digest }}
         run: |
           mkdir -p "$(dirname "$BUNDLE")"
           aws s3 cp "s3://$BUCKET/bundles/$SHA.zip" "$BUNDLE" --only-show-errors
           python scripts/build_bundle.py --describe "$BUNDLE"
+          stored="$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['bundle_sha256'])" "${BUNDLE%.zip}.tfvars.json")"
+          if [ "$stored" != "$DIGEST" ]; then
+            echo "::error::bundles/$SHA.zip has sha256 $stored, but $ENVIRONMENT released $DIGEST"
+            exit 1
+          fi
       - uses: hashicorp/setup-terraform@v3
         if: steps.release.outputs.sha
         with:

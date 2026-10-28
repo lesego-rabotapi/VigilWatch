@@ -20,8 +20,10 @@ read.
 **Build once, promote the artifact.** Dev builds the commit's bundle and stores it as `bundles/<sha>.zip` in the
 state bucket. If that object already exists, dev compares the bytes and fails on any difference (the build is
 reproducible, ADR 0005). Prod never builds: it fetches `bundles/<sha>.zip`, so it runs exactly what dev ran. A
-release counts only after its smoke test passes, and is then recorded in `releases/dev` or `releases/prod`.
-Promotion deploys the commit in `releases/dev` and refuses any other. Prod deploys only commits that are on
+release counts only after its smoke test passes, and is then recorded in `releases/dev` or `releases/prod` as
+the commit and the bundle's SHA-256. Promotion deploys the commit in `releases/dev` and refuses any other, and
+refuses a stored bundle whose digest is not the one dev recorded: the object can be overwritten, the record says
+which bytes passed dev's tests. Drift checks the digest the same way. Prod deploys only commits that are on
 `main`. Reusing the state bucket, which is versioned, encrypted and already reachable by the deploy role, costs
 nothing and needs no new permission. GitHub artifacts would expire.
 
@@ -75,7 +77,9 @@ left out because the fix that follows each is the change.
 
 ## Consequences
 
-- Prod's bundle is provably the one dev ran, by object key and by digest, which the plan summary shows.
+- A promoted bundle is provably the one dev ran: same key, and the digest dev recorded, shown in the plan
+  summary. A rollback deploys an older commit whose record dev has since replaced, so it checks the key only and
+  shows the digest for the reviewer to compare with that release's run.
 - Nothing above has run against AWS. The workflows are checked by policy tests (`tests/test_workflows.py`,
   `tests/test_terraform_layout.py`) and the scripts by unit tests. The first real runs (dev deploy, promotion,
   rollback, drift, PR plan) are `NEEDS-AWS` and are expected to need IAM iterations for the read-only role
