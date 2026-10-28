@@ -16,6 +16,12 @@ defaults:
   run:
     shell: bash
 
+# A new push cancels the plan it supersedes, so the last comment is always the newest plan. The
+# plan only reads and takes no lock, so cancelling it is safe.
+concurrency:
+  group: pr-plan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 env:
   AWS_REGION: af-south-1
   TF_VERSION: "1.16.6"

@@ -25,9 +25,25 @@ env:
   TF_INPUT: "false"
 
 jobs:
+  # A dispatch can start any branch's copy of this workflow; refuse it in red, not as a skip.
+  main-only:
+    name: Run from main only
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Refuse any branch but main
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::run this workflow from main, not $REF"
+            exit 1
+          fi
+
   detect:
+    needs: [main-only]
     name: Drift in ${{ matrix.environment }}
-    if: ${{ github.ref == 'refs/heads/main' && vars.AWS_PLAN_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' && vars.TF_STATE_BUCKET != '' }}
+    if: ${{ vars.AWS_PLAN_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' && vars.TF_STATE_BUCKET != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:

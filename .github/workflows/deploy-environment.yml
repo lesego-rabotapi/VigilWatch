@@ -215,7 +215,7 @@ jobs:
     name: Apply ${{ inputs.environment }}
     needs: [plan]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60 # a CloudFront change can take this long; a timeout interrupts the apply
     environment: ${{ inputs.environment == 'prod' && 'production' || '' }}
     outputs:
       api_base_url: ${{ steps.outputs.outputs.api_base_url }}
