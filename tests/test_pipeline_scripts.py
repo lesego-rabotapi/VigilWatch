@@ -472,22 +472,61 @@ def test_terraform_variables_stay_valid_json_for_any_bundle_path(tmp_path, bundl
 DRIFT_REPORT = ("drift.yml", "report", "Open or update the drift issue")
 
 
-def test_a_drift_run_with_no_results_says_nothing_was_checked(tmp_path):
-    """When every detect leg failed early (a wrong branch, an AWS error) there are no drift-*
-    results: no second, unrelated error, and no claim that nothing drifted."""
-    ran = run(find_step(*DRIFT_REPORT)["run"], tmp_path, cwd=tmp_path)
+FAKE_GH = 'echo "$*" >> "$GH_LOG"; for a in "$@"; do [ -f "$a" ] && cat "$a" >> "$GH_LOG"; done; :'
+
+
+def _report(tmp_path, detect):
+    return run(
+        find_step(*DRIFT_REPORT)["run"],
+        tmp_path,
+        env={"DETECT": detect, "GH_LOG": str(tmp_path / "gh.log"), "RUN": "https://run"},
+        stubs={"gh": FAKE_GH},
+        cwd=tmp_path,
+    )
+
+
+def _result(tmp_path, environment, text):
+    (tmp_path / f"drift-{environment}").mkdir()
+    (tmp_path / f"drift-{environment}" / "drift.md").write_text(text, encoding="utf-8")
+
+
+def test_a_clean_week_reports_no_drift_and_touches_no_issue(tmp_path):
+    _result(tmp_path, "dev", "none\n")
+    _result(tmp_path, "prod", "none\n")
+    ran = _report(tmp_path, "success")
     assert ran.status == 0, ran.output
-    assert "::warning::" in ran.output and "dev prod" in ran.output
-    assert "No drift." not in ran.output
+    assert "No drift." in ran.output
+    assert not (tmp_path / "gh.log").exists()
+
+
+def test_drift_found_goes_into_the_issue(tmp_path):
+    _result(tmp_path, "dev", "none\n")
+    _result(tmp_path, "prod", "### Drift in prod\n~ aws_lambda_function.checker\n")
+    ran = _report(tmp_path, "success")
+    assert ran.status == 0, ran.output
+    log = (tmp_path / "gh.log").read_text(encoding="utf-8")
+    assert "issue create" in log and "Drift in prod" in log
 
 
 @pytest.mark.negative
-def test_a_drift_run_missing_one_environment_names_it(tmp_path):
-    (tmp_path / "drift-dev").mkdir()
-    (tmp_path / "drift-dev" / "drift.md").write_text("none\n", encoding="utf-8")
-    ran = run(find_step(*DRIFT_REPORT)["run"], tmp_path, cwd=tmp_path)
+@pytest.mark.parametrize("results", [[], ["dev"]], ids=["none-checked", "prod-unchecked"])
+def test_an_environment_that_went_unchecked_is_reported_in_the_issue(tmp_path, results):
+    """A failed detect leg (a wrong branch, an AWS error, a digest mismatch) must reach the
+    people watching the issue, not only a run annotation; and no claim of 'no drift'."""
+    for environment in results:
+        _result(tmp_path, environment, "none\n")
+    ran = _report(tmp_path, "failure")
     assert ran.status == 0, ran.output
-    assert "::warning::" in ran.output and "not checked: prod" in ran.output
+    assert "No drift." not in ran.output
+    log = (tmp_path / "gh.log").read_text(encoding="utf-8")
+    assert "issue create" in log and "could not be checked" in log
+
+
+def test_the_report_reads_every_environment_the_matrix_ran():
+    """Results are read by glob, so an environment added to the matrix is reported too."""
+    step = find_step(*DRIFT_REPORT)
+    assert "drift-*/drift.md" in step["run"] and "dev prod" not in step["run"]
+    assert step["env"]["DETECT"] == "${{ needs.detect.result }}"
 
 
 # ---- Tagging the release -----------------------------------------------------------------------

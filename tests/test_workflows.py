@@ -238,9 +238,7 @@ def test_each_environment_deploys_one_run_at_a_time_and_never_cancels_an_apply(
         groups[name] = wf["concurrency"]["group"]
     # A dispatch from another branch fails at its first step; until then it must not take the
     # prod queue's pending slot, which would cancel a real deploy waiting there.
-    isolated = (
-        "deploy-prod${{ github.ref != 'refs/heads/main' && format('-{0}', github.run_id) || '' }}"
-    )
+    isolated = "deploy-prod-${{ github.ref }}"
     assert groups["promote"] == groups["rollback"] == isolated, "one queue for prod, main only"
     assert groups["dev"] == isolated.replace("deploy-prod", "deploy-dev")
 
@@ -622,10 +620,7 @@ def test_deploys_and_drift_refuse_to_run_from_another_branch(name, job):
     assert '"$REF" != "refs/heads/main"' in first["run"] and "exit 1" in first["run"]
 
 
-@pytest.mark.parametrize(
-    "name",
-    ["deploy-dev.yml", "promote-prod.yml", "rollback.yml", "drift.yml", "deploy-environment.yml"],
-)
+@pytest.mark.parametrize("name", all_workflows())
 def test_a_wrong_branch_is_never_skipped_quietly(name):
     """A job skipped on the branch would hide that the guard inside never ran."""
     _, wf = load(name)

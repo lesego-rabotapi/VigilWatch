@@ -112,6 +112,15 @@ def test_the_runbook_warns_that_a_second_waiting_prod_run_cancels_the_first():
     """GitHub keeps one pending run per concurrency group."""
     text = (ROOT / "docs" / "RUNBOOK.md").read_text(encoding="utf-8")
     assert "one pending run" in text
+    assert "third" in text, (
+        "a run waiting for approval is in progress: a third run cancels the second"
+    )
+
+
+def test_the_docs_say_dev_can_also_be_deployed_by_hand():
+    for doc in ("README.md", "docs/adr/0009-pipeline-and-promotion.md"):
+        text = (ROOT / doc).read_text(encoding="utf-8")
+        assert "by hand" in text and "deploy-dev.yml" in text, doc
 
 
 def test_environments_adr_records_the_decisions_and_the_free_tier_arithmetic():
