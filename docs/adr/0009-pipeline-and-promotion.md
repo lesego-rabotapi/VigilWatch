@@ -27,7 +27,8 @@ which bytes passed dev's tests. Drift checks the digest the same way. Prod deplo
 `main`. Reusing the state bucket, which is versioned, encrypted and already reachable by the deploy role, costs
 nothing and needs no new permission. GitHub artifacts would expire.
 
-**Rollback** is `rollback.yml`: redeploy an earlier commit's Terraform and stored bundle through the same plan,
+**Rollback** is `rollback.yml`: redeploy an earlier commit that dev released (`releases/history/dev/<sha>`, written
+with every release; a stored bundle alone only proves dev built it) and its stored bundle, through the same plan,
 `production` approval and smoke test. Code and infrastructure go back together. A `git revert` through `main`
 remains the slower path.
 
@@ -90,6 +91,13 @@ left out because the fix that follows each is the change.
   for `build_bundle.py`: `--out` and `--rev`), or a rollback to an older release would fail. The bundle digest
   is computed once with `openssl`, and the same value is checked, written into Terraform's variables and
   recorded, so what Terraform deploys is what the record says.
+- A release is recorded only while the environment's checker still holds the deployed bundle (its `CodeSha256`
+  is the bundle digest), so re-running an old run's smoke and record jobs cannot record a commit that a newer
+  deploy replaced. Dev builds `main`'s newest commit only, so re-running an old dev deploy is refused.
+- Known limits, accepted for a one-maintainer repository: the weekly drift check takes no lock and can report a
+  change made by an apply running at that moment (re-run it); and the read-only role that pull request plans use
+  can read every state object, prod's included, so anyone who can push a branch can read prod's state. Forks
+  cannot. A pull-request-only role limited to dev's state is the fix if collaborators join.
 - Nothing above has run against AWS. The workflows are checked by policy tests (`tests/test_workflows.py`,
   `tests/test_terraform_layout.py`) and the scripts by unit tests. The first real runs (dev deploy, promotion,
   rollback, drift, PR plan) are `NEEDS-AWS` and are expected to need IAM iterations for the read-only role

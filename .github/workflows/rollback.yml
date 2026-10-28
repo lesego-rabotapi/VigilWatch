@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       sha:
-        description: Full commit id to roll prod back to (a commit dev has deployed)
+        description: Full commit id to roll prod back to (one dev released)
         required: true
         type: string
 

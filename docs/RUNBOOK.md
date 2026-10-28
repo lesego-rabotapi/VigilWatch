@@ -129,7 +129,7 @@ alarms that use free Lambda metrics (ADR 0005).
 ## 6. Rollback
 
 - **Prod, fastest:** run **Roll back prod** (`rollback.yml`) with the full commit id of the last good
-  release (`git rev-list -n 1 v2.<n>`). It redeploys that commit's Terraform and the bundle dev
+  release (`git rev-list -n 1 v2.<n>`); it must be a commit dev released (`releases/history/dev/<sha>`). It redeploys that commit's Terraform and the bundle dev
   stored for it, through the same plan, `production` approval and smoke test, and records it in
   `releases/prod`. Code and infrastructure roll back together. Then fix forward on `main`.
 - **One prod run at a time.** Promotion and rollback share one queue. A run waiting for approval is already

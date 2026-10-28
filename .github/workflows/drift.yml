@@ -163,19 +163,26 @@ jobs:
         run: |
           shopt -s nullglob # a leg that failed early left no result
           : > body.md
+          drifted=false
           for file in drift-*/drift.md; do
             if [ "$(cat "$file")" != "none" ]; then
               cat "$file" >> body.md
               echo >> body.md
+              drifted=true
             fi
           done
+          # A failed check is a failed run, which GitHub reports; it opens no "drift" issue alone.
           if [ "$DETECT" != "success" ]; then
             echo "::warning::at least one environment could not be checked: see the failed drift job"
             echo "At least one environment could not be checked this week (its drift job failed)." >> body.md
             echo >> body.md
           fi
-          if [ ! -s body.md ]; then
-            echo "No drift."
+          if [ "$drifted" != "true" ]; then
+            if [ "$DETECT" = "success" ]; then
+              echo "No drift."
+            else
+              echo "No drift in the environments that were checked."
+            fi
             exit 0
           fi
           echo "Found by $RUN. Reconcile by changing the code and deploying, or revert the change made outside the pipeline." >> body.md
