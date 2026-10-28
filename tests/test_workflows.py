@@ -579,6 +579,12 @@ def test_the_only_github_environment_is_the_reviewed_production_one(name):
 
 
 @pytest.mark.parametrize("name", all_workflows())
+def test_the_bundle_digest_is_read_by_one_script_not_parsed_inline(name):
+    text, _ = load(name)
+    assert "json.load" not in text, f"{name}: use scripts/build_bundle.py --describe --sha256"
+
+
+@pytest.mark.parametrize("name", all_workflows())
 def test_no_workflow_has_static_credentials(name):
     text, _ = load(name)
     assert "aws-access-key-id" not in text and "AWS_SECRET_ACCESS_KEY" not in text
