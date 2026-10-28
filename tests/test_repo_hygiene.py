@@ -84,3 +84,12 @@ def test_binary_files_in_the_bundle_are_not_forced_to_be_text(path):
 def test_gitignore_comments_describe_the_current_build():
     text = (ROOT / ".gitignore").read_text(encoding="utf-8")
     assert "archive_file" not in text, "bundles come from scripts/build_bundle.py now"
+
+
+def test_pytest_stays_below_the_release_pytest_bdd_does_not_support():
+    """pytest 9.2 removed FixtureManager._arg2fixturedefs, which pytest-bdd 9.0 reads, so every
+    BDD scenario errors. A fresh CI install picks the newest pytest; the cap keeps the pair working
+    until pytest-bdd supports it."""
+    lines = (ROOT / "requirements-dev.txt").read_text(encoding="utf-8").splitlines()
+    pytest_line = next(line for line in lines if line.split(">")[0].split("<")[0] == "pytest")
+    assert "<9.2" in pytest_line, pytest_line
