@@ -236,13 +236,16 @@ def test_the_deploy_role_may_manage_each_environments_dashboard_bucket(env):
     assert any(fnmatch.fnmatchcase(bucket + "/index.html", r) for r in resources), resources
 
 
-def test_the_deploy_role_trusts_main_and_each_environments_deploy_job_only():
-    """Apply jobs run in a GitHub environment, which changes the OIDC subject to
-    environment:<name>; plan, record and resolve jobs run as the main branch."""
+@pytest.mark.security
+def test_the_deploy_role_trusts_main_and_the_approved_production_environment_only():
+    """Jobs on main assume the role as ref:refs/heads/main. A job that declares a GitHub
+    environment assumes it as environment:<name>, from any branch, so an environment the role
+    trusts must itself be gated: production waits for a reviewer. An unreviewed `development`
+    environment would hand the write role to any branch."""
     text = (TF / "bootstrap" / "main.tf").read_text(encoding="utf-8")
     block = re.search(r'resource "aws_iam_role" "deploy"(.*?)\n\}', text, re.S).group(1)
     subjects = set(re.findall(r'"repo:\$\{var\.github_repository\}:([^"]+)"', block))
-    assert subjects == {"ref:refs/heads/main", "environment:development", "environment:production"}
+    assert subjects == {"ref:refs/heads/main", "environment:production"}
 
 
 def _plan_role() -> tuple[str, str]:

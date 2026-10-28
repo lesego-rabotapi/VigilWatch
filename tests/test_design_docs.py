@@ -100,6 +100,14 @@ def test_pipeline_adr_records_promotion_rollback_drift_and_what_was_not_adopted(
         assert term in text, f"ADR 0009 does not mention {term!r}"
 
 
+def test_the_runbook_limits_the_production_environment_to_main():
+    """environment:production is trusted from any branch, so the environment itself must refuse
+    other branches: a deployment branch rule, on top of the required reviewer."""
+    text = (ROOT / "docs" / "RUNBOOK.md").read_text(encoding="utf-8")
+    assert "Deployment branches" in text and "`main`" in text
+    assert "`development`" not in text
+
+
 def test_environments_adr_records_the_decisions_and_the_free_tier_arithmetic():
     text = (ROOT / "docs" / "adr" / "0005-environments-and-modules.md").read_text(encoding="utf-8")
     for term in (

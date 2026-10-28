@@ -297,10 +297,8 @@ def test_promotion_refuses_anything_but_what_dev_last_released(deploy):
 def test_apply_requires_approval_for_prod_and_uses_the_reviewed_plan(deploy):
     text, wf = deploy
     apply = wf["jobs"]["apply"]
-    assert (
-        "production" in apply["environment"]["name"]
-        and "development" in apply["environment"]["name"]
-    )
+    # Dev applies run as main, in no environment; prod waits in "production" for a reviewer.
+    assert apply["environment"] == "${{ inputs.environment == 'prod' && 'production' || '' }}"
     assert "plan" in apply["needs"]
     assert re.search(r"terraform apply .*tfplan", steps_text(apply))
     assert "-out=tfplan" in steps_text(wf["jobs"]["plan"])
@@ -526,6 +524,19 @@ def test_drift_opens_an_issue_from_a_job_that_holds_no_aws_access(drift):
 
 
 # ---- Every workflow -----------------------------------------------------------------------------
+
+
+@pytest.mark.security
+@pytest.mark.parametrize("name", all_workflows())
+def test_the_only_github_environment_is_the_reviewed_production_one(name):
+    """The deploy role trusts environment:production from any branch; any other environment
+    would need its own trust, and an unreviewed one would be a way around main."""
+    text, wf = load(name)
+    assert "development" not in text
+    for job_name, job in wf["jobs"].items():
+        environment = job.get("environment")
+        if environment is not None:
+            assert "production" in str(environment), f"{name}:{job_name} uses {environment}"
 
 
 @pytest.mark.parametrize("name", all_workflows())
