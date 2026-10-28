@@ -96,7 +96,8 @@ jobs:
             echo "::error::bundles/$SHA.zip has sha256 $stored, but $ENVIRONMENT released $DIGEST"
             exit 1
           fi
-          printf '{"bundle_path": "%s", "bundle_sha256": "%s"}\n' "$BUNDLE" "$stored" > "${BUNDLE%.zip}.tfvars.json"
+          python -c 'import json, sys; json.dump({"bundle_path": sys.argv[1], "bundle_sha256": sys.argv[2]}, open(sys.argv[3], "w"))' \
+            "$BUNDLE" "$stored" "${BUNDLE%.zip}.tfvars.json"
       - uses: hashicorp/setup-terraform@v3
         if: steps.release.outputs.sha
         with:
@@ -159,6 +160,7 @@ jobs:
           TITLE: Infrastructure drift detected
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          shopt -s nullglob # no results (every leg failed early) means nothing to report
           : > body.md
           for file in drift-*/drift.md; do
             if [ "$(cat "$file")" != "none" ]; then

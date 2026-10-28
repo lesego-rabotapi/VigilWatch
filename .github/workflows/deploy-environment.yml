@@ -178,7 +178,8 @@ jobs:
             echo "::error::bundles/$SHA.zip has sha256 $digest, but dev released $DEV_BUNDLE_SHA256: refusing other bytes"
             exit 1
           fi
-          printf '{"bundle_path": "%s", "bundle_sha256": "%s"}\n' "$BUNDLE" "$digest" > "${BUNDLE%.zip}.tfvars.json"
+          python -c 'import json, sys; json.dump({"bundle_path": sys.argv[1], "bundle_sha256": sys.argv[2]}, open(sys.argv[3], "w"))' \
+            "$BUNDLE" "$digest" "${BUNDLE%.zip}.tfvars.json"
           echo "sha256=$digest" >> "$GITHUB_OUTPUT"
           echo "bundle for $SHA: sha256 $digest" >> "$GITHUB_STEP_SUMMARY"
       - uses: hashicorp/setup-terraform@v3

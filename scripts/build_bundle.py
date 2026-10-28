@@ -9,7 +9,6 @@ Files are read from the commit (HEAD by default), not from disk, so a CRLF check
 file cannot change the bytes: commit first.
 
     python scripts/build_bundle.py --out terraform/.build/vigilwatch.zip
-    python scripts/build_bundle.py --describe stored.zip     # variables for a bundle built earlier
 """
 
 import argparse
@@ -133,16 +132,7 @@ def main(argv=None) -> int:
         action="store_true",
         help="build HEAD even though the source has uncommitted changes (they are left out)",
     )
-    parser.add_argument(
-        "--describe",
-        type=Path,
-        metavar="ZIP",
-        help="do not build: write the Terraform variables for this existing bundle",
-    )
     args = parser.parse_args(argv)
-    if args.describe:
-        _print_vars(describe(args.describe))
-        return 0
     if not args.from_worktree and args.rev == "HEAD":
         left_out = _uncommitted(args.source)
         if left_out:

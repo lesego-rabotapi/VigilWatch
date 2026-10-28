@@ -20,8 +20,10 @@ defaults:
   run:
     shell: bash
 
+# A run from another branch fails at its first step; its own group keeps it from taking the
+# queue's pending slot meanwhile, which would cancel a real prod deploy waiting there.
 concurrency:
-  group: deploy-prod
+  group: deploy-prod${{ github.ref != 'refs/heads/main' && format('-{0}', github.run_id) || '' }}
   cancel-in-progress: false # never interrupt a running apply
 
 jobs:
