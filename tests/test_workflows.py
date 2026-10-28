@@ -586,6 +586,43 @@ def test_the_only_github_environment_is_the_reviewed_production_one(name):
 
 
 @pytest.mark.parametrize("name", all_workflows())
+def test_every_job_has_a_timeout(name):
+    """The default is six hours: a hung apply would hold the deploy queue and the state lock."""
+    _, wf = load(name)
+    for job_name, job in wf["jobs"].items():
+        if "uses" in job:
+            continue  # a call: the called workflow's jobs carry their own
+        assert 1 <= job.get("timeout-minutes", 0) <= 60, f"{name}:{job_name}"
+
+
+@pytest.mark.parametrize(
+    "name", ["deploy-dev.yml", "promote-prod.yml", "rollback.yml", "drift.yml"]
+)
+def test_deploys_and_drift_run_only_from_main(name):
+    """workflow_dispatch can start any branch's copy of a workflow. Role trust, the commit check
+    and the production branch rule already stop it; this stops it before it starts."""
+    _, wf = load(name)
+    entry = [j for j in wf["jobs"].values() if not j.get("needs")]
+    assert entry, name
+    for job in entry:
+        assert "github.ref == 'refs/heads/main'" in str(job.get("if", "")), name
+
+
+def test_pull_request_ci_cancels_a_superseded_run_and_nothing_else(ci):
+    text, wf = ci
+    group = wf["concurrency"]["group"]
+    assert "github.event.pull_request.number" in group and "github.run_id" in group
+    assert wf["concurrency"]["cancel-in-progress"] is True
+    assert "deploy.yml" not in text, "the stale pointer to the removed workflow"
+
+
+def test_the_terraform_linter_is_pinned(ci):
+    _, wf = ci
+    setup = next(s for s in wf["jobs"]["terraform"]["steps"] if "setup-tflint" in s.get("uses", ""))
+    assert re.fullmatch(r"v\d+\.\d+\.\d+", setup["with"]["tflint_version"])
+
+
+@pytest.mark.parametrize("name", all_workflows())
 def test_every_step_runs_in_bash_with_pipefail(name):
     """Without `shell:`, GitHub runs `bash -e {0}`: a failure before the last command of a
     pipeline passes unnoticed. `shell: bash` adds -o pipefail, which tests/test_pipeline_scripts.py
