@@ -56,16 +56,8 @@ class EndpointRepository:
 
     def _ensure_counter(self) -> None:
         """Create the counter from the real item count if it does not exist yet."""
-        if self.table.get_item(Key={"endpoint_id": COUNTER_ID}).get("Item"):
-            return
-        try:
-            self.table.put_item(
-                Item={"endpoint_id": COUNTER_ID, "n": self.count()},
-                ConditionExpression="attribute_not_exists(endpoint_id)",
-            )
-        except ClientError as exc:
-            if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
-                raise  # someone else created it first, which is fine
+        if self._read_counter() is None:
+            self._write_count(None, self.count())  # False: someone else created it first, fine
 
     def _read_counter(self) -> dict | None:
         return self.table.get_item(Key={"endpoint_id": COUNTER_ID}, ConsistentRead=True).get("Item")
@@ -109,9 +101,8 @@ class EndpointRepository:
         """
         seen = self._read_counter()
         actual = self.count()
-        if seen is not None and seen.get("n") == actual:
-            return actual < max_endpoints
-        if not self._write_count(seen, actual):
+        moved = (seen is None or seen.get("n") != actual) and not self._write_count(seen, actual)
+        if moved:
             return True  # the counter moved under us; just try the creation again
         return actual < max_endpoints
 

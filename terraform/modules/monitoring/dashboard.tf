@@ -122,7 +122,7 @@ locals {
     "api-5xx" = {
       log_groups = [var.api_access_log_group]
       query      = <<-EOT
-        fields @timestamp, requestId, route, status, latencyMs
+        fields @timestamp, requestId, route, status, errorType, integrationStatus, latencyMs
         | filter toNumber(status) >= 500
         | sort @timestamp desc
         | limit 50

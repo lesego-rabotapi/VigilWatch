@@ -45,7 +45,7 @@ def key_types(client, table: str) -> dict[str, str]:
 
 
 _EXACT = Context(prec=100)  # the default 28 digits would round before the 38-digit check
-_NUMBER = re.compile(r"-?\d+(\.\d+)?([eE][-+]?\d+)?")
+_NUMBER = re.compile(r"[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?")
 
 
 def _number(text) -> Decimal:
@@ -140,10 +140,15 @@ def read_backup(path: Path, keys: dict[str, str]) -> list[dict]:
     return items
 
 
+def is_endpoints_table(keys: dict[str, str]) -> bool:
+    """The endpoints table is the one keyed by endpoint_id alone (history adds sk)."""
+    return list(keys) == ["endpoint_id"]
+
+
 def restorable(items: list[dict], keys: dict[str, str]) -> list[dict]:
     """In the endpoints table, everything but the application's own bookkeeping (ids starting with
     `_`). Other tables, such as history and its `_system` heartbeat, are restored whole."""
-    if list(keys) != ["endpoint_id"]:
+    if not is_endpoints_table(keys):
         return items
     return [i for i in items if not i["endpoint_id"].get("S", "").startswith(_RESERVED_PREFIX)]
 
@@ -165,17 +170,15 @@ def write(client, table: str, items: list[dict], pause: float = 0.5) -> None:
             time.sleep(min(pause * 2**attempt, 20))
 
 
-def restore(table: str, path: Path, client=None) -> int:
-    client = client or boto3.client("dynamodb")
+def restore(table: str, path: Path, session=None) -> int:
+    """Items and counter go through one session: one account, region and set of credentials."""
+    session = session or boto3.Session()
+    client = session.client("dynamodb")
     keys = key_types(client, table)
     items = restorable(read_backup(path, keys), keys)
     write(client, table, items)
-    if list(keys) == ["endpoint_id"]:
-        # The same region and endpoint as the client the restore was given.
-        dynamodb = boto3.resource(
-            "dynamodb", region_name=client.meta.region_name, endpoint_url=client.meta.endpoint_url
-        )
-        EndpointRepository(dynamodb.Table(table)).repair_counter()
+    if is_endpoints_table(keys):
+        EndpointRepository(session.resource("dynamodb").Table(table)).repair_counter()
     return len(items)
 
 

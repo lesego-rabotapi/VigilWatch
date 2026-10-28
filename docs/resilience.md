@@ -53,7 +53,7 @@ python scripts/restore_drill.py --table vigilwatch-prod-endpoints --from backups
   (about 70 seconds per batch) instead of hanging. The drill log's Items column counts what a restore
   writes, so it is lower than the backup's item count by those bookkeeping items.
 - The drill never touches the live table. It restores into a scratch table named
-  `<table>-drill-<timestamp>`, compares the item count and a fixed sample with the backup, prints the
+  `<table>-drill-<timestamp>-<random>`, compares the item count and a fixed sample with the backup, prints the
   time the restore took, and deletes the scratch table even when something fails. The scratch table uses
   at most 5 read and 5 write units for a few minutes, inside the free tier (dev and prod use 14 of 25).
 

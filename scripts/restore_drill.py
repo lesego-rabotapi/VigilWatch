@@ -112,10 +112,10 @@ def drill(source: str, backup_path: Path, client=None, sample: int = 25) -> Dril
     scratch = scratch_name(source)
     try:
         _create_scratch_table(client, source, scratch)
-    except client.exceptions.ResourceInUseException:
-        raise  # the name is another table's: not ours to delete
     except BaseException:
-        _delete_scratch_table(client, scratch)  # the service may have made it before the error
+        # The service may have made it before the error. The name is random, so even "already
+        # exists" means our own create, retried after its response was lost.
+        _delete_scratch_table(client, scratch)
         raise
     try:
         client.get_waiter("table_exists").wait(TableName=scratch)
