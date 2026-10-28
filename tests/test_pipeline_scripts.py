@@ -453,6 +453,27 @@ def test_a_failed_plan_fails_the_job_and_shows_why(tmp_path):
     assert "no valid credential sources" in ran.output
 
 
+@pytest.mark.negative
+def test_terraform_variables_stay_valid_json_for_any_bundle_path(tmp_path, bundle):
+    """A Windows or self-hosted runner path holds backslashes; printf would not escape them."""
+    path, digest = bundle
+    ran = run(find_step(*DESCRIBE)["run"], tmp_path, env={"BUNDLE": str(path)})
+    assert ran.status == 0, ran.output
+    tfvars = json.loads(path.with_name("vigilwatch.tfvars.json").read_text(encoding="utf-8"))
+    assert tfvars == {"bundle_path": str(path), "bundle_sha256": digest}
+
+
+DRIFT_REPORT = ("drift.yml", "report", "Open or update the drift issue")
+
+
+def test_a_drift_run_with_no_results_reports_no_drift_instead_of_failing(tmp_path):
+    """When every detect leg failed early (a wrong branch, an AWS error) there are no drift-*
+    results; the report must not add a second, unrelated error."""
+    ran = run(find_step(*DRIFT_REPORT)["run"], tmp_path, cwd=tmp_path)
+    assert ran.status == 0, ran.output
+    assert "No drift." in ran.output
+
+
 # ---- Tagging the release -----------------------------------------------------------------------
 
 TAG = ("promote-prod.yml", "release", "Choose the tag")

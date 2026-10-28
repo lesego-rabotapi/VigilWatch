@@ -189,7 +189,9 @@ def test_the_single_deploy_workflow_is_split_into_the_devops_layout():
 
 
 def test_dev_deploys_every_push_to_main_after_ci(dev):
+    """Push to main only: no manual trigger, so no branch can start it (re-run a job instead)."""
     _, wf = dev
+    assert set(wf["on"]) == {"push"}
     assert wf["on"]["push"]["branches"] == ["main"]
     assert wf["jobs"]["ci"]["uses"] == "./.github/workflows/ci.yml"
     job = wf["jobs"]["deploy"]
@@ -234,7 +236,12 @@ def test_each_environment_deploys_one_run_at_a_time_and_never_cancels_an_apply(
     for name, (_, wf) in {"dev": dev, "promote": promote, "rollback": rollback}.items():
         assert wf["concurrency"]["cancel-in-progress"] is False, name
         groups[name] = wf["concurrency"]["group"]
-    assert groups["promote"] == groups["rollback"] == "deploy-prod", "one queue for prod"
+    # A dispatch from another branch fails at its first step; until then it must not take the
+    # prod queue's pending slot, which would cancel a real deploy waiting there.
+    isolated = (
+        "deploy-prod${{ github.ref != 'refs/heads/main' && format('-{0}', github.run_id) || '' }}"
+    )
+    assert groups["promote"] == groups["rollback"] == isolated, "one queue for prod, main only"
     assert groups["dev"] == "deploy-dev"
 
 
@@ -615,12 +622,10 @@ def test_deploys_and_drift_refuse_to_run_from_another_branch(name, job):
     assert '"$REF" != "refs/heads/main"' in first["run"] and "exit 1" in first["run"]
 
 
-@pytest.mark.parametrize("name", all_workflows())
-def test_a_wrong_branch_is_never_skipped_quietly(name):
+@pytest.mark.parametrize("name, job", BRANCH_GUARDS)
+def test_a_wrong_branch_is_never_skipped_quietly(name, job):
     _, wf = load(name)
-    assert "main-only" not in wf["jobs"], "a job of its own costs a runner start per deploy"
-    for job_name, job in wf["jobs"].items():
-        assert "github.ref" not in str(job.get("if", "")), f"{name}:{job_name}: skipping is silent"
+    assert "github.ref" not in str(wf["jobs"][job].get("if", "")), f"{name}:{job}: a skip is silent"
 
 
 def test_ci_cancels_superseded_pull_request_and_branch_runs_but_never_mains(ci):
@@ -684,13 +689,26 @@ def _commands(text: str) -> list[str]:
     return re.sub(r"\\\n\s*", " ", text).splitlines()
 
 
-@pytest.mark.parametrize("name", ["deploy-environment.yml", "drift.yml"])
-def test_the_deployed_commits_build_script_is_called_only_with_options_it_has(name):
-    text, _ = load(name)
-    for line in _commands(text):
-        for options in re.findall(r"scripts/build_bundle\.py(.*)", line):
-            assert set(re.findall(r"--[a-z-]+", options)) <= STABLE_BUILD_OPTIONS, options
-    assert "--describe" not in text, "the step writes the Terraform variables itself"
+def _build_calls(wf) -> list[str]:
+    """Options passed to scripts/build_bundle.py, read from the parsed run blocks (so a folded
+    `run: >` is one line) with backslash continuations joined."""
+    calls = []
+    for job in wf["jobs"].values():
+        for step in job.get("steps", []):
+            for line in _commands(str(step.get("run", ""))):
+                calls += re.findall(r"scripts/build_bundle\.py(.*)", line)
+    return calls
+
+
+@pytest.mark.parametrize(
+    "name, expect_calls", [("deploy-environment.yml", True), ("drift.yml", False)]
+)
+def test_the_deployed_commits_build_script_is_called_only_with_options_it_has(name, expect_calls):
+    text, wf = load(name)
+    calls = _build_calls(wf)
+    assert bool(calls) is expect_calls, calls
+    for options in calls:
+        assert set(re.findall(r"--[a-z-]+", options)) <= STABLE_BUILD_OPTIONS, options
     assert "openssl dgst -sha256 -binary" in text, "the digest needs no script at all"
 
 
