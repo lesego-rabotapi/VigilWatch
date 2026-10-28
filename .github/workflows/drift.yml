@@ -77,8 +77,7 @@ jobs:
         run: |
           mkdir -p "$(dirname "$BUNDLE")"
           aws s3 cp "s3://$BUCKET/bundles/$SHA.zip" "$BUNDLE" --only-show-errors
-          python scripts/build_bundle.py --describe "$BUNDLE"
-          stored="$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['bundle_sha256'])" "${BUNDLE%.zip}.tfvars.json")"
+          stored="$(python scripts/build_bundle.py --describe "$BUNDLE" --sha256)"
           if [ "$stored" != "$DIGEST" ]; then
             echo "::error::bundles/$SHA.zip has sha256 $stored, but $ENVIRONMENT released $DIGEST"
             exit 1

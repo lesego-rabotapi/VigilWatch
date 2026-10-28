@@ -146,8 +146,7 @@ jobs:
         id: bundle
         working-directory: .
         run: |
-          python scripts/build_bundle.py --describe "$BUNDLE"
-          digest="$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['bundle_sha256'])" "${BUNDLE%.zip}.tfvars.json")"
+          digest="$(python scripts/build_bundle.py --describe "$BUNDLE" --sha256)"
           if [ -n "${DEV_BUNDLE_SHA256:-}" ] && [ "$digest" != "$DEV_BUNDLE_SHA256" ]; then
             echo "::error::bundles/$SHA.zip has sha256 $digest, but dev released $DEV_BUNDLE_SHA256: refusing other bytes"
             exit 1
