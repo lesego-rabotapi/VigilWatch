@@ -87,7 +87,6 @@ jobs:
       contents: write
     env:
       SHA: ${{ needs.resolve.outputs.sha }}
-      TAG: v2.${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -95,6 +94,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # The next free v2.<n>; prod deploys queue in one concurrency group, so two runs cannot race.
+      - name: Choose the tag
+        run: echo "TAG=$(git tag --list | python scripts/next_version.py)" >> "$GITHUB_ENV"
       - name: Write the changelog since the previous release
         run: |
           if previous="$(git describe --tags --abbrev=0 --match 'v*' "$SHA^")"; then
