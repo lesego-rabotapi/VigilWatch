@@ -80,8 +80,10 @@ left out because the fix that follows each is the change.
 ## Consequences
 
 - A promoted bundle is provably the one dev ran: same key, and the digest dev recorded, shown in the plan
-  summary. A rollback deploys an older commit whose record dev has since replaced, so it checks the key only and
-  shows the digest for the reviewer to compare with that release's run.
+  summary. Every deploy that fetches a bundle also rebuilds the commit and compares the bytes, without deploying
+  the rebuild. That is what guards a rollback, whose commit dev's record no longer names. The record and the
+  bundles share one bucket, so the digest catches a replaced or corrupted object, while the rebuild ties the
+  bytes to the reviewed source.
 - Nothing above has run against AWS. The workflows are checked by policy tests (`tests/test_workflows.py`,
   `tests/test_terraform_layout.py`) and the scripts by unit tests. The first real runs (dev deploy, promotion,
   rollback, drift, PR plan) are `NEEDS-AWS` and are expected to need IAM iterations for the read-only role

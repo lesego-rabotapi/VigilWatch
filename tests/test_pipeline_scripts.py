@@ -300,7 +300,8 @@ def _head_bundle(tmp_path):
     sys.path.insert(0, str(ROOT / "scripts"))
     import build_bundle
 
-    return build_bundle.build(ROOT / "lambda", tmp_path / "stored" / "vigilwatch.zip").path
+    out = tmp_path / "stored" / "vigilwatch.zip"
+    return build_bundle.build(ROOT / "lambda", out, rev="HEAD").path
 
 
 def test_a_stored_bundle_that_rebuilds_from_its_commit_is_deployed(tmp_path):

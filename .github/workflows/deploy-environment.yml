@@ -147,6 +147,17 @@ jobs:
             echo "::error::no stored bundle for $SHA: only commits deployed to dev can go to prod"
             exit 1
           fi
+      # The build is reproducible, so the commit itself says which bytes are right. This is what
+      # guards a rollback, whose commit is no longer in releases/dev; the result is not deployed.
+      - name: Check the stored bundle is this commit's code
+        if: ${{ !inputs.build }}
+        working-directory: .
+        run: |
+          python scripts/build_bundle.py --out "$RUNNER_TEMP/rebuilt/vigilwatch.zip" > /dev/null
+          if ! cmp "$RUNNER_TEMP/rebuilt/vigilwatch.zip" "$BUNDLE"; then
+            echo "::error::bundles/$SHA.zip is not what $SHA builds: refusing to deploy it"
+            exit 1
+          fi
       - name: Describe the bundle for Terraform
         id: bundle
         working-directory: .
@@ -251,6 +262,7 @@ jobs:
           echo "dashboard_url=$(terraform output -raw dashboard_url)" >> "$GITHUB_OUTPUT"
           echo "api_base_url=$(terraform output -raw api_base_url)" >> "$GITHUB_OUTPUT"
           echo "distribution_id=$(terraform output -raw cloudfront_distribution_id)" >> "$GITHUB_OUTPUT"
+          echo "Dashboard: $(terraform output -raw dashboard_url)" >> "$GITHUB_STEP_SUMMARY"
       - name: Invalidate CloudFront cache
         env:
           DISTRIBUTION: ${{ steps.outputs.outputs.distribution_id }}
