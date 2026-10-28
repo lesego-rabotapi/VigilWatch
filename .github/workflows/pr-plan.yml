@@ -76,14 +76,19 @@ jobs:
             exit 1
           fi
           # One line per changed resource, plus the totals (no pipe into head: pipefail + SIGPIPE).
-          grep -E '^(Plan:|  # )' plan.txt > changes.txt || [ "$status" -eq 0 ]
+          # A plan that changes only outputs has neither, so it is shown from "Changes to Outputs".
           {
             echo "### Terraform plan for dev"
             if [ "$status" -eq 0 ]; then
               echo "No changes."
-            else
+            elif grep -E '^(Plan:|  # )' plan.txt > changes.txt; then
               echo '```'
               sed -n '1,100p' changes.txt
+              echo '```'
+            else
+              echo "Only output values change."
+              echo '```'
+              sed -n '/^Changes to Outputs:/,$p' plan.txt | sed -n '1,100p'
               echo '```'
             fi
           } > "$GITHUB_WORKSPACE/comment.md"
