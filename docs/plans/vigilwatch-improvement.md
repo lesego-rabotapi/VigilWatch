@@ -78,7 +78,7 @@ Lesson 5 "deploy despite failing tests" (gates stay strict); HATEOAS (two routes
 | 4 | Honest checker, alert state machine, atomic cap | 3 | M | no | ✅ COMPLETE |
 | 5 | Terraform modules and environments | 3 | L | no | ✅ COMPLETE (CI run pending) |
 | 6 | Pipeline, promotion, rollback, drift, gate integrity | 5 | L | partly (runs) | ✅ COMPLETE offline (runs are `NEEDS-AWS`) |
-| 7 | Resilience, observability, SLOs | 4, 5 | M | partly (drill) | ⏳ PENDING |
+| 7 | Resilience, observability, SLOs | 4, 5 | M | partly (drill) | ✅ COMPLETE offline (drill and dashboard are `NEEDS-AWS`) |
 | 8 | Authentication (Cognito) | 3, 5 | L | partly (login) | ⏳ PENDING |
 | 9 | Documentation and portfolio packaging | 4 to 8 | M | no | ⏳ PENDING |
 | 10 | AWS day: deploy, integration test, UAT, ship | 5 to 9 | M | **yes** | ⏳ PENDING |
@@ -401,3 +401,9 @@ prove that the policy, package-verification and gate-integrity checks fail when 
 | 2026-10-28 | 6 review, round 10 | The marker becomes `releases/<env>.deploying` (commit and digest), written before the apply and read through `release.sh`; dev's behind check reads it and fails closed when git cannot compare | `tests/test_pipeline_scripts.py` |
 | 2026-10-28 | 6 review, round 11 | The record job checks out before running `release.sh` (it had no checkout: every record would have failed), with a policy test that any job running `scripts/` checks out first; the behind check falls back to the last release and uses explicit exit codes. Accepted and recorded in ADR 0009: two fail-safe edges that need a superseded run's jobs re-run | `tests/test_workflows.py`, `tests/test_pipeline_scripts.py` |
 | 2026-10-28 | 6 review, round 12 | `scripts/not_behind.sh` checks the marker and the last release, in the plan job and before the apply job moves dev's marker; the marker step refuses an empty digest; the record job's checkout is sparse with no persisted token | `tests/test_pipeline_scripts.py` |
+| 2026-10-28 | 7.1 | `scripts/backup_tables.py` and `restore_tables.py`: typed JSON Lines of the endpoints table, byte-stable, written only once complete; restore validates the whole file, then batch-writes with backoff; idempotent. `backups/` is ignored. Requirement VW-024 | `tests/mock/test_backup_restore.py` |
+| 2026-10-28 | 7.2 | `scripts/restore_drill.py`: scratch table with the source's key (at most 5 units), timed restore, count and fixed-sample comparison, scratch table always deleted, one row for the drill log | `tests/mock/test_restore_drill.py` |
+| 2026-10-28 | 7.3 | `docs/resilience.md`: backup scope and why no PITR (D3), nine failure modes with detection, recovery and RTO/RPO targets, empty drill log (`NEEDS-AWS`) | `tests/test_resilience_docs.py` |
+| 2026-10-28 | 7.4 | Golden-signals dashboard per environment (27 metrics, free tier of 3 dashboards checked by `free_tier_budget.py`) and four saved Logs Insights queries. A shape test caught `flatten()` splitting metric lines in the first version. Requirement VW-025 | `terraform/modules/monitoring/tests`, `tests/unit/test_free_tier_budget.py` |
+| 2026-10-28 | 7.5 | `docs/slo.md`: freshness, availability and latency at 99.5%, 216-minute error budget, freeze rule, alarm map | `tests/test_resilience_docs.py` |
+| 2026-10-28 | 7.6, 7.7 | Runbook section 9 (dashboard shows no data: write, read and display paths with commands) and section 10 (IAM iteration log, empty) | `tests/test_resilience_docs.py` |
