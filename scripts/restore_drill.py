@@ -10,7 +10,9 @@ The scratch table uses at most 5 read and 5 write units for a few minutes, insid
 """
 
 import argparse
+import contextlib
 import hashlib
+import secrets
 import sys
 import time
 from dataclasses import dataclass, field
@@ -18,6 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import boto3
+from botocore.exceptions import WaiterError
 
 import restore_tables
 from backup_tables import canonical, scan
@@ -77,18 +80,26 @@ def _create_scratch_table(client, source: str, name: str) -> None:
     )
 
 
+def scratch_name(source: str) -> str:
+    """Unique even for two drills started in the same second."""
+    return f"{source}-drill-{datetime.now(UTC):%Y%m%d%H%M%S}-{secrets.token_hex(3)}"
+
+
 def _delete_scratch_table(client, name: str) -> None:
-    """Delete it if it exists. A table still being created cannot be deleted yet; one left behind
-    keeps its capacity, so it is named on stderr for deleting by hand."""
-    try:
-        client.delete_table(TableName=name)
-    except client.exceptions.ResourceNotFoundException:
-        return
-    except client.exceptions.ResourceInUseException:
-        print(
-            f"the scratch table {name} is still being created: delete it by hand", file=sys.stderr
-        )
-        raise
+    """Delete it if it exists, once it can be: a table still being created cannot be deleted.
+    One left behind keeps its capacity, so it is named on stderr for deleting by hand."""
+    for attempt in (1, 2):
+        try:
+            client.delete_table(TableName=name)
+            return
+        except client.exceptions.ResourceNotFoundException:
+            return
+        except client.exceptions.ResourceInUseException:
+            if attempt == 2:
+                print(f"scratch table {name} is still in use: delete it by hand", file=sys.stderr)
+                raise
+            with contextlib.suppress(WaiterError):  # try the delete once more anyway
+                client.get_waiter("table_exists").wait(TableName=name)
 
 
 def drill(source: str, backup_path: Path, client=None, sample: int = 25) -> DrillResult:
@@ -96,21 +107,24 @@ def drill(source: str, backup_path: Path, client=None, sample: int = 25) -> Dril
         raise ValueError(f"sample must be at least 1, got {sample}")
     client = client or boto3.client("dynamodb")
     keys = restore_tables.key_types(client, source)
-    # What a restore writes: the cap counter is rebuilt by the application, not restored.
-    items = restore_tables.restorable(restore_tables.read_backup(backup_path, keys))
-    scratch = f"{source}-drill-{datetime.now(UTC):%Y%m%d%H%M%S}"
-    attempted = False
+    # What a restore writes: the cap counter is set by the application, not restored.
+    items = restore_tables.restorable(restore_tables.read_backup(backup_path, keys), keys)
+    scratch = scratch_name(source)
     try:
-        attempted = True  # a create that failed on the client may still have made the table
         _create_scratch_table(client, source, scratch)
+    except client.exceptions.ResourceInUseException:
+        raise  # the name is another table's: not ours to delete
+    except BaseException:
+        _delete_scratch_table(client, scratch)  # the service may have made it before the error
+        raise
+    try:
         client.get_waiter("table_exists").wait(TableName=scratch)
         started = time.monotonic()
         restore_tables.write(client, scratch, items)
         seconds = time.monotonic() - started
         restored = list(scan(client, scratch))
     finally:
-        if attempted:
-            _delete_scratch_table(client, scratch)
+        _delete_scratch_table(client, scratch)
     return DrillResult(
         scratch=scratch,
         items=len(items),

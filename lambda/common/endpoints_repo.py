@@ -67,81 +67,66 @@ class EndpointRepository:
             if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
                 raise  # someone else created it first, which is fine
 
-    def _reconcile(self, max_endpoints: int) -> bool:
-        """Repair a counter that disagrees with the real count. True if a slot is now free.
+    def _read_counter(self) -> dict | None:
+        return self.table.get_item(Key={"endpoint_id": COUNTER_ID}, ConsistentRead=True).get("Item")
 
-        Safe against concurrent registrations: the counter is only rewritten if it still holds the
-        value seen before counting. Creating an endpoint changes the counter, so any registration
-        that lands in between makes the write fail and the repair stand down.
+    def _write_count(self, seen: dict | None, actual: int) -> bool:
+        """Set the counter to `actual` if it still is as read (`seen`). False if it moved.
+
+        Creating an endpoint changes the counter, so a registration landing between the read and
+        this write makes the write fail and the caller stand down.
         """
-        item = self.table.get_item(Key={"endpoint_id": COUNTER_ID}, ConsistentRead=True).get("Item")
-        actual = self.count()
-        if item is None:
-            return self._restore_missing_counter(actual, max_endpoints)
-        seen = int(item["n"])
-        if actual != seen:
-            try:
+        try:
+            if seen is None:
+                self.table.put_item(
+                    Item={"endpoint_id": COUNTER_ID, "n": actual},
+                    ConditionExpression="attribute_not_exists(endpoint_id)",
+                )
+            elif "n" not in seen:  # an item edited by hand, without its number
+                self.table.update_item(
+                    Key={"endpoint_id": COUNTER_ID},
+                    UpdateExpression="SET n = :actual",
+                    ConditionExpression="attribute_not_exists(n)",
+                    ExpressionAttributeValues={":actual": actual},
+                )
+            else:
                 self.table.update_item(
                     Key={"endpoint_id": COUNTER_ID},
                     UpdateExpression="SET n = :actual",
                     ConditionExpression="n = :seen",
-                    ExpressionAttributeValues={":actual": actual, ":seen": seen},
+                    ExpressionAttributeValues={":actual": actual, ":seen": seen["n"]},
                 )
-            except ClientError as exc:
-                if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
-                    raise
-                return True  # the counter moved under us; just try the creation again
-        return actual < max_endpoints
-
-    def repair_counter(self, attempts: int = 5) -> int:
-        """Set the counter to the real count, for a restore. Returns the value written.
-
-        Like _reconcile, it writes only if the counter still holds the value read before counting,
-        so a registration landing in between makes it stand down and count again. It never deletes
-        the counter: a registration racing a missing counter would start it again from zero.
-        """
-        for _ in range(attempts):
-            item = self.table.get_item(Key={"endpoint_id": COUNTER_ID}, ConsistentRead=True).get(
-                "Item"
-            )
-            actual = self.count()
-            try:
-                if item is None:
-                    self.table.put_item(
-                        Item={"endpoint_id": COUNTER_ID, "n": actual},
-                        ConditionExpression="attribute_not_exists(endpoint_id)",
-                    )
-                elif "n" not in item:
-                    self.table.update_item(
-                        Key={"endpoint_id": COUNTER_ID},
-                        UpdateExpression="SET n = :actual",
-                        ConditionExpression="attribute_not_exists(n)",
-                        ExpressionAttributeValues={":actual": actual},
-                    )
-                else:
-                    self.table.update_item(
-                        Key={"endpoint_id": COUNTER_ID},
-                        UpdateExpression="SET n = :actual",
-                        ConditionExpression="n = :seen",
-                        ExpressionAttributeValues={":actual": actual, ":seen": item["n"]},
-                    )
-                return actual
-            except ClientError as exc:
-                if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
-                    raise
-        raise RuntimeError(f"the endpoint counter kept changing over {attempts} attempts")
-
-    def _restore_missing_counter(self, actual: int, max_endpoints: int) -> bool:
-        try:
-            self.table.put_item(
-                Item={"endpoint_id": COUNTER_ID, "n": actual},
-                ConditionExpression="attribute_not_exists(endpoint_id)",
-            )
         except ClientError as exc:
             if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
                 raise
-            return True
+            return False
+        return True
+
+    def _reconcile(self, max_endpoints: int) -> bool:
+        """Repair a counter that disagrees with the real count. True if a slot is now free.
+
+        Safe against concurrent registrations (see _write_count).
+        """
+        seen = self._read_counter()
+        actual = self.count()
+        if seen is not None and seen.get("n") == actual:
+            return actual < max_endpoints
+        if not self._write_count(seen, actual):
+            return True  # the counter moved under us; just try the creation again
         return actual < max_endpoints
+
+    def repair_counter(self, attempts: int = 5) -> int:
+        """Set the counter to the real count, after a restore. Returns the value written.
+
+        It retries when a registration lands in between, and never deletes the counter: a
+        registration racing a missing counter would start it again from zero.
+        """
+        for _ in range(attempts):
+            seen = self._read_counter()
+            actual = self.count()
+            if self._write_count(seen, actual):
+                return actual
+        raise RuntimeError(f"the endpoint counter kept changing over {attempts} attempts")
 
     def _create(self, item: dict, max_endpoints: int) -> None:
         """Atomically add the endpoint and bump the counter, or raise ClientError."""

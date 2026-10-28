@@ -7,7 +7,8 @@ key types, no key twice): a damaged backup writes nothing.
 Items the application keeps for itself (ids starting with `_`, such as the cap counter) are not
 restored: a stale counter could be lower than the real count and let registrations pass the cap.
 After writing, the restore sets the live counter to the real count with the application's own
-race-safe repair, so registrations may continue during a restore.
+repair. Pause registrations while a restore runs: one landing before that repair counts against a
+partly restored table and could pass the cap.
 
     python scripts/restore_tables.py --table vigilwatch-prod-endpoints \
         --from backups/endpoints.jsonl
@@ -17,9 +18,10 @@ import argparse
 import base64
 import binascii
 import json
+import re
 import sys
 import time
-from decimal import Decimal, InvalidOperation
+from decimal import Context, Decimal, InvalidOperation
 from pathlib import Path
 
 import boto3
@@ -42,13 +44,25 @@ def key_types(client, table: str) -> dict[str, str]:
     return {k["AttributeName"]: types[k["AttributeName"]] for k in schema}
 
 
+_EXACT = Context(prec=100)  # the default 28 digits would round before the 38-digit check
+_NUMBER = re.compile(r"-?\d+(\.\d+)?([eE][-+]?\d+)?")
+
+
 def _number(text) -> Decimal:
-    if not isinstance(text, str):
+    """A DynamoDB number: plain notation, at most 38 significant digits, 1E-130 to 1E126."""
+    if not isinstance(text, str) or not _NUMBER.fullmatch(text):
         raise ValueError
     number = Decimal(text)
-    if not number.is_finite():
+    digits = number.normalize(_EXACT).as_tuple().digits
+    if number and (len(digits) > 38 or not -130 <= number.adjusted() <= 125):
         raise ValueError
     return number
+
+
+def _distinct(members) -> list:
+    if len(set(members)) != len(members):
+        raise ValueError  # a set holds each member once
+    return members
 
 
 def _binary(text) -> bytes:
@@ -71,19 +85,20 @@ def decode(value) -> dict:
             _number(inner)
             return value
         if kind == "SS" and all(isinstance(s, str) for s in inner):
+            _distinct(inner)
             return value
         if kind == "NS":
-            [_number(n) for n in inner]
+            _distinct([_number(n).normalize(_EXACT) for n in inner])
             return value
         if kind == "B":
             return {"B": _binary(inner)}
         if kind == "BS":
-            return {"BS": [_binary(b) for b in inner]}
+            return {"BS": _distinct([_binary(b) for b in inner])}
         if kind == "M" and isinstance(inner, dict):
             return {"M": {k: decode(v) for k, v in inner.items()}}
         if kind == "L" and isinstance(inner, list):
             return {"L": [decode(v) for v in inner]}
-        if (kind, inner) == ("NULL", True) or (kind == "BOOL" and isinstance(inner, bool)):
+        if (kind == "NULL" and inner is True) or (kind == "BOOL" and isinstance(inner, bool)):
             return value
     except (ValueError, InvalidOperation, binascii.Error):
         pass
@@ -93,7 +108,7 @@ def decode(value) -> dict:
 def _key_value(value: dict):
     """A key as DynamoDB compares it: 1 and 1.0 are the same number."""
     ((kind, inner),) = value.items()
-    return (kind, _number(inner).normalize() if kind == "N" else inner)
+    return (kind, _number(inner).normalize(_EXACT) if kind == "N" else inner)
 
 
 def read_backup(path: Path, keys: dict[str, str]) -> list[dict]:
@@ -125,11 +140,12 @@ def read_backup(path: Path, keys: dict[str, str]) -> list[dict]:
     return items
 
 
-def restorable(items: list[dict]) -> list[dict]:
-    """Everything but the application's own bookkeeping (ids starting with `_`)."""
-    return [
-        i for i in items if not i.get("endpoint_id", {}).get("S", "").startswith(_RESERVED_PREFIX)
-    ]
+def restorable(items: list[dict], keys: dict[str, str]) -> list[dict]:
+    """In the endpoints table, everything but the application's own bookkeeping (ids starting with
+    `_`). Other tables, such as history and its `_system` heartbeat, are restored whole."""
+    if list(keys) != ["endpoint_id"]:
+        return items
+    return [i for i in items if not i["endpoint_id"].get("S", "").startswith(_RESERVED_PREFIX)]
 
 
 def write(client, table: str, items: list[dict], pause: float = 0.5) -> None:
@@ -152,10 +168,14 @@ def write(client, table: str, items: list[dict], pause: float = 0.5) -> None:
 def restore(table: str, path: Path, client=None) -> int:
     client = client or boto3.client("dynamodb")
     keys = key_types(client, table)
-    items = restorable(read_backup(path, keys))
+    items = restorable(read_backup(path, keys), keys)
     write(client, table, items)
     if list(keys) == ["endpoint_id"]:
-        EndpointRepository(boto3.resource("dynamodb").Table(table)).repair_counter()
+        # The same region and endpoint as the client the restore was given.
+        dynamodb = boto3.resource(
+            "dynamodb", region_name=client.meta.region_name, endpoint_url=client.meta.endpoint_url
+        )
+        EndpointRepository(dynamodb.Table(table)).repair_counter()
     return len(items)
 
 

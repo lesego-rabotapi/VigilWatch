@@ -57,14 +57,15 @@ resource "aws_apigatewayv2_stage" "default" {
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.api_access.arn
     # Every value quoted: API Gateway writes "-" for one it does not have, and only a quoted "-"
-    # keeps the line valid JSON. The saved queries convert status and latency with toNumber().
+    # keeps the line valid JSON. Values are not escaped, so no free text is logged here (an
+    # integration error message may hold a quote); errors are in the function logs. The saved
+    # queries convert status and latency with toNumber().
     format = jsonencode({
       requestId = "$context.requestId"
       ip        = "$context.identity.sourceIp"
       route     = "$context.routeKey"
       status    = "$context.status"
       latencyMs = "$context.responseLatency"
-      error     = "$context.integrationErrorMessage"
     })
   }
 }
