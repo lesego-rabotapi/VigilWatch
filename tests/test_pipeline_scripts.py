@@ -455,8 +455,14 @@ def test_a_failed_plan_fails_the_job_and_shows_why(tmp_path):
 
 @pytest.mark.negative
 def test_terraform_variables_stay_valid_json_for_any_bundle_path(tmp_path, bundle):
-    """A Windows or self-hosted runner path holds backslashes; printf would not escape them."""
+    """A path can hold a backslash (Windows) or a quote (legal on Linux); printf escaped neither."""
     path, digest = bundle
+    if os.name != "nt":
+        odd = path.parent / 'odd "quoted" \\ dir'
+        odd.mkdir()
+        path = path.rename(odd / path.name)
+    else:
+        assert "\\" in str(path)
     ran = run(find_step(*DESCRIBE)["run"], tmp_path, env={"BUNDLE": str(path)})
     assert ran.status == 0, ran.output
     tfvars = json.loads(path.with_name("vigilwatch.tfvars.json").read_text(encoding="utf-8"))
@@ -466,12 +472,22 @@ def test_terraform_variables_stay_valid_json_for_any_bundle_path(tmp_path, bundl
 DRIFT_REPORT = ("drift.yml", "report", "Open or update the drift issue")
 
 
-def test_a_drift_run_with_no_results_reports_no_drift_instead_of_failing(tmp_path):
+def test_a_drift_run_with_no_results_says_nothing_was_checked(tmp_path):
     """When every detect leg failed early (a wrong branch, an AWS error) there are no drift-*
-    results; the report must not add a second, unrelated error."""
+    results: no second, unrelated error, and no claim that nothing drifted."""
     ran = run(find_step(*DRIFT_REPORT)["run"], tmp_path, cwd=tmp_path)
     assert ran.status == 0, ran.output
-    assert "No drift." in ran.output
+    assert "::warning::" in ran.output and "dev prod" in ran.output
+    assert "No drift." not in ran.output
+
+
+@pytest.mark.negative
+def test_a_drift_run_missing_one_environment_names_it(tmp_path):
+    (tmp_path / "drift-dev").mkdir()
+    (tmp_path / "drift-dev" / "drift.md").write_text("none\n", encoding="utf-8")
+    ran = run(find_step(*DRIFT_REPORT)["run"], tmp_path, cwd=tmp_path)
+    assert ran.status == 0, ran.output
+    assert "::warning::" in ran.output and "not checked: prod" in ran.output
 
 
 # ---- Tagging the release -----------------------------------------------------------------------

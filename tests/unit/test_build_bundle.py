@@ -128,11 +128,13 @@ def test_the_command_line_prints_a_manifest_terraform_can_read(tmp_path, capsys)
 
 
 @pytest.mark.negative
-def test_there_is_no_describe_option_to_drift_from_the_pipeline(tmp_path):
+def test_there_is_no_describe_option_to_drift_from_the_pipeline(tmp_path, capsys):
     """The pipeline hashes a stored bundle with openssl and writes Terraform's variables itself;
     a second way to do it here could disagree with the one that runs."""
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit) as exited:
         build_bundle.main(["--describe", str(tmp_path / "b.zip")])
+    assert exited.value.code == 2
+    assert "unrecognized arguments: --describe" in capsys.readouterr().err
 
 
 def test_entries_are_stored_uncompressed_so_no_zlib_version_can_change_the_bytes(tmp_path):

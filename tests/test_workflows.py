@@ -189,9 +189,9 @@ def test_the_single_deploy_workflow_is_split_into_the_devops_layout():
 
 
 def test_dev_deploys_every_push_to_main_after_ci(dev):
-    """Push to main only: no manual trigger, so no branch can start it (re-run a job instead)."""
+    """By hand too: the first deploy after the repository variables are set has no new push."""
     _, wf = dev
-    assert set(wf["on"]) == {"push"}
+    assert set(wf["on"]) == {"push", "workflow_dispatch"}
     assert wf["on"]["push"]["branches"] == ["main"]
     assert wf["jobs"]["ci"]["uses"] == "./.github/workflows/ci.yml"
     job = wf["jobs"]["deploy"]
@@ -242,7 +242,7 @@ def test_each_environment_deploys_one_run_at_a_time_and_never_cancels_an_apply(
         "deploy-prod${{ github.ref != 'refs/heads/main' && format('-{0}', github.run_id) || '' }}"
     )
     assert groups["promote"] == groups["rollback"] == isolated, "one queue for prod, main only"
-    assert groups["dev"] == "deploy-dev"
+    assert groups["dev"] == isolated.replace("deploy-prod", "deploy-dev")
 
 
 @pytest.mark.parametrize("name", ["deploy-dev.yml", "promote-prod.yml", "rollback.yml"])
@@ -622,10 +622,16 @@ def test_deploys_and_drift_refuse_to_run_from_another_branch(name, job):
     assert '"$REF" != "refs/heads/main"' in first["run"] and "exit 1" in first["run"]
 
 
-@pytest.mark.parametrize("name, job", BRANCH_GUARDS)
-def test_a_wrong_branch_is_never_skipped_quietly(name, job):
+@pytest.mark.parametrize(
+    "name",
+    ["deploy-dev.yml", "promote-prod.yml", "rollback.yml", "drift.yml", "deploy-environment.yml"],
+)
+def test_a_wrong_branch_is_never_skipped_quietly(name):
+    """A job skipped on the branch would hide that the guard inside never ran."""
     _, wf = load(name)
-    assert "github.ref" not in str(wf["jobs"][job].get("if", "")), f"{name}:{job}: a skip is silent"
+    assert "main-only" not in wf["jobs"]
+    for job_name, job in wf["jobs"].items():
+        assert "github.ref" not in str(job.get("if", "")), f"{name}:{job_name}: a skip is silent"
 
 
 def test_ci_cancels_superseded_pull_request_and_branch_runs_but_never_mains(ci):
@@ -635,6 +641,7 @@ def test_ci_cancels_superseded_pull_request_and_branch_runs_but_never_mains(ci):
     group = wf["concurrency"]["group"]
     assert "github.event.pull_request.number" in group and "github.run_id" in group
     assert "github.ref != 'refs/heads/main' && github.ref" in group
+    assert group.startswith("ci-${{ github.event_name }}-"), "a deploy's CI never meets a push's"
     assert wf["concurrency"]["cancel-in-progress"] is True
     assert "deploy.yml" not in text, "the stale pointer to the removed workflow"
 

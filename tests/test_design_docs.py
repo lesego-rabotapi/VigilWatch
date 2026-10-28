@@ -108,6 +108,12 @@ def test_the_runbook_limits_the_production_environment_to_main():
     assert "`development`" not in text
 
 
+def test_the_runbook_warns_that_a_second_waiting_prod_run_cancels_the_first():
+    """GitHub keeps one pending run per concurrency group."""
+    text = (ROOT / "docs" / "RUNBOOK.md").read_text(encoding="utf-8")
+    assert "one pending run" in text
+
+
 def test_environments_adr_records_the_decisions_and_the_free_tier_arithmetic():
     text = (ROOT / "docs" / "adr" / "0005-environments-and-modules.md").read_text(encoding="utf-8")
     for term in (
