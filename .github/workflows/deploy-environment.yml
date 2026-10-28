@@ -122,22 +122,25 @@ jobs:
         if: ${{ inputs.build }}
         working-directory: .
         run: |
-          # What dev runs: the last deploy started, even one that failed its smoke test since.
+          # What dev runs: the last deploy started, even one that failed its smoke test since;
+          # without that marker (deleted, or not yet written), the last release.
           record="$(bash scripts/release.sh "$BUCKET" dev.deploying)"
+          if [ -z "$record" ]; then
+            record="$(bash scripts/release.sh "$BUCKET" dev)"
+          fi
           current="${record%% *}"
           if [ -z "$current" ] || [ "$current" = "$SHA" ]; then
             exit 0
           fi
-          if git merge-base --is-ancestor "$SHA" "$current"; then
-            echo "::error::dev runs $current, which is newer than $SHA: refusing to put dev behind it (a re-run?)"
-            exit 1
-          else
-            status=$?
-            if [ "$status" -ne 1 ]; then
-              echo "::error::cannot compare $SHA with $current, which dev runs (git exit $status)"
-              exit 1
-            fi
-          fi
+          status=0
+          git merge-base --is-ancestor "$SHA" "$current" || status=$?
+          case "$status" in
+            0) echo "::error::dev runs $current, which is newer than $SHA: refusing to put dev behind it (a re-run?)"
+               exit 1 ;;
+            1) ;; # not behind
+            *) echo "::error::cannot compare $SHA with $current, which dev runs (git exit $status)"
+               exit 1 ;;
+          esac
       # The record is "<commit> <bundle sha256>": the digest of the bytes dev ran is checked below.
       - name: Promote only what dev last deployed successfully
         if: ${{ inputs.require_dev_release }}
@@ -390,6 +393,7 @@ jobs:
             echo "::error::these credentials are not for the account in AWS_ACCOUNT_ID"
             exit 1
           fi
+      - uses: actions/checkout@v4 # main's scripts/release.sh, used below
       - name: Record the commit this environment now runs
         env:
           DIGEST: ${{ needs.plan.outputs.bundle_sha256 }}
