@@ -579,6 +579,20 @@ def test_the_only_github_environment_is_the_reviewed_production_one(name):
 
 
 @pytest.mark.parametrize("name", all_workflows())
+def test_every_step_runs_in_bash_with_pipefail(name):
+    """Without `shell:`, GitHub runs `bash -e {0}`: a failure before the last command of a
+    pipeline passes unnoticed. `shell: bash` adds -o pipefail, which tests/test_pipeline_scripts.py
+    also uses, so the steps it runs behave as they do on GitHub."""
+    _, wf = load(name)
+    assert wf.get("defaults", {}).get("run", {}).get("shell") == "bash", name
+    for job_name, job in wf["jobs"].items():
+        run = job.get("defaults", {}).get("run", {})
+        assert run.get("shell", "bash") == "bash", f"{name}:{job_name}"
+        for step in job.get("steps", []):
+            assert step.get("shell", "bash") == "bash", f"{name}:{job_name}:{step.get('name')}"
+
+
+@pytest.mark.parametrize("name", all_workflows())
 def test_the_bundle_digest_is_read_by_one_script_not_parsed_inline(name):
     text, _ = load(name)
     assert "json.load" not in text, f"{name}: use scripts/build_bundle.py --describe --sha256"
