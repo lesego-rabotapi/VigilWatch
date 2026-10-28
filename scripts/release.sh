@@ -3,7 +3,8 @@
 # environment was never released. Any other failure fails: a wrong bucket name or a missing
 # permission is not "nothing released yet".
 #
-#   bash scripts/release.sh <state bucket> <dev|prod>
+#   bash scripts/release.sh <state bucket> <dev|prod>                # what runs there now
+#   bash scripts/release.sh <state bucket> history/<env>/<commit>    # whether it was released
 set -euo pipefail
 
 bucket="$1"
