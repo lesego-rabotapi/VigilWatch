@@ -101,7 +101,9 @@ jobs:
           python-version: "3.12"
       # The next free v2.<n>; prod deploys queue in one concurrency group, so two runs cannot race.
       - name: Choose the tag
-        run: echo "TAG=$(git tag --list | python scripts/next_version.py)" >> "$GITHUB_ENV"
+        run: |
+          tag="$(git tag --list | python scripts/next_version.py)"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
       - name: Write the changelog since the previous release
         run: |
           if previous="$(git describe --tags --abbrev=0 --match 'v*' "$SHA^")"; then
