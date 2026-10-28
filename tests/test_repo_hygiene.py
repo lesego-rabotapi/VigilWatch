@@ -28,6 +28,8 @@ MUST_BE_IGNORED = [
     ".venv/pyvenv.cfg",
     "terraform/prod.tfvars",
     "frontend/node_modules/x/index.js",
+    "backups/endpoints.jsonl",  # the monitored URLs: scripts/backup_tables.py output
+    "backups/endpoints.jsonl.partial",
 ]
 
 
