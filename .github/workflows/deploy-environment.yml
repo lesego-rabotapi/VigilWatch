@@ -154,7 +154,7 @@ jobs:
         if: ${{ !inputs.build }}
         working-directory: .
         run: |
-          python scripts/build_bundle.py --out "$RUNNER_TEMP/rebuilt/vigilwatch.zip" > /dev/null
+          python scripts/build_bundle.py --out "$RUNNER_TEMP/rebuilt/vigilwatch.zip" --allow-dirty > /dev/null
           if ! cmp "$RUNNER_TEMP/rebuilt/vigilwatch.zip" "$BUNDLE"; then
             echo "::error::bundles/$SHA.zip is not what $SHA builds: refusing to deploy it"
             exit 1
@@ -163,7 +163,9 @@ jobs:
         id: bundle
         working-directory: .
         run: |
-          digest="$(python scripts/build_bundle.py --describe "$BUNDLE" --sha256)"
+          # The commit's own script writes its Terraform variables; the digest needs no script.
+          python scripts/build_bundle.py --describe "$BUNDLE" > /dev/null
+          digest="$(openssl dgst -sha256 -binary "$BUNDLE" | openssl base64 -A)"
           if [ -n "${DEV_BUNDLE_SHA256:-}" ] && [ "$digest" != "$DEV_BUNDLE_SHA256" ]; then
             echo "::error::bundles/$SHA.zip has sha256 $digest, but dev released $DEV_BUNDLE_SHA256: refusing other bytes"
             exit 1

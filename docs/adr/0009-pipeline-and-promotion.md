@@ -84,6 +84,11 @@ left out because the fix that follows each is the change.
   the rebuild. That is what guards a rollback, whose commit dev's record no longer names. The record and the
   bundles share one bucket, so the digest catches a replaced or corrupted object, while the rebuild ties the
   bytes to the reviewed source.
+- A deploy runs the deployed commit's own `scripts/build_bundle.py`, `check_junit.py` and `checklist.py`, so
+  the commit's Terraform variables and tests match it. Their command-line options are therefore an interface:
+  the workflows may use only options every commit with a stored bundle has (a policy test checks this for
+  `build_bundle.py`), or a rollback to an older release would fail. The bundle digest is computed with
+  `openssl`, not a script.
 - Nothing above has run against AWS. The workflows are checked by policy tests (`tests/test_workflows.py`,
   `tests/test_terraform_layout.py`) and the scripts by unit tests. The first real runs (dev deploy, promotion,
   rollback, drift, PR plan) are `NEEDS-AWS` and are expected to need IAM iterations for the read-only role

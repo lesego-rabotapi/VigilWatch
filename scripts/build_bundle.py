@@ -139,17 +139,9 @@ def main(argv=None) -> int:
         metavar="ZIP",
         help="do not build: write the Terraform variables for this existing bundle",
     )
-    parser.add_argument(
-        "--sha256",
-        action="store_true",
-        help="with --describe: print only the bundle's digest (the form Terraform is given)",
-    )
     args = parser.parse_args(argv)
     if args.describe:
-        manifest = describe(args.describe)
-        _print_vars(manifest, quiet=args.sha256)
-        if args.sha256:
-            print(manifest.base64sha256)
+        _print_vars(describe(args.describe))
         return 0
     if not args.from_worktree and args.rev == "HEAD":
         left_out = _uncommitted(args.source)
@@ -164,15 +156,14 @@ def main(argv=None) -> int:
     return 0
 
 
-def _print_vars(manifest: Manifest, quiet: bool = False) -> None:
+def _print_vars(manifest: Manifest) -> None:
     """Print the variables and write them next to the bundle; the keys are Terraform variable
     names, so the file is passed with -var-file."""
     printed = {"bundle_path": str(manifest.path), "bundle_sha256": manifest.base64sha256}
     manifest.path.with_name(manifest.path.stem + ".tfvars.json").write_text(
         json.dumps(printed, indent=2) + "\n", encoding="utf-8"
     )
-    if not quiet:
-        print(json.dumps(printed))
+    print(json.dumps(printed))
 
 
 if __name__ == "__main__":
