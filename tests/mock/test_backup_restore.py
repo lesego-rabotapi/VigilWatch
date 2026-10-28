@@ -90,7 +90,8 @@ def test_a_large_table_is_read_and_written_in_pages(tables, tmp_path):
     for n in range(130):
         t.delete_item(Key={"endpoint_id": f"https://{n:03}.example"})
     assert restore_tables.restore(TABLE, out) == 130  # more than one 25-item batch
-    assert t.scan(Select="COUNT")["Count"] == 130
+    pages = boto3.client("dynamodb").get_paginator("scan").paginate(TableName=TABLE)
+    assert sum(page["Count"] for page in pages) == 130
 
 
 @pytest.mark.negative
