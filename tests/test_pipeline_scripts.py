@@ -276,7 +276,7 @@ def test_prod_deploys_a_stored_bundle_with_the_digest_dev_released(tmp_path, bun
 def test_the_release_record_holds_the_commit_and_its_bundle_digest(tmp_path, bundle):
     """releases/<env> says what runs now; releases/history/<env>/<sha> that it once passed."""
     _, digest = bundle
-    _store(tmp_path, "releases/dev.applied", SHA)
+    _store(tmp_path, "releases/dev.deploying", f"{SHA} {digest}")
     ran = run(find_step(*RECORD)["run"], tmp_path, env={"ENVIRONMENT": "dev", "DIGEST": digest})
     assert ran.status == 0, ran.output
     store = tmp_path / "s3"
@@ -285,13 +285,13 @@ def test_the_release_record_holds_the_commit_and_its_bundle_digest(tmp_path, bun
     assert history.read_text(encoding="utf-8") == f"{SHA} {digest}"
 
 
-@pytest.mark.negative
 def _store(tmp_path, key, content):
     path = tmp_path / "s3" / key
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
 
 
+@pytest.mark.negative
 def test_a_release_without_a_digest_is_not_recorded(tmp_path):
     ran = run(find_step(*RECORD)["run"], tmp_path, env={"ENVIRONMENT": "dev", "DIGEST": ""})
     assert ran.status == 1
@@ -303,19 +303,33 @@ def test_a_rerun_after_a_newer_deploy_does_not_record_the_older_commit(tmp_path,
     """Re-running an old run's smoke and record jobs would record what no longer runs, even
     when the newer commit changed only infrastructure and the bundle is the same."""
     _, digest = bundle
-    _store(tmp_path, "releases/dev.applied", OTHER_SHA)
+    _store(tmp_path, "releases/dev.deploying", f"{OTHER_SHA} {digest}")
     ran = run(find_step(*RECORD)["run"], tmp_path, env={"ENVIRONMENT": "dev", "DIGEST": digest})
     assert ran.status == 1
     assert "::error::" in ran.output and "newer deploy" in ran.output
     assert not (tmp_path / "s3" / "releases" / "dev").exists()
+    assert not (tmp_path / "s3" / "releases" / "history").exists(), "no history entry either"
 
 
-def test_the_apply_job_marks_the_commit_it_applied():
+@pytest.mark.negative
+def test_a_record_with_no_deploy_marker_explains_itself(tmp_path, bundle):
+    _, digest = bundle
+    ran = run(find_step(*RECORD)["run"], tmp_path, env={"ENVIRONMENT": "dev", "DIGEST": digest})
+    assert ran.status == 1
+    assert "::error::" in ran.output and "404" not in ran.output
+
+
+def test_the_apply_job_marks_the_commit_before_it_starts_applying():
+    """An apply that fails halfway has still changed resources (the checker's code among
+    them): the marker must already name it, or a re-run of the older run could record."""
     data = yaml.safe_load((WORKFLOWS / "deploy-environment.yml").read_text(encoding="utf-8"))
-    runs = [str(s.get("run", "")) for s in data["jobs"]["apply"]["steps"]]
-    applied = next(i for i, r in enumerate(runs) if "terraform apply" in r)
-    marker = next(i for i, r in enumerate(runs) if "releases/$ENVIRONMENT.applied" in r)
-    assert applied < marker
+    steps = data["jobs"]["apply"]["steps"]
+    runs = [str(s.get("run", "")) for s in steps]
+    applying = next(i for i, r in enumerate(runs) if "terraform apply" in r)
+    marker = next(i for i, r in enumerate(runs) if "releases/$ENVIRONMENT.deploying" in r)
+    assert marker < applying
+    assert '"$SHA" "$DIGEST"' in runs[marker]
+    assert steps[marker]["env"]["DIGEST"] == "${{ needs.plan.outputs.bundle_sha256 }}"
 
 
 ROLLBACK = ("deploy-environment.yml", "plan", "Roll back only to a commit dev released")
@@ -743,11 +757,22 @@ def test_dev_never_goes_behind_the_commit_it_runs(tmp_path, history, released, d
     promotion picks. A newer commit landing during a run's CI is fine: it queues behind."""
     repo, shas = history
     if released is not None:
-        _store(tmp_path, "releases/dev", f"{shas[released]} {'A' * 43}=")
+        # What dev runs, even if that deploy then failed its smoke test.
+        _store(tmp_path, "releases/dev.deploying", f"{shas[released]} {'A' * 43}=")
     ran = run(find_step(*BEHIND)["run"], tmp_path, env={"SHA": shas[deploying]}, cwd=repo)
     assert (ran.status == 0) is passes, ran.output
     if not passes:
         assert "::error::" in ran.output and "behind" in ran.output
+
+
+@pytest.mark.negative
+def test_an_unknown_running_commit_fails_the_behind_check_closed(tmp_path, history):
+    """merge-base exits 128 for a commit the clone does not have: that is not 'not behind'."""
+    repo, shas = history
+    _store(tmp_path, "releases/dev.deploying", f"{'c' * 40} {'A' * 43}=")
+    ran = run(find_step(*BEHIND)["run"], tmp_path, env={"SHA": shas[1]}, cwd=repo)
+    assert ran.status == 1
+    assert "::error::" in ran.output
 
 
 def test_the_behind_check_runs_for_dev_builds_only():
