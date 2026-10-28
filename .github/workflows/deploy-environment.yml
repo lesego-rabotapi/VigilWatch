@@ -122,11 +122,21 @@ jobs:
         if: ${{ inputs.build }}
         working-directory: .
         run: |
-          record="$(bash scripts/release.sh "$BUCKET" dev)"
+          # What dev runs: the last deploy started, even one that failed its smoke test since.
+          record="$(bash scripts/release.sh "$BUCKET" dev.deploying)"
           current="${record%% *}"
-          if [ -n "$current" ] && [ "$current" != "$SHA" ] && git merge-base --is-ancestor "$SHA" "$current"; then
+          if [ -z "$current" ] || [ "$current" = "$SHA" ]; then
+            exit 0
+          fi
+          if git merge-base --is-ancestor "$SHA" "$current"; then
             echo "::error::dev runs $current, which is newer than $SHA: refusing to put dev behind it (a re-run?)"
             exit 1
+          else
+            status=$?
+            if [ "$status" -ne 1 ]; then
+              echo "::error::cannot compare $SHA with $current, which dev runs (git exit $status)"
+              exit 1
+            fi
           fi
       # The record is "<commit> <bundle sha256>": the digest of the bytes dev ran is checked below.
       - name: Promote only what dev last deployed successfully
@@ -296,12 +306,15 @@ jobs:
           -backend-config="region=${{ env.AWS_REGION }}"
           -backend-config="encrypt=true"
           -backend-config="use_lockfile=true"
+      # Which commit this environment runs, written before the apply starts: one that fails
+      # halfway has still changed resources. The record job refuses any other commit, so a re-run
+      # of an old run's smoke and record jobs cannot record what a newer deploy replaced.
+      - name: Mark the commit being deployed
+        env:
+          DIGEST: ${{ needs.plan.outputs.bundle_sha256 }}
+        run: printf '%s %s' "$SHA" "$DIGEST" | aws s3 cp - "s3://$BUCKET/releases/$ENVIRONMENT.deploying"
       - name: terraform apply (exactly the reviewed plan)
         run: terraform apply tfplan
-      # Which commit this environment last applied: the record job refuses any other, so a re-run
-      # of an old run's smoke and record jobs cannot record what a newer deploy replaced.
-      - name: Mark the commit applied
-        run: printf '%s' "$SHA" | aws s3 cp - "s3://$BUCKET/releases/$ENVIRONMENT.applied"
       - name: Read outputs
         id: outputs
         run: |
@@ -386,9 +399,9 @@ jobs:
             exit 1
           fi
           # A re-run of an old run's smoke and record jobs must not record what no longer runs.
-          applied="$(aws s3 cp "s3://$BUCKET/releases/$ENVIRONMENT.applied" -)"
-          if [ "$applied" != "$SHA" ]; then
-            echo "::error::$ENVIRONMENT last applied $applied, not $SHA: a newer deploy replaced it, so this run is not recorded"
+          deploying="$(bash scripts/release.sh "$BUCKET" "$ENVIRONMENT.deploying")"
+          if [ "${deploying%% *}" != "$SHA" ]; then
+            echo "::error::$ENVIRONMENT last deployed ${deploying%% *}, not $SHA: a newer deploy replaced it (or none was marked), so this run is not recorded"
             exit 1
           fi
           # releases/<env> is what runs now; releases/history/<env>/<sha> keeps every release.

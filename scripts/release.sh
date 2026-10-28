@@ -5,6 +5,7 @@
 #
 #   bash scripts/release.sh <state bucket> <dev|prod>                # what runs there now
 #   bash scripts/release.sh <state bucket> history/<env>/<commit>    # whether it was released
+#   bash scripts/release.sh <state bucket> <env>.deploying           # the last deploy started
 set -euo pipefail
 
 bucket="$1"

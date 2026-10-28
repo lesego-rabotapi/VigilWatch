@@ -91,10 +91,11 @@ left out because the fix that follows each is the change.
   for `build_bundle.py`: `--out` and `--rev`), or a rollback to an older release would fail. The bundle digest
   is computed once with `openssl`, and the same value is checked, written into Terraform's variables and
   recorded, so what Terraform deploys is what the record says.
-- The apply job writes `releases/<env>.applied` with the commit it applied, and a release is recorded only if
-  that still names the commit, so re-running an old run's smoke and record jobs cannot record a commit that a
-  newer deploy replaced, whatever that deploy changed. Dev never deploys a commit older than the one it runs,
-  so re-running an old dev deploy is refused; a commit that lands while another run is in CI just queues.
+- Before applying, the apply job writes `releases/<env>.deploying` (commit and digest), and a release is recorded
+  only if that still names the commit, so re-running an old run's smoke and record jobs cannot record a commit
+  that a newer deploy replaced, whatever it changed, even one whose apply failed halfway. Dev never deploys a
+  commit older than the one in that marker, so re-running an old dev deploy is refused; a commit that lands
+  while another run is in CI just queues.
 - Known limits, accepted for a one-maintainer repository: the weekly drift check takes no lock and can report a
   change made by an apply running at that moment (re-run it); and the read-only role that pull request plans use
   can read every state object, prod's included, so anyone who can push a branch can read prod's state. Forks
