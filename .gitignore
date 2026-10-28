@@ -43,3 +43,6 @@ as-a-senior-cloud-proud-meerkat.md
 Thumbs.db
 # Modules are tested standalone in CI; only the environments pin provider hashes.
 terraform/modules/**/.terraform.lock.hcl
+
+# Table backups hold the monitored URLs (scripts/backup_tables.py).
+backups/
