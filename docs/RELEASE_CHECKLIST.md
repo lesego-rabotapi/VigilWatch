@@ -8,7 +8,7 @@ pipeline enforces the items marked (enforced); the rest are for the person appro
 
 - [ ] CI passed on this commit: lint, unit, mock, contract and policy tests, `terraform test` for every module and environment, frontend tests, secret and IaC scans (enforced: deploy-dev runs `ci.yml` first).
 - [ ] The commit is on `main` (enforced), and for prod it is the commit dev last released, `releases/dev` in the state bucket (enforced by promote-prod).
-- [ ] The bundle hash in the summary is the one dev deployed: prod fetches `bundles/<sha>.zip`, never rebuilds, and a promotion refuses a digest other than the one in `releases/dev` (enforced). A fetched bundle must also rebuild byte for byte from its commit (enforced), which covers rollbacks.
+- [ ] The bundle hash in the summary is the one dev deployed: prod fetches `bundles/<sha>.zip` and never deploys a rebuild, and a promotion refuses a digest other than the one in `releases/dev` (enforced). A fetched bundle must also rebuild byte for byte from its commit (enforced), which covers rollbacks.
 - [ ] Read the plan. Nothing is destroyed or replaced that should not be; prod's DynamoDB tables keep deletion protection (enforced by `terraform test`) and show no replacement.
 - [ ] The plan does not remove the alert email subscription: `NOTIFICATION_EMAIL` is set.
 - [ ] Free tier still holds: at most 25 DynamoDB units, 10 alarms and 10 custom metrics across both environments (enforced by the free-tier tests).

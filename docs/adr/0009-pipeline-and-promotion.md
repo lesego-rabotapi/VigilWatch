@@ -19,7 +19,7 @@ read.
 
 **Build once, promote the artifact.** Dev builds the commit's bundle and stores it as `bundles/<sha>.zip` in the
 state bucket. If that object already exists, dev compares the bytes and fails on any difference (the build is
-reproducible, ADR 0005). Prod never builds: it fetches `bundles/<sha>.zip`, so it runs exactly what dev ran. A
+reproducible, ADR 0005). Prod never deploys a build of its own: it fetches `bundles/<sha>.zip`, so it runs exactly what dev ran. A
 release counts only after its smoke test passes, and is then recorded in `releases/dev` or `releases/prod` as
 the commit and the bundle's SHA-256. Promotion deploys the commit in `releases/dev` and refuses any other, and
 refuses a stored bundle whose digest is not the one dev recorded: the object can be overwritten, the record says
