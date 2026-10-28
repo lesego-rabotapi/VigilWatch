@@ -152,6 +152,46 @@ def bundle(tmp_path):
     return path, digest
 
 
+# ---- The release record: missing is not the same as unreadable --------------------------------
+
+READER = "bash scripts/release.sh state-bucket dev"
+
+
+def test_the_reader_prints_the_release_record(tmp_path, bundle):
+    _, digest = bundle
+    ran = run(READER, tmp_path, env={"RECORD": f"{SHA} {digest}"})
+    assert ran.status == 0, ran.output
+    assert ran.output.strip() == f"{SHA} {digest}"
+
+
+def test_an_environment_never_released_has_an_empty_record(tmp_path):
+    ran = run(READER, tmp_path)
+    assert ran.status == 0, ran.output
+    assert ran.output == ""
+
+
+@pytest.mark.negative
+def test_an_unreadable_record_fails_instead_of_meaning_never_released(tmp_path):
+    """A wrong bucket name or a missing permission must not read as 'nothing released yet':
+    drift would then report no drift every week."""
+    ran = run(READER, tmp_path, env={"AWS_FAILS": "1"})
+    assert ran.status != 0
+    assert "AccessDenied" in ran.output
+
+
+@pytest.mark.negative
+@pytest.mark.parametrize("record", ["", SHA, f"{SHA[:-1]} xyz=", f"{SHA} {'A' * 43}= extra"])
+def test_a_malformed_record_fails(tmp_path, record):
+    ran = run(READER, tmp_path, env={"RECORD": record})
+    assert ran.status != 0
+    assert "::error::" in ran.output
+
+
+def test_shell_scripts_keep_unix_line_endings_on_every_checkout():
+    """bash fails on a carriage return, and Windows checkouts convert text files."""
+    assert "*.sh text eol=lf" in (ROOT / ".gitattributes").read_text(encoding="utf-8")
+
+
 # ---- Build once: prod deploys the bytes dev ran, proven by digest ------------------------------
 
 REQUIRE = ("deploy-environment.yml", "plan", "Promote only what dev last deployed successfully")
@@ -164,6 +204,20 @@ def test_promotion_carries_the_digest_dev_released_into_the_plan(tmp_path, bundl
     ran = run(find_step(*REQUIRE)["run"], tmp_path, env={"RECORD": f"{SHA} {digest}"})
     assert ran.status == 0, ran.output
     assert ran.env["DEV_BUNDLE_SHA256"] == digest
+
+
+@pytest.mark.negative
+def test_promotion_before_any_dev_release_says_to_deploy_dev_first(tmp_path):
+    ran = run(find_step(*REQUIRE)["run"], tmp_path)
+    assert ran.status == 1
+    assert "::error::dev has no release yet" in ran.output
+
+
+@pytest.mark.negative
+def test_promotion_stops_when_the_record_cannot_be_read(tmp_path):
+    ran = run(find_step(*REQUIRE)["run"], tmp_path, env={"AWS_FAILS": "1"})
+    assert ran.status != 0
+    assert "DEV_BUNDLE_SHA256" not in ran.env
 
 
 @pytest.mark.negative
@@ -238,6 +292,95 @@ def test_the_record_job_is_given_the_digest_the_plan_deployed():
 
 
 DRIFT_FETCH = ("drift.yml", "detect", "Fetch the released bundle")
+DRIFT_FIND = ("drift.yml", "detect", "Find the released commit")
+
+
+def test_drift_compares_the_released_commit_and_digest(tmp_path, bundle):
+    _, digest = bundle
+    ran = run(
+        find_step(*DRIFT_FIND)["run"],
+        tmp_path,
+        env={"ENVIRONMENT": "prod", "RECORD": f"{SHA} {digest}"},
+    )
+    assert ran.status == 0, ran.output
+    assert ran.outputs == {"sha": SHA, "digest": digest}
+
+
+def test_drift_skips_an_environment_never_released(tmp_path):
+    ran = run(find_step(*DRIFT_FIND)["run"], tmp_path, env={"ENVIRONMENT": "prod"})
+    assert ran.status == 0, ran.output
+    assert "::notice::" in ran.output
+    assert ran.outputs == {}
+
+
+@pytest.mark.negative
+def test_drift_fails_when_the_record_cannot_be_read(tmp_path):
+    """Before: any S3 error was read as 'no release', and the check went quiet for good."""
+    ran = run(
+        find_step(*DRIFT_FIND)["run"],
+        tmp_path,
+        env={"ENVIRONMENT": "prod", "AWS_FAILS": "1"},
+    )
+    assert ran.status != 0
+    assert "::notice::" not in ran.output
+
+
+def test_drift_checks_out_the_repository_before_reading_the_record():
+    """The reader is a script in the repository; the released commit is checked out after."""
+    data = yaml.safe_load((WORKFLOWS / "drift.yml").read_text(encoding="utf-8"))
+    names = [s.get("name") or s.get("uses", "") for s in data["jobs"]["detect"]["steps"]]
+    first_checkout = next(i for i, n in enumerate(names) if n.startswith("actions/checkout"))
+    assert first_checkout < names.index("Find the released commit")
+
+
+# ---- Choosing the commit to promote -------------------------------------------------------------
+
+RESOLVE = ("promote-prod.yml", "resolve", "Choose the commit to promote")
+
+
+def test_promotion_defaults_to_the_commit_dev_last_released(tmp_path, bundle):
+    _, digest = bundle
+    ran = run(
+        find_step(*RESOLVE)["run"],
+        tmp_path,
+        env={"REQUESTED": "", "RECORD": f"{SHA} {digest}"},
+    )
+    assert ran.status == 0, ran.output
+    assert ran.outputs["sha"] == SHA
+
+
+def test_a_requested_commit_is_passed_on_for_the_deploy_to_check(tmp_path):
+    ran = run(find_step(*RESOLVE)["run"], tmp_path, env={"REQUESTED": OTHER_SHA})
+    assert ran.status == 0, ran.output
+    assert ran.outputs["sha"] == OTHER_SHA
+
+
+@pytest.mark.negative
+def test_promotion_with_no_dev_release_says_so(tmp_path):
+    ran = run(find_step(*RESOLVE)["run"], tmp_path, env={"REQUESTED": ""})
+    assert ran.status == 1
+    assert "::error::dev has no release yet" in ran.output
+
+
+@pytest.mark.negative
+def test_promotion_stops_when_it_cannot_read_what_dev_released(tmp_path):
+    ran = run(find_step(*RESOLVE)["run"], tmp_path, env={"REQUESTED": "", "AWS_FAILS": "1"})
+    assert ran.status != 0
+    assert "sha" not in ran.outputs
+
+
+@pytest.mark.security
+def test_choosing_the_commit_only_reads_so_it_uses_the_read_only_role():
+    data = yaml.safe_load((WORKFLOWS / "promote-prod.yml").read_text(encoding="utf-8"))
+    resolve = data["jobs"]["resolve"]
+    roles = [
+        s["with"]["role-to-assume"]
+        for s in resolve["steps"]
+        if "configure-aws-credentials" in s.get("uses", "")
+    ]
+    assert roles == ["${{ vars.AWS_PLAN_ROLE_ARN }}"]
+    assert "vars.AWS_PLAN_ROLE_ARN != ''" in resolve["if"]
+    assert any("actions/checkout" in s.get("uses", "") for s in resolve["steps"])
 
 
 @pytest.mark.negative
