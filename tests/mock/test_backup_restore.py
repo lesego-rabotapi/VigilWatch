@@ -221,6 +221,7 @@ def test_a_backup_has_unix_line_endings_on_every_platform(table, tmp_path):
             "typed",
         ),
         (['{"endpoint_id": {"S": "a"}, "z": {"NULL": 1}}'], "typed"),
+        (['{"endpoint_id": {"S": "a"}, "n": {"N": "1..5"}}'], "typed"),
     ],
     ids=[
         "untyped-key",
@@ -239,6 +240,7 @@ def test_a_backup_has_unix_line_endings_on_every_platform(table, tmp_path):
         "underscore-number",
         "too-many-digits",
         "null-not-true",
+        "two-points",
     ],
 )
 def test_a_damaged_backup_writes_nothing(table, tmp_path, lines, reason):
@@ -291,9 +293,10 @@ def test_a_history_backup_keeps_the_checkers_heartbeat(tables, tmp_path):
     assert "Item" in history.get_item(Key={"endpoint_id": "_system", "sk": "H#checker"})
 
 
-def test_the_counter_is_repaired_through_the_client_the_restore_was_given(aws, tmp_path):
-    """Not the default region: a restore into another region must repair that region's counter."""
-    client = boto3.client("dynamodb", region_name="eu-west-1")
+def test_the_counter_is_repaired_through_the_session_the_restore_was_given(aws, tmp_path):
+    """Items and counter go through one session: same account, region and credentials."""
+    session = boto3.Session(region_name="eu-west-1")
+    client = session.client("dynamodb")
     client.create_table(
         TableName=TABLE,
         KeySchema=[{"AttributeName": "endpoint_id", "KeyType": "HASH"}],
@@ -302,7 +305,7 @@ def test_the_counter_is_repaired_through_the_client_the_restore_was_given(aws, t
     )
     out = tmp_path / "endpoints.jsonl"
     out.write_text('{"endpoint_id":{"S":"https://a.example"}}\n', encoding="utf-8")
-    assert restore_tables.restore(TABLE, out, client=client) == 1
+    assert restore_tables.restore(TABLE, out, session=session) == 1
     counter = client.get_item(TableName=TABLE, Key={"endpoint_id": {"S": COUNTER_ID}})
     assert counter["Item"]["n"] == {"N": "1"}
 
@@ -313,3 +316,13 @@ def test_a_counter_without_its_number_is_repaired_not_a_crash(table):
     repo = EndpointRepository(table)
     assert repo._reconcile(10) is True
     assert table.get_item(Key={"endpoint_id": COUNTER_ID})["Item"]["n"] == repo.count() == 2
+
+
+@pytest.mark.parametrize("number", [".5", "5.", "+5", "-0.25e3", "0"])
+def test_numbers_written_the_ways_dynamodb_accepts_are_restored(table, tmp_path, number):
+    good = tmp_path / "good.jsonl"
+    good.write_text(
+        f'{{"endpoint_id": {{"S": "https://n.example"}}, "x": {{"N": "{number}"}}}}\n',
+        encoding="utf-8",
+    )
+    assert restore_tables.restore(TABLE, good) == 1

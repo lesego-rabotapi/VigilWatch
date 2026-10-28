@@ -69,6 +69,7 @@ def test_recovery_targets_are_targets_and_point_in_time_recovery_is_explained():
     assert "point-in-time" in doc and "D3" in doc
     for script in ("backup_tables.py", "restore_tables.py", "restore_drill.py"):
         assert script in doc
+    assert "<table>-drill-<timestamp>-<random>" in doc, "the scratch table's real name pattern"
 
 
 @pytest.mark.req("VW-024")

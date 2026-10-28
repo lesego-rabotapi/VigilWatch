@@ -181,18 +181,21 @@ def test_a_scratch_table_still_being_created_is_waited_for_then_deleted(backup):
 
 
 @pytest.mark.negative
-def test_a_scratch_name_already_taken_is_never_deleted(backup, monkeypatch):
-    """The name belongs to another table, perhaps another drill's: not ours to delete."""
-    monkeypatch.setattr(restore_drill, "scratch_name", lambda source: f"{source}-drill-taken")
-    boto3.client("dynamodb").create_table(
-        TableName=f"{TABLE}-drill-taken",
-        KeySchema=[{"AttributeName": "endpoint_id", "KeyType": "HASH"}],
-        AttributeDefinitions=[{"AttributeName": "endpoint_id", "AttributeType": "S"}],
-        BillingMode="PAY_PER_REQUEST",
-    )
-    with pytest.raises(boto3.client("dynamodb").exceptions.ResourceInUseException):
-        restore_drill.drill(TABLE, backup)
-    assert f"{TABLE}-drill-taken" in table_names()
+def test_a_create_retried_after_a_lost_response_still_deletes_its_table(backup):
+    """The name is random, so 'already exists' means the first, unanswered create made it."""
+    client = boto3.client("dynamodb")
+    real_create = client.create_table
+
+    def made_then_retried(**kwargs):
+        real_create(**kwargs)  # the service made it; the response was lost and botocore retried
+        raise client.exceptions.ResourceInUseException(
+            {"Error": {"Code": "ResourceInUseException", "Message": "exists"}}, "CreateTable"
+        )
+
+    client.create_table = made_then_retried
+    with pytest.raises(client.exceptions.ResourceInUseException):
+        restore_drill.drill(TABLE, backup, client=client)
+    assert set(table_names()) == {TABLE, "vigilwatch-history"}
 
 
 def test_two_drills_started_together_get_different_scratch_tables():

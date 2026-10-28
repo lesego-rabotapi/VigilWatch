@@ -129,6 +129,11 @@ run "every_access_log_line_is_json_even_when_a_value_is_missing" {
     condition     = !strcontains(aws_apigatewayv2_stage.default.access_log_settings[0].format, "ErrorMessage")
     error_message = "no free-text value in the access log"
   }
+  assert {
+    condition = (strcontains(aws_apigatewayv2_stage.default.access_log_settings[0].format, "$context.error.responseType")
+    && strcontains(aws_apigatewayv2_stage.default.access_log_settings[0].format, "$context.integration.status"))
+    error_message = "a 5xx that never reached a function (throttled, no permission, timed out) still says why"
+  }
 
   # API Gateway writes "-" for a value it does not have: only a quoted placeholder stays valid JSON.
   assert {
