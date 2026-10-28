@@ -803,6 +803,21 @@ def test_re_running_an_old_apply_job_cannot_move_dev_s_marker_back(tmp_path, his
     assert ran.status == 1
     marker = (tmp_path / "s3" / "releases" / "dev.deploying").read_text(encoding="utf-8")
     assert marker.startswith(shas[1]), "the marker still names what dev runs"
+    assert "::error::" in ran.output and "behind" in ran.output
+
+
+def test_a_dev_deploy_moves_its_marker_forward(tmp_path, history):
+    repo, shas = history
+    _store(tmp_path, "releases/dev.deploying", f"{shas[0]} {'A' * 43}=")
+    ran = run(
+        find_step(*MARK)["run"],
+        tmp_path,
+        env={"SHA": shas[1], "ENVIRONMENT": "dev", "BUILD": "true", "DIGEST": "B" * 43 + "="},
+        cwd=repo,
+    )
+    assert ran.status == 0, ran.output
+    marker = (tmp_path / "s3" / "releases" / "dev.deploying").read_text(encoding="utf-8")
+    assert marker == f"{shas[1]} {'B' * 43}="
 
 
 def test_a_prod_rollback_may_mark_an_older_commit(tmp_path, history):
