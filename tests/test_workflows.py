@@ -595,25 +595,56 @@ def test_every_job_has_a_timeout(name):
         assert 1 <= job.get("timeout-minutes", 0) <= 60, f"{name}:{job_name}"
 
 
-@pytest.mark.parametrize(
-    "name", ["deploy-dev.yml", "promote-prod.yml", "rollback.yml", "drift.yml"]
-)
-def test_deploys_and_drift_run_only_from_main(name):
+MAIN_ONLY = ["deploy-dev.yml", "promote-prod.yml", "rollback.yml", "drift.yml"]
+
+
+@pytest.mark.parametrize("name", MAIN_ONLY)
+def test_deploys_and_drift_refuse_to_run_from_another_branch(name):
     """workflow_dispatch can start any branch's copy of a workflow. Role trust, the commit check
-    and the production branch rule already stop it; this stops it before it starts."""
+    and the production branch rule already stop it; this stops it first, and in red: a skipped
+    run would let someone believe a rollback happened."""
     _, wf = load(name)
-    entry = [j for j in wf["jobs"].values() if not j.get("needs")]
-    assert entry, name
-    for job in entry:
-        assert "github.ref == 'refs/heads/main'" in str(job.get("if", "")), name
+    step = wf["jobs"]["main-only"]["steps"][0]
+    assert step["env"]["REF"] == "${{ github.ref }}"
+    assert '"$REF" != "refs/heads/main"' in step["run"] and "exit 1" in step["run"]
+    for job_name, job in wf["jobs"].items():
+        assert "github.ref" not in str(job.get("if", "")), f"{job_name}: skipping is silent"
+
+
+@pytest.mark.parametrize("name", MAIN_ONLY)
+def test_every_job_waits_for_the_branch_guard(name):
+    _, wf = load(name)
+
+    def reaches(job_name):
+        needs = wf["jobs"][job_name].get("needs", [])
+        needs = [needs] if isinstance(needs, str) else needs
+        return job_name == "main-only" or any(reaches(n) for n in needs)
+
+    assert all(reaches(j) for j in wf["jobs"]), name
 
 
 def test_pull_request_ci_cancels_a_superseded_run_and_nothing_else(ci):
+    """A pull request, or a push to a branch other than main, cancels its superseded run. A run
+    on main (deploy-dev.yml calls CI) gets a group of its own: nothing a deploy waits on."""
     text, wf = ci
     group = wf["concurrency"]["group"]
     assert "github.event.pull_request.number" in group and "github.run_id" in group
+    assert "github.ref != 'refs/heads/main' && github.ref" in group
     assert wf["concurrency"]["cancel-in-progress"] is True
     assert "deploy.yml" not in text, "the stale pointer to the removed workflow"
+
+
+def test_a_new_push_cancels_the_pull_request_plan_it_supersedes():
+    """Otherwise an older plan can finish last and be the comment a reviewer reads."""
+    _, wf = load("pr-plan.yml")
+    assert "github.event.pull_request.number" in wf["concurrency"]["group"]
+    assert wf["concurrency"]["cancel-in-progress"] is True
+
+
+def test_the_apply_job_has_time_for_a_slow_cloudfront_change(deploy):
+    """Hitting the timeout cancels terraform apply midway and can leave the state lock held."""
+    _, wf = deploy
+    assert wf["jobs"]["apply"]["timeout-minutes"] == 60
 
 
 def test_the_terraform_linter_is_pinned(ci):

@@ -457,6 +457,22 @@ def test_a_failure_choosing_the_tag_stops_the_step(tmp_path):
     assert "TAG" not in ran.env
 
 
+# ---- Running from main only ---------------------------------------------------------------------
+
+
+@pytest.mark.negative
+def test_a_dispatch_from_another_branch_fails_loudly(tmp_path):
+    step = find_step("rollback.yml", "main-only", "Refuse any branch but main")
+    ran = run(step["run"], tmp_path, env={"REF": "refs/heads/feature"})
+    assert ran.status == 1
+    assert "::error::" in ran.output and "refs/heads/feature" in ran.output
+
+
+def test_a_run_from_main_goes_ahead(tmp_path):
+    step = find_step("rollback.yml", "main-only", "Refuse any branch but main")
+    assert run(step["run"], tmp_path, env={"REF": "refs/heads/main"}).status == 0
+
+
 # ---- Choosing the commit to promote -------------------------------------------------------------
 
 RESOLVE = ("promote-prod.yml", "resolve", "Choose the commit to promote")
