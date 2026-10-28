@@ -743,7 +743,8 @@ def history(tmp_path):
         shas.append(git("rev-parse", "HEAD"))
     git("update-ref", "refs/remotes/origin/main", shas[-1])
     (repo / "scripts").mkdir()
-    shutil.copy(ROOT / "scripts" / "release.sh", repo / "scripts" / "release.sh")
+    for script in ("release.sh", "not_behind.sh"):
+        shutil.copy(ROOT / "scripts" / script, repo / "scripts" / script)
     return repo, shas
 
 
@@ -765,13 +766,82 @@ def test_dev_never_goes_behind_the_commit_it_runs(tmp_path, history, released, d
         assert "::error::" in ran.output and "behind" in ran.output
 
 
-def test_without_a_marker_the_behind_check_compares_with_the_last_release(tmp_path, history):
-    """A missing marker (deleted, or a bucket from before markers) must not let dev go behind."""
+@pytest.mark.negative
+@pytest.mark.parametrize(
+    "marker, release",
+    [(None, 1), (0, 1)],
+    ids=["no-marker", "marker-moved-back"],
+)
+def test_a_newer_release_stops_dev_going_behind_whatever_the_marker_says(
+    tmp_path, history, marker, release
+):
+    """A missing marker, or one a re-run of an old apply job moved back, must not hide that
+    dev released a newer commit."""
     repo, shas = history
-    _store(tmp_path, "releases/dev", f"{shas[1]} {'A' * 43}=")
+    if marker is not None:
+        _store(tmp_path, "releases/dev.deploying", f"{shas[marker]} {'A' * 43}=")
+    _store(tmp_path, "releases/dev", f"{shas[release]} {'A' * 43}=")
     ran = run(find_step(*BEHIND)["run"], tmp_path, env={"SHA": shas[0]}, cwd=repo)
     assert ran.status == 1
-    assert "behind" in ran.output
+    assert "::error::" in ran.output and "behind" in ran.output
+
+
+MARK = ("deploy-environment.yml", "apply", "Mark the commit being deployed")
+
+
+@pytest.mark.negative
+def test_re_running_an_old_apply_job_cannot_move_dev_s_marker_back(tmp_path, history):
+    """A re-run of one job skips the plan job and its behind check."""
+    repo, shas = history
+    _store(tmp_path, "releases/dev.deploying", f"{shas[1]} {'A' * 43}=")
+    ran = run(
+        find_step(*MARK)["run"],
+        tmp_path,
+        env={"SHA": shas[0], "ENVIRONMENT": "dev", "BUILD": "true", "DIGEST": "A" * 43 + "="},
+        cwd=repo,
+    )
+    assert ran.status == 1
+    marker = (tmp_path / "s3" / "releases" / "dev.deploying").read_text(encoding="utf-8")
+    assert marker.startswith(shas[1]), "the marker still names what dev runs"
+
+
+def test_a_prod_rollback_may_mark_an_older_commit(tmp_path, history):
+    repo, shas = history
+    _store(tmp_path, "releases/prod.deploying", f"{shas[1]} {'A' * 43}=")
+    ran = run(
+        find_step(*MARK)["run"],
+        tmp_path,
+        env={"SHA": shas[0], "ENVIRONMENT": "prod", "BUILD": "false", "DIGEST": "A" * 43 + "="},
+        cwd=repo,
+    )
+    assert ran.status == 0, ran.output
+    marker = (tmp_path / "s3" / "releases" / "prod.deploying").read_text(encoding="utf-8")
+    assert marker == f"{shas[0]} {'A' * 43}="
+
+
+@pytest.mark.negative
+def test_a_marker_without_a_digest_is_never_written(tmp_path):
+    ran = run(
+        find_step(*MARK)["run"],
+        tmp_path,
+        env={"ENVIRONMENT": "prod", "BUILD": "false", "DIGEST": ""},
+    )
+    assert ran.status == 1
+    assert not (tmp_path / "s3").exists()
+
+
+def test_the_apply_job_has_the_history_the_behind_check_needs():
+    data = yaml.safe_load((WORKFLOWS / "deploy-environment.yml").read_text(encoding="utf-8"))
+    checkout = next(s for s in data["jobs"]["apply"]["steps"] if "checkout" in s.get("uses", ""))
+    assert checkout["with"]["fetch-depth"] == 0
+    assert find_step(*MARK)["env"]["BUILD"] == "${{ inputs.build }}"
+
+
+def test_the_record_job_checks_out_only_what_it_runs_and_keeps_no_token():
+    data = yaml.safe_load((WORKFLOWS / "deploy-environment.yml").read_text(encoding="utf-8"))
+    checkout = next(s for s in data["jobs"]["record"]["steps"] if "checkout" in s.get("uses", ""))
+    assert checkout["with"]["persist-credentials"] is False
+    assert checkout["with"]["sparse-checkout"].strip() == "scripts/release.sh"
 
 
 @pytest.mark.negative
@@ -786,6 +856,7 @@ def test_an_unknown_running_commit_fails_the_behind_check_closed(tmp_path, histo
 
 def test_the_behind_check_runs_for_dev_builds_only():
     assert find_step(*BEHIND)["if"] == "${{ inputs.build }}"
+    assert 'scripts/not_behind.sh "$BUCKET" dev "$SHA"' in find_step(*BEHIND)["run"]
     on_main = find_step("deploy-environment.yml", "plan", "Deploy only commits that are on main")
     assert "rev-parse origin/main" not in on_main["run"], "main's tip moves during a run's CI"
 
