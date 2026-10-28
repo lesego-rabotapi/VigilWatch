@@ -283,7 +283,7 @@ def test_dev_builds_and_stores_the_bundle_prod_fetches_those_bytes(deploy):
     assert "bundles/" in build["run"] and "aws s3 cp" in build["run"]
     assert "cmp" in build["run"], "a stored bundle with other bytes means the build drifted"
     assert "bundles/" in fetch["run"]
-    assert "--describe" in steps_text(wf["jobs"]["plan"])
+    assert "tfvars.json" in steps_text(wf["jobs"]["plan"]), "the Terraform variables are written"
 
 
 def test_promotion_refuses_anything_but_what_dev_last_released(deploy):
@@ -556,7 +556,7 @@ def test_drift_compares_against_what_was_actually_released(drift):
     _, wf = drift
     plan = steps_text(wf["jobs"]["detect"])
     assert 'scripts/release.sh "$BUCKET" "$ENVIRONMENT"' in plan
-    assert "bundles/" in plan and "--describe" in plan
+    assert "bundles/" in plan and "tfvars.json" in plan
 
 
 def test_drift_opens_an_issue_from_a_job_that_holds_no_aws_access(drift):

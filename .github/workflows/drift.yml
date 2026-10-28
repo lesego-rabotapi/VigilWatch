@@ -25,23 +25,7 @@ env:
   TF_INPUT: "false"
 
 jobs:
-  # A dispatch can start any branch's copy of this workflow; refuse it in red, not as a skip.
-  main-only:
-    name: Run from main only
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    steps:
-      - name: Refuse any branch but main
-        env:
-          REF: ${{ github.ref }}
-        run: |
-          if [ "$REF" != "refs/heads/main" ]; then
-            echo "::error::run this workflow from main, not $REF"
-            exit 1
-          fi
-
   detect:
-    needs: [main-only]
     name: Drift in ${{ matrix.environment }}
     if: ${{ vars.AWS_PLAN_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' && vars.TF_STATE_BUCKET != '' }}
     runs-on: ubuntu-latest
@@ -58,6 +42,14 @@ jobs:
       BUCKET: ${{ vars.TF_STATE_BUCKET }}
       BUNDLE: ${{ github.workspace }}/terraform/.build/vigilwatch.zip
     steps:
+      - name: Refuse any branch but main
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::run this workflow from main, not $REF"
+            exit 1
+          fi
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
@@ -99,12 +91,12 @@ jobs:
         run: |
           mkdir -p "$(dirname "$BUNDLE")"
           aws s3 cp "s3://$BUCKET/bundles/$SHA.zip" "$BUNDLE" --only-show-errors
-          python scripts/build_bundle.py --describe "$BUNDLE" > /dev/null
           stored="$(openssl dgst -sha256 -binary "$BUNDLE" | openssl base64 -A)"
           if [ "$stored" != "$DIGEST" ]; then
             echo "::error::bundles/$SHA.zip has sha256 $stored, but $ENVIRONMENT released $DIGEST"
             exit 1
           fi
+          printf '{"bundle_path": "%s", "bundle_sha256": "%s"}\n' "$BUNDLE" "$stored" > "${BUNDLE%.zip}.tfvars.json"
       - uses: hashicorp/setup-terraform@v3
         if: steps.release.outputs.sha
         with:

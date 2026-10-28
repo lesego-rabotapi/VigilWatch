@@ -299,6 +299,12 @@ def test_the_record_job_is_given_the_digest_the_plan_deployed():
 REBUILD = ("deploy-environment.yml", "plan", "Check the stored bundle is this commit's code")
 
 
+def _head() -> str:
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
 def _head_bundle(tmp_path):
     import sys
 
@@ -312,16 +318,13 @@ def _head_bundle(tmp_path):
 def test_a_stored_bundle_that_rebuilds_from_its_commit_is_deployed(tmp_path):
     """A rollback has no current release record to compare with, but the build is
     reproducible: the commit itself says which bytes are right."""
-    head = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True
-    ).stdout.strip()
     ran = run(
         find_step(*REBUILD)["run"],
         tmp_path,
         env={
             "BUNDLE": _head_bundle(tmp_path).as_posix(),
             "RUNNER_TEMP": str(tmp_path),
-            "SHA": head,
+            "SHA": _head(),
         },
     )
     assert ran.status == 0, ran.output
@@ -334,7 +337,7 @@ def test_a_stored_bundle_that_is_not_its_commits_code_is_refused(tmp_path, bundl
     ran = run(
         find_step(*REBUILD)["run"],
         tmp_path,
-        env={"BUNDLE": path.as_posix(), "RUNNER_TEMP": str(tmp_path)},
+        env={"BUNDLE": path.as_posix(), "RUNNER_TEMP": str(tmp_path), "SHA": _head()},
     )
     assert ran.status == 1
     assert "::error::" in ran.output

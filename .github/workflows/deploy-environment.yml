@@ -68,9 +68,17 @@ jobs:
       run:
         working-directory: terraform/envs/${{ inputs.environment }}
     steps:
+      # Every deploy starts here (deploy-dev, promote-prod and rollback call this workflow, and
+      # github.ref is the caller's): a dispatch from another branch fails in red, never skips.
       - name: Check the inputs
         working-directory: .
+        env:
+          REF: ${{ github.ref }}
         run: |
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::run this workflow from main, not $REF"
+            exit 1
+          fi
           case "$ENVIRONMENT" in
             dev|prod) ;;
             *) echo "::error::environment must be dev or prod, got '$ENVIRONMENT'"; exit 1 ;;
@@ -154,7 +162,7 @@ jobs:
         if: ${{ !inputs.build }}
         working-directory: .
         run: |
-          python scripts/build_bundle.py --out "$RUNNER_TEMP/rebuilt/vigilwatch.zip" --allow-dirty > /dev/null
+          python scripts/build_bundle.py --out "$RUNNER_TEMP/rebuilt/vigilwatch.zip" --rev "$SHA" > /dev/null
           if ! cmp "$RUNNER_TEMP/rebuilt/vigilwatch.zip" "$BUNDLE"; then
             echo "::error::bundles/$SHA.zip is not what $SHA builds: refusing to deploy it"
             exit 1
@@ -163,13 +171,14 @@ jobs:
         id: bundle
         working-directory: .
         run: |
-          # The commit's own script writes its Terraform variables; the digest needs no script.
-          python scripts/build_bundle.py --describe "$BUNDLE" > /dev/null
+          # One digest, computed without any commit's script: checked here, given to Terraform
+          # below, and recorded in releases/<environment> after the smoke test.
           digest="$(openssl dgst -sha256 -binary "$BUNDLE" | openssl base64 -A)"
           if [ -n "${DEV_BUNDLE_SHA256:-}" ] && [ "$digest" != "$DEV_BUNDLE_SHA256" ]; then
             echo "::error::bundles/$SHA.zip has sha256 $digest, but dev released $DEV_BUNDLE_SHA256: refusing other bytes"
             exit 1
           fi
+          printf '{"bundle_path": "%s", "bundle_sha256": "%s"}\n' "$BUNDLE" "$digest" > "${BUNDLE%.zip}.tfvars.json"
           echo "sha256=$digest" >> "$GITHUB_OUTPUT"
           echo "bundle for $SHA: sha256 $digest" >> "$GITHUB_STEP_SUMMARY"
       - uses: hashicorp/setup-terraform@v3
