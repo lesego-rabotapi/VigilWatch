@@ -95,10 +95,10 @@ left out because the fix that follows each is the change.
   only if that still names the commit, so re-running an old run's smoke and record jobs cannot record a commit
   that a newer deploy replaced, whatever it changed, even one whose apply failed halfway. Dev never deploys a
   commit older than the one in that marker, so re-running an old dev deploy is refused; a commit that lands
-  while another run is in CI just queues. Two edges need someone to re-run a superseded run's failed jobs, and
-  both fail safe: re-running an old failed apply job rewrites the marker before its stale plan is refused, and an
-  apply that fails before changing anything still moves the marker. Either way the worst case is one refused
-  record, until the next deploy writes the marker again.
+  while another run is in CI just queues. `scripts/not_behind.sh` checks both the marker and the last release,
+  in the plan job and again before the apply job moves dev's marker, so re-running one old apply job cannot move
+  it back either. One edge remains and fails safe: an apply that fails before changing anything still moves the
+  marker, so recording the previous commit is refused until the next deploy.
 - Known limits, accepted for a one-maintainer repository: the weekly drift check takes no lock and can report a
   change made by an apply running at that moment (re-run it); and the read-only role that pull request plans use
   can read every state object, prod's included, so anyone who can push a branch can read prod's state. Forks
