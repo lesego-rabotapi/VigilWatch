@@ -11,7 +11,7 @@ And how do we stop a green run from hiding a check that never ran?
 
 ## Decision
 
-**Layout.** `ci.yml` runs on every change. `deploy-dev.yml` deploys dev on every push to `main`, after CI.
+**Layout.** `ci.yml` runs on every change. `deploy-dev.yml` deploys dev on every push to `main`, after CI, or by hand (the first deploy after setup).
 `promote-prod.yml` and `rollback.yml` deploy prod by hand only. All three call one reusable workflow,
 `deploy-environment.yml`, with an environment and a full commit id. The steps are therefore written once:
 plan, apply in a GitHub environment, smoke test, then record the release. `pr-plan.yml` and `drift.yml` only

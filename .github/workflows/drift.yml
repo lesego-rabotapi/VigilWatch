@@ -157,25 +157,25 @@ jobs:
       - name: Open or update the drift issue
         env:
           GH_TOKEN: ${{ github.token }}
+          DETECT: ${{ needs.detect.result }}
           TITLE: Infrastructure drift detected
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          shopt -s nullglob # a leg that failed early left no result
           : > body.md
-          unchecked=""
-          for environment in dev prod; do
-            file="drift-$environment/drift.md"
-            if [ ! -f "$file" ]; then
-              unchecked="${unchecked:+$unchecked }$environment" # its detect job failed early
-            elif [ "$(cat "$file")" != "none" ]; then
+          for file in drift-*/drift.md; do
+            if [ "$(cat "$file")" != "none" ]; then
               cat "$file" >> body.md
               echo >> body.md
             fi
           done
-          if [ -n "$unchecked" ]; then
-            echo "::warning::not checked: $unchecked (see the failed drift job)"
+          if [ "$DETECT" != "success" ]; then
+            echo "::warning::at least one environment could not be checked: see the failed drift job"
+            echo "At least one environment could not be checked this week (its drift job failed)." >> body.md
+            echo >> body.md
           fi
           if [ ! -s body.md ]; then
-            echo "No drift in the environments checked."
+            echo "No drift."
             exit 0
           fi
           echo "Found by $RUN. Reconcile by changing the code and deploying, or revert the change made outside the pipeline." >> body.md

@@ -17,10 +17,10 @@ defaults:
   run:
     shell: bash
 
-# A dispatch from another branch fails at its first deploy step; its own group keeps it from
-# taking the queue's pending slot meanwhile.
+# Grouped by branch: a dispatch from another branch (which fails at the first deploy step, after
+# CI) never takes the pending slot of main's queue.
 concurrency:
-  group: deploy-dev${{ github.ref != 'refs/heads/main' && format('-{0}', github.run_id) || '' }}
+  group: deploy-dev-${{ github.ref }}
   cancel-in-progress: false # never interrupt a running apply
 
 jobs:

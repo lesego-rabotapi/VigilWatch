@@ -132,8 +132,9 @@ alarms that use free Lambda metrics (ADR 0005).
   release (`git rev-list -n 1 v2.<n>`). It redeploys that commit's Terraform and the bundle dev
   stored for it, through the same plan, `production` approval and smoke test, and records it in
   `releases/prod`. Code and infrastructure roll back together. Then fix forward on `main`.
-- **One prod run at a time.** Promotion and rollback share one queue, and GitHub keeps one pending run
-  per queue: starting another while one waits for approval cancels the waiting one. Approve or cancel it first.
+- **One prod run at a time.** Promotion and rollback share one queue. A run waiting for approval is already
+  in progress, so a second run queues behind it; GitHub keeps one pending run per queue, so a third run
+  silently cancels that queued second one. Let the queue drain before starting another.
 - **Through main:** revert the commit (`git revert <sha>`) and push. Dev deploys the revert;
   promote it as usual.
 - **Urgent, pipeline unavailable:** check out the last good commit locally, rebuild its bundle and
