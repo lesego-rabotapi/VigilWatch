@@ -2,19 +2,22 @@
 
 pytest exits 0 when every selected test skipped, so a smoke job whose address was missing, or
 whose marker selected nothing, would look green. This reads pytest's JUnit report and holds the
-run to a minimum: a fixed number, or every test the commit collects. Standard library only.
+run to every test the deployed commit collects, and at least one. Standard library only.
 
     pytest --collect-only -q ... > collected.txt
     pytest ... --junitxml=e2e.xml
-    python scripts/check_junit.py e2e.xml --collected collected.txt    # or --min-tests 4
+    python scripts/check_junit.py e2e.xml --collected collected.txt
 """
 
 import argparse
+import re
 import sys
 import xml.etree.ElementTree as ET  # noqa: S405 - our own pytest report, not untrusted input
 from pathlib import Path
 
 FIELDS = ("tests", "skipped", "failures", "errors")
+# pytest's summary: "4 tests collected in 0.05s", or "4/6 tests collected (2 deselected) ...".
+SUMMARY = re.compile(r"^(\d+)(?:/\d+)? tests? collected", re.M)
 
 
 def counts(report: Path) -> dict[str, int]:
@@ -28,8 +31,10 @@ def counts(report: Path) -> dict[str, int]:
 
 
 def collected(listing: Path) -> int:
-    """Tests in `pytest --collect-only -q` output: one node id ("path::name") per line."""
-    return sum("::" in line for line in listing.read_text(encoding="utf-8").splitlines())
+    """Tests selected in `pytest --collect-only -q` output, from pytest's own summary line; node
+    ids are not counted, since a warnings summary repeats them. No summary means none."""
+    match = SUMMARY.search(listing.read_text(encoding="utf-8"))
+    return int(match.group(1)) if match else 0
 
 
 def problems(totals: dict[str, int], min_tests: int) -> list[str]:
@@ -48,19 +53,19 @@ def problems(totals: dict[str, int], min_tests: int) -> list[str]:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("report", type=Path)
-    minimum = parser.add_mutually_exclusive_group(required=True)
-    minimum.add_argument("--min-tests", type=int)
-    minimum.add_argument(
-        "--collected", type=Path, help="pytest --collect-only -q output: every test must run"
+    parser.add_argument(
+        "--collected",
+        type=Path,
+        required=True,
+        help="pytest --collect-only -q output: every test it lists must run",
     )
     args = parser.parse_args(argv)
     for path, what in ((args.report, "test report"), (args.collected, "collection listing")):
-        if path and not path.is_file():
+        if not path.is_file():
             print(f"gate failed: no {what} at {path}")
             return 1
-    min_tests = collected(args.collected) if args.collected else args.min_tests
     totals = counts(args.report)
-    found = problems(totals, min_tests)
+    found = problems(totals, collected(args.collected))
     for problem in found:
         print(f"gate failed: {problem}")
     if not found:
