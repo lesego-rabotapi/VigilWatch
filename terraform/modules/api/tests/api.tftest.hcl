@@ -123,6 +123,13 @@ run "exports_the_access_log_group_for_the_saved_queries" {
 run "every_access_log_line_is_json_even_when_a_value_is_missing" {
   command = apply
 
+  # Values are written unescaped: free text such as an integration error message could hold a
+  # quote and break the line, so only fixed-form values are logged (errors are in function logs).
+  assert {
+    condition     = !strcontains(aws_apigatewayv2_stage.default.access_log_settings[0].format, "ErrorMessage")
+    error_message = "no free-text value in the access log"
+  }
+
   # API Gateway writes "-" for a value it does not have: only a quoted placeholder stays valid JSON.
   assert {
     condition     = can(jsondecode(replace(aws_apigatewayv2_stage.default.access_log_settings[0].format, "/\\$context\\.[A-Za-z.]+/", "-")))

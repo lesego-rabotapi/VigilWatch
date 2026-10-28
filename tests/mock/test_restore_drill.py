@@ -157,3 +157,43 @@ def test_a_scratch_table_created_before_the_client_saw_an_error_is_still_deleted
     with pytest.raises(RuntimeError, match="read timeout"):
         restore_drill.drill(TABLE, backup, client=client)
     assert set(table_names()) == {TABLE, "vigilwatch-history"}
+
+
+@pytest.mark.negative
+def test_a_scratch_table_still_being_created_is_waited_for_then_deleted(backup):
+    """On AWS a table is CREATING for a while and cannot be deleted until it is ACTIVE."""
+    client = boto3.client("dynamodb")
+    real_delete = client.delete_table
+    calls = []
+
+    def busy_once(**kwargs):
+        calls.append(kwargs["TableName"])
+        if len(calls) == 1:
+            raise client.exceptions.ResourceInUseException(
+                {"Error": {"Code": "ResourceInUseException", "Message": "creating"}}, "DeleteTable"
+            )
+        return real_delete(**kwargs)
+
+    client.delete_table = busy_once
+    restore_drill.drill(TABLE, backup, client=client)
+    assert len(calls) == 2
+    assert set(table_names()) == {TABLE, "vigilwatch-history"}
+
+
+@pytest.mark.negative
+def test_a_scratch_name_already_taken_is_never_deleted(backup, monkeypatch):
+    """The name belongs to another table, perhaps another drill's: not ours to delete."""
+    monkeypatch.setattr(restore_drill, "scratch_name", lambda source: f"{source}-drill-taken")
+    boto3.client("dynamodb").create_table(
+        TableName=f"{TABLE}-drill-taken",
+        KeySchema=[{"AttributeName": "endpoint_id", "KeyType": "HASH"}],
+        AttributeDefinitions=[{"AttributeName": "endpoint_id", "AttributeType": "S"}],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    with pytest.raises(boto3.client("dynamodb").exceptions.ResourceInUseException):
+        restore_drill.drill(TABLE, backup)
+    assert f"{TABLE}-drill-taken" in table_names()
+
+
+def test_two_drills_started_together_get_different_scratch_tables():
+    assert restore_drill.scratch_name(TABLE) != restore_drill.scratch_name(TABLE)

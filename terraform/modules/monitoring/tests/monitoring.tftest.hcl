@@ -231,6 +231,11 @@ run "table_capacity_is_drawn_per_second_to_compare_with_what_is_provisioned" {
 run "the_api_queries_compare_numbers" {
   command = apply
 
+  assert {
+    condition     = !strcontains(aws_cloudwatch_query_definition.query["api-5xx"].query_string, "error")
+    error_message = "the access log has no error field; error details are in the function logs"
+  }
+
   # The access log quotes every value (a missing one is "-"), so the queries convert explicitly.
   assert {
     condition     = strcontains(aws_cloudwatch_query_definition.query["api-5xx"].query_string, "toNumber(status) >= 500")

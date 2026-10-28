@@ -137,3 +137,12 @@ def test_the_runbook_says_how_to_back_up_restore_and_drill():
     runbook = text(RUNBOOK)
     for script in ("backup_tables.py", "restore_tables.py", "restore_drill.py"):
         assert script in runbook, script
+
+
+@pytest.mark.req("VW-024")
+def test_the_docs_say_to_pause_registrations_during_a_restore():
+    """The counter is set after the items are written: a registration in between could pass
+    the cap, so nobody registers while a restore runs."""
+    for doc in (RESILIENCE, RUNBOOK):
+        assert "pause registrations" in text(doc).lower(), doc.name
+    assert "may continue during a restore" not in text(ROOT / "scripts" / "restore_tables.py")
