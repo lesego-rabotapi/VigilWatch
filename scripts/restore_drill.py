@@ -23,6 +23,8 @@ import restore_tables
 from backup_tables import canonical, key_names, scan
 
 MAX_UNITS = 5
+# The drill log's header in docs/resilience.md; each run prints one row under it.
+LOG_HEADER = "| Date | Table | Backup sha256 | Items | Sampled | Restore seconds | Result |"
 
 
 @dataclass
@@ -109,7 +111,7 @@ def main(argv=None) -> int:
         print(f"drill failed: {problem}")
     digest = hashlib.sha256(args.source.read_bytes()).hexdigest()[:12]
     outcome = "fail" if result.problems else "pass"
-    print("| Date | Table | Backup sha256 | Items | Sampled | Restore seconds | Result |")
+    print(LOG_HEADER)
     print(
         f"| {datetime.now(UTC):%Y-%m-%d} | {args.table} | {digest} | {result.items} "
         f"| {result.sampled} | {result.seconds:.1f} | {outcome} |"

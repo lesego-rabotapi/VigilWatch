@@ -40,7 +40,8 @@ EventBridge rate(5 minutes) ──> Lambda uptime_check ──> DynamoDB (endpoi
 CloudWatch: logs (14 days), EMF metrics, 4 alarms ──> SNS
 ```
 
-More detail: [docs/README.md](docs/README.md). Operations: [docs/RUNBOOK.md](docs/RUNBOOK.md).
+More detail: [docs/README.md](docs/README.md). Operations: [docs/RUNBOOK.md](docs/RUNBOOK.md). Recovery and
+service levels: [docs/resilience.md](docs/resilience.md), [docs/slo.md](docs/slo.md).
 Decisions: [docs/adr/](docs/adr/).
 
 ## Why these technologies?

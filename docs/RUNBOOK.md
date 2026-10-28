@@ -111,6 +111,9 @@ API_URL_DEV=$(terraform output -raw api_base_url) DASHBOARD_URL_DEV=$(terraform 
 | Change check interval / thresholds / cap / throttling | Set `check_interval_minutes`, `failure_threshold`, `recovery_threshold`, `reminder_minutes`, `max_endpoints`, `api_throttle_rate` or `api_throttle_burst` in that environment's `terraform.tfvars` (unset means the module default), then plan/apply in `terraform/envs/<env>` |
 | Inspect failed runs | `aws sqs receive-message --queue-url "$(terraform -chdir=terraform/envs/prod output -raw checker_dlq_url)"` |
 | A "Infrastructure drift detected" issue | The weekly `drift.yml` found a resource that differs from its state (a console change). Read the plan in the issue, then either put the change into code and deploy it, or undo it by redeploying the released commit (`rollback.yml` with the commit in `releases/prod`). Close the issue once the next drift run is clean |
+| Back up the monitored URLs | `python scripts/backup_tables.py --table vigilwatch-prod-endpoints --out backups/endpoints-$(date +%F).jsonl` (after changing the list, and weekly; `docs/resilience.md`) |
+| Restore them | `python scripts/restore_tables.py --table vigilwatch-prod-endpoints --from backups/<file>.jsonl` (idempotent; recreate the table with `terraform apply` first if it is gone) |
+| Prove a backup restores | `python scripts/restore_drill.py --table vigilwatch-prod-endpoints --from backups/<file>.jsonl`, then paste its row into the drill log in `docs/resilience.md` |
 | Which commit runs where | `aws s3 cp s3://<state bucket>/releases/dev -` (and `releases/prod`): the commit, then the SHA-256 of its bundle |
 
 ## 5. Alarms
@@ -178,3 +181,60 @@ No workflow runs `terraform destroy`: tearing an environment down is always a de
 
 The bootstrap stack's state bucket has `prevent_destroy`. Remove that line deliberately if you
 really want to delete it.
+
+## 9. Dashboard shows no data
+
+When a monitored URL shows no checks, follow the data from where it is written to where it is shown.
+Each path has its own test, and the first path that is empty is where the fault is. Set the
+environment first:
+
+```bash
+cd terraform/envs/prod
+API="$(terraform output -raw api_base_url)"
+URL="https://example.com"   # the monitored URL, as registered
+ID="$(python -c "import sys; sys.path.insert(0, '../../../lambda'); from common.urlguard import normalize, endpoint_id; print(endpoint_id(normalize(sys.argv[1])))" "$URL")"
+```
+
+**Write path: did the checker store anything?**
+
+```bash
+aws dynamodb get-item --table-name "$(terraform output -raw endpoints_table)" --key "{\"endpoint_id\": {\"S\": \"$ID\"}}"
+aws dynamodb query --table-name "$(terraform output -raw history_table)" \
+  --key-condition-expression "endpoint_id = :id AND begins_with(sk, :c)" \
+  --expression-attribute-values "{\":id\": {\"S\": \"$ID\"}, \":c\": {\"S\": \"C#\"}}" \
+  --scan-index-forward false --max-items 5
+```
+
+No endpoint item: the URL was never registered, or the table was lost (`docs/resilience.md`). An item but
+no recent `C#` checks: the checker is not running or not reaching it. Run the `checker-runs` saved query
+and look at the `checker-not-running` and `checker-errors` alarms.
+
+**Read path: does the API return it?**
+
+```bash
+aws apigatewayv2 get-routes --api-id "$(aws apigatewayv2 get-apis --query "Items[?Name=='vigilwatch-prod-http'].ApiId" --output=text)" --query "Items[].RouteKey"
+curl -sS "$API/checks?url=$URL" -o checks.json -w "%{http_code}\n"
+```
+
+The routes must include `GET /checks` and `POST /register`. A 4xx names the problem in its `code` field. A
+5xx is in the `api-5xx` saved query and the function's log group.
+
+**Display path: can the dashboard draw what the API returned?**
+
+```bash
+python -c "import json, jsonschema; jsonschema.validate(json.load(open('checks.json')), json.load(open('../../../tests/contract/checks_response.schema.json'))); print('payload matches the schema')"
+```
+
+A payload that matches the schema but shows nothing points at the browser: open the developer tools
+console and network tab on the dashboard, and check the request went to `$API` and was not blocked by
+CORS (allowed origins: `terraform output dashboard_url`).
+
+## 10. IAM iteration log
+
+The deploy and plan roles in `terraform/bootstrap` were written from the resources Terraform manages, not
+from a real first apply. Expect access-denied errors on the first deploys (Stage 10) and fix them one by
+one: add the narrowest permission that the error names, apply the bootstrap stack, and log it here, so the
+roles' history is evidence, not guesswork. `NEEDS-AWS`: no entries yet.
+
+| Date | Error | Permission added | Reason |
+|---|---|---|---|

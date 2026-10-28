@@ -1,8 +1,8 @@
 """Check that every environment together stays inside one AWS account's free tier.
 
 `terraform validate` sees one environment at a time, but dev and prod share an account and so share
-its 25 DynamoDB units, 10 alarms, 10 custom metrics and 3 dashboards. Standard library only, so the Terraform CI
-job can run it without installing anything.
+its 25 DynamoDB units, 10 alarms, 10 custom metrics and 3 dashboards. Standard library only, so the
+Terraform CI job can run it without installing anything.
 
     python scripts/free_tier_budget.py            # exit 1 and a reason per problem if over budget
 """
