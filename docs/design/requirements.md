@@ -220,3 +220,11 @@ As an owner I want to get my monitored URLs back after a table is lost or damage
 - A restore writes a backup back and is idempotent: restoring twice leaves the same table.
 - A drill restores a backup into a scratch table, compares the item count and a sample with the backup, reports the time taken, and always deletes the scratch table.
 - History is not backed up: raw checks expire in 48 h and rollups and incidents in 31 d, so the checker rebuilds it.
+### VW-025: Measurable service levels
+
+As an owner I want stated service levels for the monitor and a dashboard that shows whether they hold.
+
+**Acceptance:**
+- Each environment has one dashboard with the four golden signals (latency, traffic, errors, saturation) for its API, functions, queue and tables.
+- Saved Logs Insights queries cover function errors, checker runs, API server errors and slow API requests.
+- `docs/slo.md` states each objective, how it is measured, its error budget and the alarm that guards it.

@@ -110,3 +110,12 @@ run "rejects_an_unbounded_throttle" {
   }
   expect_failures = [var.throttle_rate]
 }
+
+run "exports_the_access_log_group_for_the_saved_queries" {
+  command = apply
+
+  assert {
+    condition     = output.access_log_group == "/aws/apigateway/vigilwatch-dev-http"
+    error_message = "the monitoring module reads this environment's access log group by name"
+  }
+}

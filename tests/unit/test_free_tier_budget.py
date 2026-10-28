@@ -128,3 +128,16 @@ def test_a_missing_setting_is_named_not_a_bare_key_error(tmp_path):
 
 def test_the_command_passes_on_the_repository():
     assert free_tier_budget.main([]) == 0
+
+
+@pytest.mark.negative
+def test_more_than_three_dashboards_are_reported(tmp_path):
+    """Each environment has one golden-signals dashboard; three dashboards are free."""
+    envs = {f"e{n}": DEV for n in range(4)}
+    problems = free_tier_budget.violations(write_envs(tmp_path, **envs))
+    assert any("dashboards: 4" in p for p in problems)
+
+
+def test_three_dashboards_fit(tmp_path):
+    problems = free_tier_budget.violations(write_envs(tmp_path, a=DEV, b=DEV, c=DEV))
+    assert not any("dashboards" in p for p in problems)
