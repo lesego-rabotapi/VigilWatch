@@ -1,7 +1,7 @@
 """Check that every environment together stays inside one AWS account's free tier.
 
 `terraform validate` sees one environment at a time, but dev and prod share an account and so share
-its 25 DynamoDB units, 10 alarms and 10 custom metrics. Standard library only, so the Terraform CI
+its 25 DynamoDB units, 10 alarms, 10 custom metrics and 3 dashboards. Standard library only, so the Terraform CI
 job can run it without installing anything.
 
     python scripts/free_tier_budget.py            # exit 1 and a reason per problem if over budget
@@ -21,6 +21,8 @@ FREE_ALARMS = 10
 FREE_CUSTOM_METRICS = 10
 TABLES_PER_ENVIRONMENT = 2
 CHECKER_CUSTOM_METRICS = 7  # see lambda/uptime_check.py _emf
+FREE_DASHBOARDS = 3  # of up to 50 metrics each
+DASHBOARDS_PER_ENVIRONMENT = 1  # terraform/modules/monitoring/dashboard.tf
 
 
 _TOKEN = re.compile(
@@ -129,6 +131,10 @@ def violations(envs: Path = ENVS) -> list[str]:
         problems.append(
             f"custom metrics: {publishing} would publish {metrics}, {FREE_CUSTOM_METRICS} are free"
         )
+
+    dashboards = DASHBOARDS_PER_ENVIRONMENT * len(environments)
+    if dashboards > FREE_DASHBOARDS:
+        problems.append(f"CloudWatch dashboards: {dashboards} in total, {FREE_DASHBOARDS} are free")
     return problems
 
 

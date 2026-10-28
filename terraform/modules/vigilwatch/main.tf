@@ -78,4 +78,10 @@ module "monitoring" {
   dead_letter_queue = module.compute.dlq_name
   api_id            = module.api.api_id
   enabled_alarms    = var.enabled_alarms
+
+  aws_region           = var.aws_region
+  function_names       = module.compute.function_names
+  tables               = [module.data.endpoints_table_name, module.data.history_table_name]
+  api_access_log_group = module.api.access_log_group
+  metrics_enabled      = var.metrics_enabled
 }

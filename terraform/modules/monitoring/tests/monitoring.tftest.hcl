@@ -131,7 +131,20 @@ run "the_dashboard_shows_the_four_golden_signals" {
       for w in jsondecode(aws_cloudwatch_dashboard.golden_signals.dashboard_body).widgets :
       length(try(w.properties.metrics, []))
     ]) <= 50
-    error_message = "a free dashboard shows at most 50 metrics"
+    error_message = "a free dashboard shows at most 50 metrics, this one ${sum([for w in jsondecode(aws_cloudwatch_dashboard.golden_signals.dashboard_body).widgets : length(try(w.properties.metrics, []))])}"
+  }
+}
+
+run "every_metric_is_a_whole_line_namespace_name_and_dimensions" {
+  command = apply
+
+  assert {
+    condition = alltrue(flatten([
+      for w in jsondecode(aws_cloudwatch_dashboard.golden_signals.dashboard_body).widgets : [
+        for m in try(w.properties.metrics, []) : can(length(m)) && length(m) >= 4
+      ]
+    ]))
+    error_message = "a metric line split into loose strings (flatten does that) shows nothing"
   }
 }
 
@@ -186,12 +199,12 @@ run "saved_queries_cover_errors_runs_server_errors_and_slow_requests" {
     error_message = "function errors are searched in every function's log group"
   }
   assert {
-    condition     = aws_cloudwatch_query_definition.query["checker-runs"].log_group_names == ["/aws/lambda/vigilwatch-prod-uptime-check"]
+    condition     = aws_cloudwatch_query_definition.query["checker-runs"].log_group_names == tolist(["/aws/lambda/vigilwatch-prod-uptime-check"])
     error_message = "checker runs come from the checker's log group"
   }
   assert {
     condition = alltrue([for k in ["api-5xx", "api-slow"] :
-    aws_cloudwatch_query_definition.query[k].log_group_names == ["/aws/apigateway/vigilwatch-prod-http"]])
+    aws_cloudwatch_query_definition.query[k].log_group_names == tolist(["/aws/apigateway/vigilwatch-prod-http"])])
     error_message = "API queries read the access log"
   }
   assert {

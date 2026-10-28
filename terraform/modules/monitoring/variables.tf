@@ -37,3 +37,33 @@ variable "enabled_alarms" {
     error_message = "enabled_alarms must not list an alarm twice."
   }
 }
+
+variable "aws_region" {
+  description = "Region the dashboard reads its metrics from."
+  type        = string
+}
+
+variable "function_names" {
+  description = "Function name by key (uptime_check, register_endpoint, get_checks)."
+  type        = map(string)
+
+  validation {
+    condition     = contains(keys(var.function_names), "uptime_check")
+    error_message = "function_names must include the checker, uptime_check."
+  }
+}
+
+variable "tables" {
+  description = "Names of this environment's DynamoDB tables, shown on the dashboard."
+  type        = list(string)
+}
+
+variable "api_access_log_group" {
+  description = "Log group of the HTTP API's access log, read by the saved queries."
+  type        = string
+}
+
+variable "metrics_enabled" {
+  description = "Whether the checker publishes its custom metrics here; the dashboard shows ControlProbeFailed only then."
+  type        = bool
+}
