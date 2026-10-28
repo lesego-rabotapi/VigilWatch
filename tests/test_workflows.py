@@ -347,6 +347,18 @@ def test_the_production_smoke_test_is_read_only_and_given_a_url_it_can_read(depl
     assert check["if"] == "${{ inputs.environment == 'prod' }}"
 
 
+def test_the_smoke_test_gets_the_address_of_the_environment_just_applied_only(deploy):
+    """The harness reads API_URL_<ENV> before API_URL. Setting both DEV and PROD names to one
+    address hid which environment a run was meant for; the generic names say just that."""
+    _, wf = deploy
+    smoke = next(s for s in wf["jobs"]["smoke"]["steps"] if "pytest" in str(s.get("run")))
+    addresses = {k: v for k, v in smoke["env"].items() if k.startswith(("API_URL", "DASHBOARD"))}
+    assert addresses == {
+        "API_URL": "${{ needs.apply.outputs.api_base_url }}",
+        "DASHBOARD_URL": "${{ needs.apply.outputs.dashboard_url }}",
+    }
+
+
 def _collected(markers: str) -> int:
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider"]
