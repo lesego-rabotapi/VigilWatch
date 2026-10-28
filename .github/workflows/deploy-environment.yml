@@ -58,6 +58,7 @@ jobs:
   plan:
     name: Plan ${{ inputs.environment }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       id-token: write
@@ -212,6 +213,7 @@ jobs:
     name: Apply ${{ inputs.environment }}
     needs: [plan]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: ${{ inputs.environment == 'prod' && 'production' || '' }}
     outputs:
       api_base_url: ${{ steps.outputs.outputs.api_base_url }}
@@ -274,6 +276,7 @@ jobs:
     name: Smoke test ${{ inputs.environment }}
     needs: [apply]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -313,6 +316,7 @@ jobs:
     name: Record the release of ${{ inputs.environment }}
     needs: [plan, smoke]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       id-token: write

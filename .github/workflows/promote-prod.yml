@@ -32,8 +32,9 @@ jobs:
   # Only reads the release record, so it uses the read-only role.
   resolve:
     name: Choose the commit
-    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' && vars.TF_STATE_BUCKET != '' && vars.AWS_PLAN_ROLE_ARN != '' }}
+    if: ${{ github.ref == 'refs/heads/main' && vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' && vars.TF_STATE_BUCKET != '' && vars.AWS_PLAN_ROLE_ARN != '' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       id-token: write
@@ -88,6 +89,7 @@ jobs:
     name: Tag the release
     needs: [resolve, deploy]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     env:

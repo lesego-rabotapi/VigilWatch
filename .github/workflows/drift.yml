@@ -27,8 +27,9 @@ env:
 jobs:
   detect:
     name: Drift in ${{ matrix.environment }}
-    if: ${{ vars.AWS_PLAN_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' && vars.TF_STATE_BUCKET != '' }}
+    if: ${{ github.ref == 'refs/heads/main' && vars.AWS_PLAN_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' && vars.TF_STATE_BUCKET != '' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -136,6 +137,7 @@ jobs:
     needs: [detect]
     if: ${{ !cancelled() && needs.detect.result != 'skipped' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       issues: write
     steps:

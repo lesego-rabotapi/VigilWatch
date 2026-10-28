@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches-ignore: [main] # main runs CI through deploy.yml (workflow_call)
+    branches-ignore: [main] # main runs CI through deploy-dev.yml (workflow_call)
   workflow_call:
 
 permissions:
@@ -13,6 +13,12 @@ permissions:
 defaults:
   run:
     shell: bash
+
+# A new push to a pull request cancels its superseded run. Every other run (main, through
+# deploy-dev.yml) gets a group of its own, so nothing a deploy waits on is cancelled.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 
 env:
   TF_VERSION: "1.16.6"
@@ -26,6 +32,7 @@ jobs:
   python:
     name: Python (lint, unit, integration, contract)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -54,6 +61,7 @@ jobs:
   terraform:
     name: Terraform (fmt, validate, test, lint)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -81,6 +89,8 @@ jobs:
           terraform -chdir=terraform/bootstrap init -backend=false -input=false
           terraform -chdir=terraform/bootstrap validate
       - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.65.0
       - run: tflint --init --config "$(pwd)/terraform/.tflint.hcl"
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -91,6 +101,7 @@ jobs:
   package:
     name: Package (Lambda runtime image)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -110,6 +121,7 @@ jobs:
   frontend:
     name: Frontend (DOM + contract tests)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: frontend
@@ -126,6 +138,7 @@ jobs:
   security:
     name: Security (secrets, IaC misconfiguration)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:

@@ -27,6 +27,7 @@ jobs:
     name: Plan dev
     if: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.AWS_PLAN_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' && vars.TF_STATE_BUCKET != '' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       id-token: write
@@ -108,6 +109,7 @@ jobs:
     name: Post the plan
     needs: [plan]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       pull-requests: write
     steps:
