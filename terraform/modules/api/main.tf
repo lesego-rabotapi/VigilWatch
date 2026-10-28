@@ -56,9 +56,16 @@ resource "aws_apigatewayv2_stage" "default" {
 
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.api_access.arn
-    # Written by hand, not with jsonencode, so status and latency are JSON numbers: the saved
-    # queries (modules/monitoring) compare them as numbers.
-    format = "{\"requestId\":\"$context.requestId\",\"ip\":\"$context.identity.sourceIp\",\"route\":\"$context.routeKey\",\"status\":$context.status,\"latencyMs\":$context.responseLatency,\"error\":\"$context.integrationErrorMessage\"}"
+    # Every value quoted: API Gateway writes "-" for one it does not have, and only a quoted "-"
+    # keeps the line valid JSON. The saved queries convert status and latency with toNumber().
+    format = jsonencode({
+      requestId = "$context.requestId"
+      ip        = "$context.identity.sourceIp"
+      route     = "$context.routeKey"
+      status    = "$context.status"
+      latencyMs = "$context.responseLatency"
+      error     = "$context.integrationErrorMessage"
+    })
   }
 }
 

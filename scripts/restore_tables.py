@@ -4,9 +4,10 @@ Each item is put whole, so restoring twice leaves the same table. Items in the t
 in the backup are left alone. The whole file is checked before anything is written (typed values,
 key types, no key twice): a damaged backup writes nothing.
 
-The endpoint cap counter (`_system#count`) is not restored: a stale one could be lower than the
-real count and let registrations pass the cap. The restore deletes it instead, and the application
-rebuilds it from the real item count on the next registration.
+Items the application keeps for itself (ids starting with `_`, such as the cap counter) are not
+restored: a stale counter could be lower than the real count and let registrations pass the cap.
+After writing, the restore sets the live counter to the real count with the application's own
+race-safe repair, so registrations may continue during a restore.
 
     python scripts/restore_tables.py --table vigilwatch-prod-endpoints \
         --from backups/endpoints.jsonl
@@ -18,16 +19,19 @@ import binascii
 import json
 import sys
 import time
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import boto3
 
 from backup_tables import TYPES
 
+# The application's own rules for its bookkeeping items, so the two cannot drift apart.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lambda"))
+from common.endpoints_repo import _RESERVED_PREFIX, EndpointRepository  # noqa: E402
+
 BATCH = 25  # BatchWriteItem's limit
-MAX_ATTEMPTS = 8  # about two minutes of backoff before a throttled restore gives up
-BOOKKEEPING = "_system#"  # items the application derives, never restored
-COUNTER_KEY = {"endpoint_id": {"S": "_system#count"}}
+MAX_ATTEMPTS = 8  # about 70 seconds of backoff per batch before a throttled restore gives up
 
 
 def key_types(client, table: str) -> dict[str, str]:
@@ -38,23 +42,58 @@ def key_types(client, table: str) -> dict[str, str]:
     return {k["AttributeName"]: types[k["AttributeName"]] for k in schema}
 
 
+def _number(text) -> Decimal:
+    if not isinstance(text, str):
+        raise ValueError
+    number = Decimal(text)
+    if not number.is_finite():
+        raise ValueError
+    return number
+
+
+def _binary(text) -> bytes:
+    if not isinstance(text, str):
+        raise ValueError
+    return base64.b64decode(text, validate=True)
+
+
 def decode(value) -> dict:
-    """A typed value from the backup, checked, with binary turned back into bytes."""
-    if not isinstance(value, dict) or len(value) != 1 or next(iter(value)) not in TYPES:
-        raise ValueError(f"not a typed DynamoDB value: {value!r}")
-    ((kind, inner),) = value.items()
+    """A typed value from the backup, checked as DynamoDB would, with binary back to bytes."""
     try:
+        if not isinstance(value, dict) or len(value) != 1 or next(iter(value)) not in TYPES:
+            raise ValueError
+        ((kind, inner),) = value.items()
+        if kind in ("SS", "NS", "BS") and (not isinstance(inner, list) or not inner):
+            raise ValueError  # a set is a non-empty list
+        if kind == "S" and isinstance(inner, str):
+            return value
+        if kind == "N":
+            _number(inner)
+            return value
+        if kind == "SS" and all(isinstance(s, str) for s in inner):
+            return value
+        if kind == "NS":
+            [_number(n) for n in inner]
+            return value
         if kind == "B":
-            return {"B": base64.b64decode(inner, validate=True)}
+            return {"B": _binary(inner)}
         if kind == "BS":
-            return {"BS": [base64.b64decode(b, validate=True) for b in inner]}
-    except (binascii.Error, TypeError):
-        raise ValueError(f"binary that is not base64 in a typed value: {value!r}") from None
-    if kind == "M":
-        return {"M": {k: decode(v) for k, v in inner.items()}}
-    if kind == "L":
-        return {"L": [decode(v) for v in inner]}
-    return value
+            return {"BS": [_binary(b) for b in inner]}
+        if kind == "M" and isinstance(inner, dict):
+            return {"M": {k: decode(v) for k, v in inner.items()}}
+        if kind == "L" and isinstance(inner, list):
+            return {"L": [decode(v) for v in inner]}
+        if (kind, inner) == ("NULL", True) or (kind == "BOOL" and isinstance(inner, bool)):
+            return value
+    except (ValueError, InvalidOperation, binascii.Error):
+        pass
+    raise ValueError(f"not a typed DynamoDB value: {value!r}")
+
+
+def _key_value(value: dict):
+    """A key as DynamoDB compares it: 1 and 1.0 are the same number."""
+    ((kind, inner),) = value.items()
+    return (kind, _number(inner).normalize() if kind == "N" else inner)
 
 
 def read_backup(path: Path, keys: dict[str, str]) -> list[dict]:
@@ -76,7 +115,9 @@ def read_backup(path: Path, keys: dict[str, str]) -> list[dict]:
         for name, kind in keys.items():
             if next(iter(item[name])) != kind:
                 raise ValueError(f"{where}: {name} must be of type {kind}")
-        key = tuple(json.dumps(raw[k], sort_keys=True) for k in keys)
+            if item[name][kind] in ("", b""):
+                raise ValueError(f"{where}: {name} is empty, which no key may be")
+        key = tuple(_key_value(item[k]) for k in keys)
         if key in seen:
             raise ValueError(f"{where}: the key {key} appears twice")
         seen.add(key)
@@ -85,8 +126,10 @@ def read_backup(path: Path, keys: dict[str, str]) -> list[dict]:
 
 
 def restorable(items: list[dict]) -> list[dict]:
-    """Everything but the bookkeeping the application rebuilds itself."""
-    return [i for i in items if not i.get("endpoint_id", {}).get("S", "").startswith(BOOKKEEPING)]
+    """Everything but the application's own bookkeeping (ids starting with `_`)."""
+    return [
+        i for i in items if not i.get("endpoint_id", {}).get("S", "").startswith(_RESERVED_PREFIX)
+    ]
 
 
 def write(client, table: str, items: list[dict], pause: float = 0.5) -> None:
@@ -111,8 +154,8 @@ def restore(table: str, path: Path, client=None) -> int:
     keys = key_types(client, table)
     items = restorable(read_backup(path, keys))
     write(client, table, items)
-    if list(keys) == list(COUNTER_KEY):
-        client.delete_item(TableName=table, Key=COUNTER_KEY)  # rebuilt from the real count
+    if list(keys) == ["endpoint_id"]:
+        EndpointRepository(boto3.resource("dynamodb").Table(table)).repair_counter()
     return len(items)
 
 

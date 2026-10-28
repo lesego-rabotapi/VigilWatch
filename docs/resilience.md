@@ -46,9 +46,11 @@ python scripts/restore_drill.py --table vigilwatch-prod-endpoints --from backups
   table always gives the same bytes, and the command prints the file's SHA-256.
 - The restore checks the whole file before writing (typed values, key types, no key twice), puts whole
   items (restoring twice changes nothing), and leaves items that are not in the backup alone. It does not
-  restore the endpoint cap counter, which could be stale and too low: it deletes it, and the application
-  rebuilds it from the real count. A table that stays throttled fails the restore after eight attempts
-  instead of hanging.
+  restore the application's own items (ids starting with `_`, such as the cap counter, which could be stale
+  and too low); it sets the live counter to the real count with the application's race-safe repair, so the
+  API can stay up during a restore. A table that stays throttled fails the restore after eight attempts
+  (about 70 seconds per batch) instead of hanging. The drill log's Items column counts what a restore
+  writes, so it is lower than the backup's item count by those bookkeeping items.
 - The drill never touches the live table. It restores into a scratch table named
   `<table>-drill-<timestamp>`, compares the item count and a fixed sample with the backup, prints the
   time the restore took, and deletes the scratch table even when something fails. The scratch table uses

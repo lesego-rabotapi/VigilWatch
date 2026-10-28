@@ -18,7 +18,6 @@ from pathlib import Path
 
 import boto3
 
-SETS = ("SS", "NS", "BS")
 TYPES = {"S", "N", "B", "SS", "NS", "BS", "M", "L", "NULL", "BOOL"}
 
 

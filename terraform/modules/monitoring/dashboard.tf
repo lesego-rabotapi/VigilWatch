@@ -123,7 +123,7 @@ locals {
       log_groups = [var.api_access_log_group]
       query      = <<-EOT
         fields @timestamp, requestId, route, status, error, latencyMs
-        | filter status >= 500
+        | filter toNumber(status) >= 500
         | sort @timestamp desc
         | limit 50
       EOT
@@ -131,9 +131,9 @@ locals {
     "api-slow" = {
       log_groups = [var.api_access_log_group]
       query      = <<-EOT
-        fields @timestamp, requestId, route, status, latencyMs
-        | filter latencyMs > 500
-        | sort latencyMs desc
+        fields @timestamp, requestId, route, status, toNumber(latencyMs) as latency
+        | filter latency > 500
+        | sort latency desc
         | limit 50
       EOT
     }

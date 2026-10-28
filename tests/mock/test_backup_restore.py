@@ -28,7 +28,7 @@ ITEMS = [
         "codes": {Decimal(200), Decimal(301)},
         "note": None,
     },
-    {"endpoint_id": "_system#count", "count": Decimal(2)},
+    {"endpoint_id": "_system#count", "n": Decimal(2)},
 ]
 
 
@@ -62,7 +62,7 @@ def test_two_backups_of_the_same_table_are_identical(table, tmp_path):
 
 
 def test_a_wiped_table_is_restored_exactly_but_for_the_counter(table, tmp_path):
-    """The counter is rebuilt by the application (see the counter test below)."""
+    """The backup's counter is not written; the live one is set to the real count (see below)."""
     out = tmp_path / "endpoints.jsonl"
     backup_tables.backup(TABLE, out)
     before = everything(table)
@@ -70,7 +70,7 @@ def test_a_wiped_table_is_restored_exactly_but_for_the_counter(table, tmp_path):
         table.delete_item(Key={"endpoint_id": item["endpoint_id"]})
     assert everything(table) == []
     assert restore_tables.restore(TABLE, out) == 2
-    assert everything(table) == [i for i in before if i["endpoint_id"] != COUNTER_ID]
+    assert everything(table) == before, "the counter is set to the real count, which was 2"
 
 
 def test_restoring_twice_leaves_the_same_table(table, tmp_path):
@@ -92,8 +92,7 @@ def test_a_large_table_is_read_and_written_in_pages(tables, tmp_path):
     for n in range(130):
         t.delete_item(Key={"endpoint_id": f"https://{n:03}.example"})
     assert restore_tables.restore(TABLE, out) == 130  # more than one 25-item batch
-    pages = boto3.client("dynamodb").get_paginator("scan").paginate(TableName=TABLE)
-    assert sum(page["Count"] for page in pages) == 130
+    assert EndpointRepository(t).count() == 130
 
 
 @pytest.mark.negative

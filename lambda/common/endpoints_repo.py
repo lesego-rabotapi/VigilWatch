@@ -93,6 +93,44 @@ class EndpointRepository:
                 return True  # the counter moved under us; just try the creation again
         return actual < max_endpoints
 
+    def repair_counter(self, attempts: int = 5) -> int:
+        """Set the counter to the real count, for a restore. Returns the value written.
+
+        Like _reconcile, it writes only if the counter still holds the value read before counting,
+        so a registration landing in between makes it stand down and count again. It never deletes
+        the counter: a registration racing a missing counter would start it again from zero.
+        """
+        for _ in range(attempts):
+            item = self.table.get_item(Key={"endpoint_id": COUNTER_ID}, ConsistentRead=True).get(
+                "Item"
+            )
+            actual = self.count()
+            try:
+                if item is None:
+                    self.table.put_item(
+                        Item={"endpoint_id": COUNTER_ID, "n": actual},
+                        ConditionExpression="attribute_not_exists(endpoint_id)",
+                    )
+                elif "n" not in item:
+                    self.table.update_item(
+                        Key={"endpoint_id": COUNTER_ID},
+                        UpdateExpression="SET n = :actual",
+                        ConditionExpression="attribute_not_exists(n)",
+                        ExpressionAttributeValues={":actual": actual},
+                    )
+                else:
+                    self.table.update_item(
+                        Key={"endpoint_id": COUNTER_ID},
+                        UpdateExpression="SET n = :actual",
+                        ConditionExpression="n = :seen",
+                        ExpressionAttributeValues={":actual": actual, ":seen": item["n"]},
+                    )
+                return actual
+            except ClientError as exc:
+                if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                    raise
+        raise RuntimeError(f"the endpoint counter kept changing over {attempts} attempts")
+
     def _restore_missing_counter(self, actual: int, max_endpoints: int) -> bool:
         try:
             self.table.put_item(

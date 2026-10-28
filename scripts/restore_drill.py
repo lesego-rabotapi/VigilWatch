@@ -77,6 +77,20 @@ def _create_scratch_table(client, source: str, name: str) -> None:
     )
 
 
+def _delete_scratch_table(client, name: str) -> None:
+    """Delete it if it exists. A table still being created cannot be deleted yet; one left behind
+    keeps its capacity, so it is named on stderr for deleting by hand."""
+    try:
+        client.delete_table(TableName=name)
+    except client.exceptions.ResourceNotFoundException:
+        return
+    except client.exceptions.ResourceInUseException:
+        print(
+            f"the scratch table {name} is still being created: delete it by hand", file=sys.stderr
+        )
+        raise
+
+
 def drill(source: str, backup_path: Path, client=None, sample: int = 25) -> DrillResult:
     if sample < 1:
         raise ValueError(f"sample must be at least 1, got {sample}")
@@ -85,18 +99,18 @@ def drill(source: str, backup_path: Path, client=None, sample: int = 25) -> Dril
     # What a restore writes: the cap counter is rebuilt by the application, not restored.
     items = restore_tables.restorable(restore_tables.read_backup(backup_path, keys))
     scratch = f"{source}-drill-{datetime.now(UTC):%Y%m%d%H%M%S}"
-    created = False
+    attempted = False
     try:
+        attempted = True  # a create that failed on the client may still have made the table
         _create_scratch_table(client, source, scratch)
-        created = True  # from here on it exists, and costs capacity until deleted
         client.get_waiter("table_exists").wait(TableName=scratch)
         started = time.monotonic()
         restore_tables.write(client, scratch, items)
         seconds = time.monotonic() - started
         restored = list(scan(client, scratch))
     finally:
-        if created:
-            client.delete_table(TableName=scratch)
+        if attempted:
+            _delete_scratch_table(client, scratch)
     return DrillResult(
         scratch=scratch,
         items=len(items),
