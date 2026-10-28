@@ -25,15 +25,20 @@ BASH = shutil.which("bash")
 SHA = "a" * 40
 OTHER_SHA = "b" * 40
 
-# A fake AWS CLI for the S3 calls the workflows make. RECORD is the content of the release
-# record (unset: there is none). AWS_FAILS makes every call fail the way a wrong bucket or a
-# missing permission does. Every call is logged to AWS_LOG; objects written from stdin are
-# saved under AWS_WRITTEN; a download to a file copies FIXTURE.
+# A fake AWS CLI for the calls the workflows make. RECORD is the content of the release record
+# read (unset: there is none). AWS_FAILS makes every call fail the way a wrong bucket or a
+# missing permission does. RUNNING is the CodeSha256 of the deployed checker. Every call is
+# logged to AWS_LOG; an object written from stdin is saved under AWS_STORE at its key; a
+# download to a file copies FIXTURE.
 FAKE_AWS = r"""
 echo "$*" >> "$AWS_LOG"
 if [ -n "${AWS_FAILS:-}" ]; then
   echo "An error occurred (AccessDenied) when calling the operation: Access Denied" >&2
   exit 254
+fi
+if [ "$1 $2" = "lambda get-function" ]; then
+  printf '%s\n' "$RUNNING"
+  exit 0
 fi
 if [ "$1 $2" = "s3api list-objects-v2" ]; then
   while [ "$#" -gt 0 ]; do
@@ -45,8 +50,9 @@ if [ "$1 $2" = "s3api list-objects-v2" ]; then
 fi
 if [ "$1 $2" = "s3 cp" ]; then
   if [ "$3" = "-" ]; then
-    cat > "$AWS_WRITTEN"
-    echo "$4" >> "$AWS_WRITTEN.key"
+    key="${4#s3://*/}"
+    mkdir -p "$AWS_STORE/$(dirname "$key")"
+    cat > "$AWS_STORE/$key"
   elif [ "$4" = "-" ]; then
     if [ -z "${RECORD+set}" ]; then
       echo "fatal error: An error occurred (404) when calling the HeadObject operation" >&2
@@ -110,7 +116,7 @@ def run(script: str, tmp_path: Path, env=None, stubs=None, cwd=ROOT) -> Ran:
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
         "PYTHON_UNDER_TEST": os.environ.get("PYTHON_UNDER_TEST", shutil.which("python") or ""),
         "AWS_LOG": str(tmp_path / "aws.log"),
-        "AWS_WRITTEN": str(tmp_path / "written"),
+        "AWS_STORE": str(tmp_path / "s3"),
         "GITHUB_WORKSPACE": str(tmp_path),
         "BUCKET": "state-bucket",
         "SHA": SHA,
@@ -267,24 +273,66 @@ def test_prod_deploys_a_stored_bundle_with_the_digest_dev_released(tmp_path, bun
 
 
 def test_the_release_record_holds_the_commit_and_its_bundle_digest(tmp_path, bundle):
+    """releases/<env> says what runs now; releases/history/<env>/<sha> that it once passed."""
     _, digest = bundle
     ran = run(
         find_step(*RECORD)["run"],
         tmp_path,
-        env={"ENVIRONMENT": "dev", "DIGEST": digest},
+        env={"ENVIRONMENT": "dev", "DIGEST": digest, "RUNNING": digest},
     )
     assert ran.status == 0, ran.output
-    assert (tmp_path / "written").read_text(encoding="utf-8") == f"{SHA} {digest}"
-    assert (tmp_path / "written.key").read_text(encoding="utf-8").strip() == (
-        "s3://state-bucket/releases/dev"
-    )
+    store = tmp_path / "s3"
+    assert (store / "releases" / "dev").read_text(encoding="utf-8") == f"{SHA} {digest}"
+    history = store / "releases" / "history" / "dev" / SHA
+    assert history.read_text(encoding="utf-8") == f"{SHA} {digest}"
 
 
 @pytest.mark.negative
 def test_a_release_without_a_digest_is_not_recorded(tmp_path):
     ran = run(find_step(*RECORD)["run"], tmp_path, env={"ENVIRONMENT": "dev", "DIGEST": ""})
     assert ran.status == 1
-    assert not (tmp_path / "written").exists()
+    assert not (tmp_path / "s3").exists()
+
+
+@pytest.mark.negative
+def test_a_rerun_after_a_newer_deploy_does_not_record_the_older_commit(tmp_path, bundle):
+    """Re-running an old run's smoke and record jobs tests and would record what no longer
+    runs: the environment's checker must hold exactly this bundle."""
+    _, digest = bundle
+    ran = run(
+        find_step(*RECORD)["run"],
+        tmp_path,
+        env={"ENVIRONMENT": "dev", "DIGEST": digest, "RUNNING": "N" * 43 + "="},
+    )
+    assert ran.status == 1
+    assert "::error::" in ran.output and "newer deploy" in ran.output
+    assert not (tmp_path / "s3").exists()
+    assert "vigilwatch-dev-uptime-check" in (tmp_path / "aws.log").read_text(encoding="utf-8")
+
+
+ROLLBACK = ("deploy-environment.yml", "plan", "Roll back only to a commit dev released")
+
+
+def test_a_rollback_target_dev_released_carries_its_digest_into_the_plan(tmp_path, bundle):
+    _, digest = bundle
+    ran = run(find_step(*ROLLBACK)["run"], tmp_path, env={"RECORD": f"{SHA} {digest}"})
+    assert ran.status == 0, ran.output
+    assert ran.env["DEV_BUNDLE_SHA256"] == digest
+    assert f"releases/history/dev/{SHA}" in (tmp_path / "aws.log").read_text(encoding="utf-8")
+
+
+@pytest.mark.negative
+@pytest.mark.security
+def test_a_rollback_to_a_commit_dev_never_released_is_refused(tmp_path):
+    """A stored bundle only proves dev built it; its apply or smoke test may have failed."""
+    ran = run(find_step(*ROLLBACK)["run"], tmp_path)
+    assert ran.status == 1
+    assert "::error::" in ran.output and "never released" in ran.output
+
+
+def test_the_rollback_check_runs_only_for_rollbacks():
+    step = find_step(*ROLLBACK)
+    assert step["if"] == "${{ !inputs.build && !inputs.require_dev_release }}"
 
 
 def test_the_record_job_is_given_the_digest_the_plan_deployed():
@@ -510,16 +558,23 @@ def test_drift_found_goes_into_the_issue(tmp_path):
 
 @pytest.mark.negative
 @pytest.mark.parametrize("results", [[], ["dev"]], ids=["none-checked", "prod-unchecked"])
-def test_an_environment_that_went_unchecked_is_reported_in_the_issue(tmp_path, results):
-    """A failed detect leg (a wrong branch, an AWS error, a digest mismatch) must reach the
-    people watching the issue, not only a run annotation; and no claim of 'no drift'."""
+def test_a_failed_check_alone_opens_no_drift_issue_and_claims_no_clean_week(tmp_path, results):
+    """A failed detect leg is a failed run, which GitHub reports; an issue titled 'drift
+    detected' would send someone looking for a console change that never happened."""
     for environment in results:
         _result(tmp_path, environment, "none\n")
     ran = _report(tmp_path, "failure")
     assert ran.status == 0, ran.output
-    assert "No drift." not in ran.output
+    assert "No drift." not in ran.output and "::warning::" in ran.output
+    assert not (tmp_path / "gh.log").exists()
+
+
+def test_drift_found_while_another_check_failed_says_so_in_the_issue(tmp_path):
+    _result(tmp_path, "dev", "### Drift in dev\n~ aws_sns_topic.alerts\n")
+    ran = _report(tmp_path, "failure")
+    assert ran.status == 0, ran.output
     log = (tmp_path / "gh.log").read_text(encoding="utf-8")
-    assert "issue create" in log and "could not be checked" in log
+    assert "Drift in dev" in log and "could not be checked" in log
 
 
 def test_the_report_reads_every_environment_the_matrix_ran():
@@ -618,8 +673,72 @@ def test_choosing_the_commit_only_reads_so_it_uses_the_read_only_role():
         if "configure-aws-credentials" in s.get("uses", "")
     ]
     assert roles == ["${{ vars.AWS_PLAN_ROLE_ARN }}"]
-    assert "vars.AWS_PLAN_ROLE_ARN != ''" in resolve["if"]
+    assert "AWS_PLAN_ROLE_ARN" not in resolve["if"], "a missing role must fail, not skip in green"
     assert any("actions/checkout" in s.get("uses", "") for s in resolve["steps"])
+
+
+PLAN_ROLE = ("promote-prod.yml", "resolve", "Require the read-only role")
+
+
+@pytest.mark.negative
+def test_promotion_without_the_read_only_role_fails_with_the_fix(tmp_path):
+    ran = run(find_step(*PLAN_ROLE)["run"], tmp_path, env={"PLAN_ROLE": ""})
+    assert ran.status == 1
+    assert "::error::" in ran.output and "AWS_PLAN_ROLE_ARN" in ran.output
+
+
+def test_promotion_with_the_read_only_role_goes_ahead(tmp_path):
+    ran = run(find_step(*PLAN_ROLE)["run"], tmp_path, env={"PLAN_ROLE": "arn:aws:iam::0:role/x"})
+    assert ran.status == 0, ran.output
+
+
+# ---- Dev deploys main's newest commit -----------------------------------------------------------
+
+ON_MAIN = ("deploy-environment.yml", "plan", "Deploy only commits that are on main")
+
+
+@pytest.fixture
+def history(tmp_path):
+    """A repository whose main has two commits: (older, newest)."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args):
+        return subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+
+    git("init", "-q")
+    shas = []
+    for n in range(2):
+        (repo / "f").write_text(str(n), encoding="utf-8")
+        git("add", "f")
+        git("commit", "-q", "-m", f"c{n}")
+        shas.append(git("rev-parse", "HEAD"))
+    git("update-ref", "refs/remotes/origin/main", shas[-1])
+    return repo, shas
+
+
+@pytest.mark.parametrize(
+    "build, which, passes", [(True, 1, True), (True, 0, False), (False, 0, True)]
+)
+def test_dev_builds_only_mains_newest_commit(tmp_path, history, build, which, passes):
+    """Re-running a week-old dev deploy would put old code on dev and make it the commit
+    promotion picks; a prod rollback to an older commit stays allowed."""
+    repo, shas = history
+    ran = run(
+        find_step(*ON_MAIN)["run"],
+        tmp_path,
+        env={"SHA": shas[which], "BUILD": str(build).lower()},
+        cwd=repo,
+    )
+    assert (ran.status == 0) is passes, ran.output
+    if not passes:
+        assert "::error::" in ran.output and "newest" in ran.output
 
 
 @pytest.mark.negative
