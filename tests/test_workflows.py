@@ -361,21 +361,41 @@ def _collected(markers: str) -> int:
 
 def test_the_smoke_gate_fails_on_any_skip_or_a_short_run(deploy):
     """Prod runs only the read-only smoke tests and dev runs all of them; in both, a skipped or
-    missing test turns the job red (CI gate integrity)."""
+    missing test turns the job red (CI gate integrity). The minimum is what the deployed commit
+    collects, not a number in today's workflow: a rollback runs an older commit's tests."""
     _, wf = deploy
     smoke = next(s for s in wf["jobs"]["smoke"]["steps"] if "pytest" in str(s.get("run")))
     assert (
         smoke["env"]["MARKERS"] == "${{ inputs.environment == 'prod' && 'e2e and smoke' || 'e2e' }}"
     )
-    assert '-m "$MARKERS"' in smoke["run"] and "--junitxml=" in smoke["run"]
-    assert "scripts/check_junit.py" in smoke["run"] and '--min-tests "$MIN_TESTS"' in smoke["run"]
-    minimum = re.fullmatch(
-        r"\$\{\{ inputs\.environment == 'prod' && '(\d+)' \|\| '(\d+)' \}\}",
-        smoke["env"]["MIN_TESTS"],
-    )
-    assert minimum, smoke["env"]["MIN_TESTS"]
-    assert int(minimum.group(1)) == _collected("e2e and smoke"), "prod minimum = smoke tests"
-    assert int(minimum.group(2)) == _collected("e2e"), "dev minimum = every e2e test"
+    assert "MIN_TESTS" not in smoke["env"] and "--min-tests" not in smoke["run"]
+    lines = smoke["run"].splitlines()
+    collect = next(i for i, line in enumerate(lines) if "--collect-only" in line)
+    run_tests = next(i for i, line in enumerate(lines) if "--junitxml=" in line)
+    gate = next(i for i, line in enumerate(lines) if "scripts/check_junit.py" in line)
+    assert collect < run_tests < gate
+    assert '-m "$MARKERS"' in lines[collect] and '-m "$MARKERS"' in lines[run_tests]
+    assert "> collected.txt" in lines[collect] and "--collected collected.txt" in lines[gate]
+    assert _collected("e2e and smoke") >= 1, "prod needs read-only smoke tests"
+
+
+def test_the_gate_counts_what_pytest_actually_collects(tmp_path):
+    """check_junit reads pytest's own --collect-only -q output, so the two must agree."""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import check_junit
+
+    for markers in ("e2e and smoke", "e2e"):
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider"]
+            + ["-m", markers, "tests/e2e"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        listing = tmp_path / "collected.txt"
+        listing.write_text(result.stdout, encoding="utf-8")
+        assert check_junit.collected(listing) == _collected(markers), markers
 
 
 @pytest.mark.negative

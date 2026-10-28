@@ -56,6 +56,41 @@ def test_counts_are_summed_over_every_suite(tmp_path):
     assert check_junit.counts(path) == {"tests": 4, "skipped": 1, "failures": 0, "errors": 0}
 
 
+def collected(tmp_path, count):
+    """What `pytest --collect-only -q` prints: one node id per test, then a summary."""
+    path = tmp_path / "collected.txt"
+    ids = [f"tests/e2e/test_smoke.py::test_{n}" for n in range(count)]
+    path.write_text("\n".join([*ids, "", f"{count} tests collected in 0.05s"]), encoding="utf-8")
+    return path
+
+
+def test_the_minimum_can_be_what_the_deployed_commit_collects(tmp_path, capsys):
+    """A rollback runs an older commit's tests; a minimum fixed in today's workflow would fail
+    it after the apply."""
+    args = [str(report(tmp_path, tests=3)), "--collected", str(collected(tmp_path, 3))]
+    assert check_junit.main(args) == 0
+    assert "3 ran" in capsys.readouterr().out
+
+
+@pytest.mark.negative
+def test_running_fewer_tests_than_were_collected_fails(tmp_path):
+    args = [str(report(tmp_path, tests=3)), "--collected", str(collected(tmp_path, 4))]
+    assert check_junit.main(args) == 1
+
+
+@pytest.mark.negative
+def test_a_commit_that_collects_nothing_fails(tmp_path, capsys):
+    args = [str(report(tmp_path, tests=0)), "--collected", str(collected(tmp_path, 0))]
+    assert check_junit.main(args) == 1
+    assert "nothing was collected" in capsys.readouterr().out
+
+
+@pytest.mark.negative
+def test_a_minimum_is_required(tmp_path):
+    with pytest.raises(SystemExit):
+        check_junit.main([str(report(tmp_path))])
+
+
 @pytest.mark.negative
 def test_a_missing_report_fails_instead_of_passing_on_nothing(tmp_path, capsys):
     assert check_junit.main([str(tmp_path / "none.xml"), "--min-tests", "1"]) == 1
