@@ -333,6 +333,66 @@ def test_drift_checks_out_the_repository_before_reading_the_record():
     assert first_checkout < names.index("Find the released commit")
 
 
+# ---- Plan on pull requests ----------------------------------------------------------------------
+
+PR_PLAN = ("pr-plan.yml", "plan", "terraform plan")
+FAKE_TERRAFORM = 'printf "%s\\n" "$PLAN_TEXT"; exit "$PLAN_STATUS"'
+RESOURCE_PLAN = """
+  # module.vigilwatch.aws_lambda_function.checker will be updated in-place
+  ~ resource "aws_lambda_function" "checker" {
+    }
+
+Plan: 0 to add, 1 to change, 0 to destroy.
+"""
+OUTPUTS_ONLY_PLAN = """
+Changes to Outputs:
+  + checker_function_name = "vigilwatch-dev-uptime-check"
+
+You can apply this plan to save these new output values to the Terraform
+state, without changing any real infrastructure.
+"""
+
+
+def _pr_plan(tmp_path, text, status):
+    return run(
+        find_step(*PR_PLAN)["run"],
+        tmp_path,
+        env={"PLAN_TEXT": text, "PLAN_STATUS": str(status)},
+        stubs={"terraform": FAKE_TERRAFORM},
+        cwd=tmp_path,
+    )
+
+
+def test_the_pull_request_comment_lists_changed_resources_and_the_totals(tmp_path):
+    ran = _pr_plan(tmp_path, RESOURCE_PLAN, 2)
+    assert ran.status == 0, ran.output
+    comment = (tmp_path / "comment.md").read_text(encoding="utf-8")
+    assert "aws_lambda_function.checker will be updated" in comment
+    assert "Plan: 0 to add, 1 to change, 0 to destroy." in comment
+
+
+def test_a_plan_that_changes_only_outputs_still_gets_a_comment(tmp_path):
+    """Exit code 2 with no 'Plan:' line: grep found nothing and failed the job."""
+    ran = _pr_plan(tmp_path, OUTPUTS_ONLY_PLAN, 2)
+    assert ran.status == 0, ran.output
+    comment = (tmp_path / "comment.md").read_text(encoding="utf-8")
+    assert "Only output values change" in comment
+    assert "checker_function_name" in comment
+
+
+def test_a_plan_with_no_changes_says_so(tmp_path):
+    ran = _pr_plan(tmp_path, "No changes. Your infrastructure matches the configuration.", 0)
+    assert ran.status == 0, ran.output
+    assert "No changes." in (tmp_path / "comment.md").read_text(encoding="utf-8")
+
+
+@pytest.mark.negative
+def test_a_failed_plan_fails_the_job_and_shows_why(tmp_path):
+    ran = _pr_plan(tmp_path, "Error: no valid credential sources", 1)
+    assert ran.status == 1
+    assert "no valid credential sources" in ran.output
+
+
 # ---- Choosing the commit to promote -------------------------------------------------------------
 
 RESOLVE = ("promote-prod.yml", "resolve", "Choose the commit to promote")
