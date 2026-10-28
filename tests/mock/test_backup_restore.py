@@ -122,18 +122,51 @@ def test_the_commands_print_what_they_did(table, tmp_path, capsys):
 
 
 def test_the_cap_counter_is_rebuilt_from_the_real_count_not_restored_stale(table, tmp_path):
-    """A restored counter lower than the real count would let registrations pass the cap; the
-    application rebuilds a missing counter from the items, so the restore leaves it missing."""
+    """A restored counter lower than the real count would let registrations pass the cap. The
+    restore leaves the backup's counter out and sets the live one to the real count. It never
+    deletes it: a registration racing a missing counter would start it again from zero."""
     out = tmp_path / "endpoints.jsonl"
     backup_tables.backup(TABLE, out)  # the counter says 2
-    for n in range(2):
+    for n in range(3):
         table.put_item(Item={"endpoint_id": f"https://new{n}.example", "enabled": True})
-    table.put_item(Item={"endpoint_id": COUNTER_ID, "n": Decimal(4)})
+    table.put_item(Item={"endpoint_id": COUNTER_ID, "n": Decimal(1)})  # stale and too low
     assert restore_tables.restore(TABLE, out) == 2, "the endpoints, not the counter"
-    assert "Item" not in table.get_item(Key={"endpoint_id": COUNTER_ID})
+    counter = table.get_item(Key={"endpoint_id": COUNTER_ID})["Item"]
+    assert counter["n"] == EndpointRepository(table).count() == 5
+
+
+def test_the_counter_repair_stands_down_and_retries_when_a_registration_lands(table, monkeypatch):
+    """The counter is only rewritten if it still holds the value read before counting."""
     repo = EndpointRepository(table)
-    repo._ensure_counter()
-    assert table.get_item(Key={"endpoint_id": COUNTER_ID})["Item"]["n"] == repo.count() == 4
+    real_count = EndpointRepository.count
+    raced = []
+
+    def count_while_someone_registers(self):
+        if not raced:
+            raced.append(True)
+            table.put_item(Item={"endpoint_id": "https://racer.example"})
+            table.update_item(
+                Key={"endpoint_id": COUNTER_ID},
+                UpdateExpression="SET n = n + :one",
+                ExpressionAttributeValues={":one": 1},
+            )
+        return real_count(self)
+
+    monkeypatch.setattr(EndpointRepository, "count", count_while_someone_registers)
+    assert repo.repair_counter() == 3
+    assert table.get_item(Key={"endpoint_id": COUNTER_ID})["Item"]["n"] == 3
+
+
+def test_every_reserved_item_is_left_to_the_application(tables, tmp_path):
+    """The application treats any id starting with '_' as its own bookkeeping."""
+    t = boto3.resource("dynamodb").Table(TABLE)
+    t.put_item(Item={"endpoint_id": "https://a.example"})
+    t.put_item(Item={"endpoint_id": "_meta#schema", "v": Decimal(2)})
+    out = tmp_path / "endpoints.jsonl"
+    backup_tables.backup(TABLE, out)
+    t.delete_item(Key={"endpoint_id": "_meta#schema"})
+    assert restore_tables.restore(TABLE, out) == 1
+    assert "Item" not in t.get_item(Key={"endpoint_id": "_meta#schema"})
 
 
 def test_binary_values_and_nested_sets_round_trip_and_stay_byte_stable(tables, tmp_path):
@@ -174,8 +207,25 @@ def test_a_backup_has_unix_line_endings_on_every_platform(table, tmp_path):
         (['{"endpoint_id": {"S": "a"}, "x": {"Q": "1"}}'], "typed"),
         (['{"endpoint_id": {"N": "1"}}'], "endpoint_id"),
         (['{"endpoint_id": {"S": "a"}}', '{"endpoint_id": {"S": "a"}}'], "twice"),
+        (['{"endpoint_id": {"S": "a"}, "n": {"N": 5}}'], "typed"),
+        (['{"endpoint_id": {"S": "a"}, "n": {"N": "five"}}'], "typed"),
+        (['{"endpoint_id": {"S": "a"}, "tags": {"SS": []}}'], "typed"),
+        (['{"endpoint_id": {"S": "a"}, "m": {"M": []}}'], "typed"),
+        (['{"endpoint_id": {"S": "a"}, "b": {"BOOL": "yes"}}'], "typed"),
+        (['{"endpoint_id": {"S": ""}}'], "empty"),
     ],
-    ids=["untyped-key", "unknown-type", "wrong-key-type", "duplicate"],
+    ids=[
+        "untyped-key",
+        "unknown-type",
+        "wrong-key-type",
+        "duplicate",
+        "number-not-text",
+        "not-a-number",
+        "empty-set",
+        "map-not-object",
+        "bool-not-bool",
+        "empty-key",
+    ],
 )
 def test_a_damaged_backup_writes_nothing(table, tmp_path, lines, reason):
     """Checked whole before the first write, so a bad line late in the file cannot leave the
@@ -203,3 +253,12 @@ def test_a_table_that_stays_throttled_fails_the_restore_instead_of_hanging():
     with pytest.raises(RuntimeError, match="still throttled"):
         restore_tables.write(Throttled(), TABLE, items, pause=0)
     assert Throttled.calls == restore_tables.MAX_ATTEMPTS
+
+
+@pytest.mark.negative
+def test_the_same_key_written_two_ways_is_still_a_duplicate(tmp_path):
+    keys = {"n": "N"}
+    bad = tmp_path / "bad.jsonl"
+    bad.write_text('{"n": {"N": "1"}}\n{"n": {"N": "1.0"}}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="twice"):
+        restore_tables.read_backup(bad, keys)

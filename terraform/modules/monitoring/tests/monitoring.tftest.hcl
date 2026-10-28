@@ -231,12 +231,13 @@ run "table_capacity_is_drawn_per_second_to_compare_with_what_is_provisioned" {
 run "the_api_queries_compare_numbers" {
   command = apply
 
+  # The access log quotes every value (a missing one is "-"), so the queries convert explicitly.
   assert {
-    condition     = strcontains(aws_cloudwatch_query_definition.query["api-5xx"].query_string, "status >= 500")
-    error_message = "the access log writes status as a number"
+    condition     = strcontains(aws_cloudwatch_query_definition.query["api-5xx"].query_string, "toNumber(status) >= 500")
+    error_message = "status is text in the access log"
   }
   assert {
-    condition     = strcontains(aws_cloudwatch_query_definition.query["api-slow"].query_string, "latencyMs > 500")
-    error_message = "the access log writes latency as a number"
+    condition     = strcontains(aws_cloudwatch_query_definition.query["api-slow"].query_string, "toNumber(latencyMs) as latency")
+    error_message = "latency is text in the access log: filter and sort on its number"
   }
 }

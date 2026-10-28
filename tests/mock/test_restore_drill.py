@@ -141,3 +141,19 @@ def test_a_backup_with_the_cap_counter_passes_the_drill(tables, tmp_path):
     backup_tables.backup(TABLE, path)
     result = restore_drill.drill(TABLE, path)
     assert result.problems == [] and result.items == 1
+
+
+@pytest.mark.negative
+def test_a_scratch_table_created_before_the_client_saw_an_error_is_still_deleted(backup):
+    """A create call that times out after the service accepted it still made a table."""
+    client = boto3.client("dynamodb")
+    real_create = client.create_table
+
+    def create_then_fail(**kwargs):
+        real_create(**kwargs)
+        raise RuntimeError("read timeout")
+
+    client.create_table = create_then_fail
+    with pytest.raises(RuntimeError, match="read timeout"):
+        restore_drill.drill(TABLE, backup, client=client)
+    assert set(table_names()) == {TABLE, "vigilwatch-history"}

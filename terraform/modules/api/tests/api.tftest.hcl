@@ -120,16 +120,12 @@ run "exports_the_access_log_group_for_the_saved_queries" {
   }
 }
 
-run "the_access_log_writes_status_and_latency_as_numbers" {
+run "every_access_log_line_is_json_even_when_a_value_is_missing" {
   command = apply
 
+  # API Gateway writes "-" for a value it does not have: only a quoted placeholder stays valid JSON.
   assert {
-    condition = (strcontains(aws_apigatewayv2_stage.default.access_log_settings[0].format, "\"status\":$context.status,")
-    && strcontains(aws_apigatewayv2_stage.default.access_log_settings[0].format, "\"latencyMs\":$context.responseLatency,"))
-    error_message = "unquoted, so Logs Insights compares them as numbers (the api-5xx and api-slow queries)"
-  }
-  assert {
-    condition     = can(jsondecode(replace(replace(aws_apigatewayv2_stage.default.access_log_settings[0].format, "$context.status", "200"), "$context.responseLatency", "12")))
-    error_message = "each access log line must be valid JSON"
+    condition     = can(jsondecode(replace(aws_apigatewayv2_stage.default.access_log_settings[0].format, "/\\$context\\.[A-Za-z.]+/", "-")))
+    error_message = "every $context value must be inside quotes"
   }
 }
