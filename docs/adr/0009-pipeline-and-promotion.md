@@ -29,8 +29,11 @@ nothing and needs no new permission. GitHub artifacts would expire.
 `production` approval and smoke test. Code and infrastructure go back together. A `git revert` through `main`
 remains the slower path.
 
-**Approval and identity.** Apply jobs run in the GitHub environments `development` and `production`. The latter
-requires a reviewer. The deploy role trusts `main` and exactly those two environments. Every job that assumes a
+**Approval and identity.** Prod's apply job runs in the GitHub environment `production`, which requires a reviewer
+and accepts deployments from `main` only. The deploy role trusts `main` and that environment, nothing else. Dev
+applies run as `main` in no environment. A job can name any environment from any branch, and the OIDC subject
+then becomes `environment:<name>`, so an unreviewed dev environment trusted by the role would have handed the
+write role to every branch. Every job that assumes a
 role first compares `aws sts get-caller-identity` with `AWS_ACCOUNT_ID`, so no AWS call reaches another account.
 Terraform's `allowed_account_ids` already guarded Terraform itself.
 

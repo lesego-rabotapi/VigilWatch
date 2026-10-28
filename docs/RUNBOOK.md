@@ -29,9 +29,12 @@ contains no secrets; keep a copy somewhere safe (password manager or a private s
    `E2E_READONLY_URL`. Prod's smoke test is read-only, so it reads that URL back instead of registering one. It fails
    without it, so the first prod smoke job is expected to fail with that message: set the variable, then re-run only
    the smoke job (it has no AWS access and does not apply anything again).
-5. In GitHub (Settings -> Environments) create `production` and add yourself as a required
-   reviewer: the approval gate before every prod apply. Create `development` with no reviewers (dev
-   applies run in it; the deploy role trusts exactly these two environments and `main`).
+5. In GitHub (Settings -> Environments) create `production`, add yourself as a required
+   reviewer (the approval gate before every prod apply), and under Deployment branches and tags
+   choose "Selected branches and tags" with the single rule `main`. The deploy role trusts `main`
+   and this environment only. A job can name an environment from any branch, so the reviewer and
+   the branch rule are what keep the write role away from unreviewed code. Dev applies run as
+   `main` in no environment; do not create another environment for them.
 6. Cost backstop: in AWS Billing -> Budgets, create a budget from the "Zero spend budget"
    template. Two budgets are free.
 

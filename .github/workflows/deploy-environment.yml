@@ -12,8 +12,9 @@ name: Deploy one environment
 #   NOTIFICATION_EMAIL   optional alert recipient
 #   E2E_READONLY_URL     a URL already monitored in prod, read back by the read-only smoke test;
 #                        set it after the first prod deploy (that first smoke run fails until then)
-# Environments (Settings -> Environments): "production" with required reviewers (the approval
-# gate) and "development" without.
+# Environment (Settings -> Environments): "production", with required reviewers (the approval
+# gate) and deployments from main only. Dev applies run in no environment, as main: the deploy
+# role trusts main and production, and no environment that anyone could use unreviewed.
 
 on:
   workflow_call:
@@ -179,9 +180,7 @@ jobs:
     name: Apply ${{ inputs.environment }}
     needs: [plan]
     runs-on: ubuntu-latest
-    environment:
-      name: ${{ inputs.environment == 'prod' && 'production' || 'development' }}
-      url: ${{ steps.outputs.outputs.dashboard_url }}
+    environment: ${{ inputs.environment == 'prod' && 'production' || '' }}
     outputs:
       api_base_url: ${{ steps.outputs.outputs.api_base_url }}
       dashboard_url: ${{ steps.outputs.outputs.dashboard_url }}
