@@ -331,6 +331,13 @@ def test_the_smoke_test_is_its_own_job_so_it_can_be_rerun_without_reapplying(dep
     assert {"api_base_url", "dashboard_url"} <= set(apply["outputs"])
 
 
+def test_the_run_summary_links_the_deployed_dashboard(deploy):
+    """The environment no longer carries a url (dev runs in none), so the summary does."""
+    _, wf = deploy
+    step = next(s for s in wf["jobs"]["apply"]["steps"] if s.get("id") == "outputs")
+    assert "GITHUB_STEP_SUMMARY" in step["run"] and "dashboard_url" in step["run"]
+
+
 def test_post_deploy_cache_invalidation(deploy):
     _, wf = deploy
     assert "cloudfront create-invalidation" in steps_text(wf["jobs"]["apply"])

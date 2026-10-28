@@ -291,6 +291,50 @@ def test_the_record_job_is_given_the_digest_the_plan_deployed():
     assert step["env"]["DIGEST"] == "${{ needs.plan.outputs.bundle_sha256 }}"
 
 
+REBUILD = ("deploy-environment.yml", "plan", "Check the stored bundle is this commit's code")
+
+
+def _head_bundle(tmp_path):
+    import sys
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import build_bundle
+
+    return build_bundle.build(ROOT / "lambda", tmp_path / "stored" / "vigilwatch.zip").path
+
+
+def test_a_stored_bundle_that_rebuilds_from_its_commit_is_deployed(tmp_path):
+    """A rollback has no current release record to compare with, but the build is
+    reproducible: the commit itself says which bytes are right."""
+    ran = run(
+        find_step(*REBUILD)["run"],
+        tmp_path,
+        env={"BUNDLE": _head_bundle(tmp_path).as_posix(), "RUNNER_TEMP": str(tmp_path)},
+    )
+    assert ran.status == 0, ran.output
+
+
+@pytest.mark.negative
+@pytest.mark.security
+def test_a_stored_bundle_that_is_not_its_commits_code_is_refused(tmp_path, bundle):
+    path, _ = bundle
+    ran = run(
+        find_step(*REBUILD)["run"],
+        tmp_path,
+        env={"BUNDLE": path.as_posix(), "RUNNER_TEMP": str(tmp_path)},
+    )
+    assert ran.status == 1
+    assert "::error::" in ran.output
+
+
+def test_every_deploy_that_fetches_a_bundle_checks_it_before_planning():
+    data = yaml.safe_load((WORKFLOWS / "deploy-environment.yml").read_text(encoding="utf-8"))
+    names = [s.get("name") for s in data["jobs"]["plan"]["steps"]]
+    fetch, check = names.index("Fetch the stored bundle"), names.index(REBUILD[2])
+    assert fetch < check < names.index("Describe the bundle for Terraform")
+    assert find_step(*REBUILD)["if"] == "${{ !inputs.build }}"
+
+
 DRIFT_FETCH = ("drift.yml", "detect", "Fetch the released bundle")
 DRIFT_FIND = ("drift.yml", "detect", "Find the released commit")
 
