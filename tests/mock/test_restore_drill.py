@@ -107,3 +107,37 @@ def test_the_command_fails_when_the_restore_does_not_match(backup, capsys, monke
     monkeypatch.setattr(restore_tables, "write", tampered)
     assert restore_drill.main(["--table", TABLE, "--from", str(backup)]) == 1
     assert "fail" in capsys.readouterr().out
+
+
+@pytest.mark.negative
+def test_the_scratch_table_is_deleted_even_when_waiting_for_it_fails(backup):
+    client = boto3.client("dynamodb")
+
+    class Stuck:
+        def wait(self, **_kwargs):
+            raise RuntimeError("waiter gave up")
+
+    client.get_waiter = lambda _name: Stuck()
+    with pytest.raises(RuntimeError, match="waiter gave up"):
+        restore_drill.drill(TABLE, backup, client=client)
+    assert set(table_names()) == {TABLE, "vigilwatch-history"}
+
+
+@pytest.mark.negative
+@pytest.mark.parametrize("sample", [0, -1])
+def test_a_sample_below_one_is_refused_before_anything_is_created(backup, sample):
+    with pytest.raises(ValueError, match="sample"):
+        restore_drill.drill(TABLE, backup, sample=sample)
+    assert set(table_names()) == {TABLE, "vigilwatch-history"}
+    with pytest.raises(SystemExit):
+        restore_drill.main(["--table", TABLE, "--from", str(backup), "--sample", str(sample)])
+
+
+def test_a_backup_with_the_cap_counter_passes_the_drill(tables, tmp_path):
+    t = boto3.resource("dynamodb").Table(TABLE)
+    t.put_item(Item={"endpoint_id": "https://a.example"})
+    t.put_item(Item={"endpoint_id": "_system#count", "n": Decimal(1)})
+    path = tmp_path / "endpoints.jsonl"
+    backup_tables.backup(TABLE, path)
+    result = restore_drill.drill(TABLE, path)
+    assert result.problems == [] and result.items == 1

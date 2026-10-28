@@ -121,6 +121,9 @@ def test_the_runbook_traces_a_dashboard_with_no_data_through_three_paths():
         assert heading in protocol, heading
     for command in ("aws dynamodb get-item", "aws apigatewayv2 get-routes", "curl"):
         assert command in protocol, command
+    assert '--data-urlencode "url=$URL"' in protocol, (
+        "a URL with its own query string must be encoded"
+    )
 
 
 @pytest.mark.req("VW-016")

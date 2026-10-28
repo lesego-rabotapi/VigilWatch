@@ -141,7 +141,7 @@ run "every_metric_is_a_whole_line_namespace_name_and_dimensions" {
   assert {
     condition = alltrue(flatten([
       for w in jsondecode(aws_cloudwatch_dashboard.golden_signals.dashboard_body).widgets : [
-        for m in try(w.properties.metrics, []) : can(length(m)) && length(m) >= 4
+        for m in try(w.properties.metrics, []) : length(m) >= 4 || can(m[0].expression)
       ]
     ]))
     error_message = "a metric line split into loose strings (flatten does that) shows nothing"
@@ -210,5 +210,33 @@ run "saved_queries_cover_errors_runs_server_errors_and_slow_requests" {
   assert {
     condition     = strcontains(aws_cloudwatch_query_definition.query["function-errors"].query_string, "level = \"ERROR\"")
     error_message = "the application logs JSON with a level field (lambda/common/logs.py)"
+  }
+}
+
+run "table_capacity_is_drawn_per_second_to_compare_with_what_is_provisioned" {
+  command = apply
+
+  assert {
+    condition = anytrue([
+      for w in jsondecode(aws_cloudwatch_dashboard.golden_signals.dashboard_body).widgets :
+      strcontains(try(w.properties.title, ""), "units per second") && alltrue([
+        for table in ["vigilwatch-prod-endpoints", "vigilwatch-prod-history"] :
+        anytrue([for m in w.properties.metrics : can(m[0].expression) && strcontains(m[0].expression, "PERIOD(") && strcontains(m[0].label, table)])
+      ])
+    ])
+    error_message = "a 5-minute Sum of consumed units cannot be read against capacity provisioned per second"
+  }
+}
+
+run "the_api_queries_compare_numbers" {
+  command = apply
+
+  assert {
+    condition     = strcontains(aws_cloudwatch_query_definition.query["api-5xx"].query_string, "status >= 500")
+    error_message = "the access log writes status as a number"
+  }
+  assert {
+    condition     = strcontains(aws_cloudwatch_query_definition.query["api-slow"].query_string, "latencyMs > 500")
+    error_message = "the access log writes latency as a number"
   }
 }
