@@ -7,6 +7,7 @@ only looks right is caught too.
 
 import base64
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -234,6 +235,10 @@ def test_the_bundle_digest_goes_to_the_plan_summary_and_the_job_outputs(tmp_path
     assert ran.status == 0, ran.output
     assert ran.outputs["sha256"] == digest
     assert digest in ran.summary
+    tfvars = json.loads(path.with_name("vigilwatch.tfvars.json").read_text(encoding="utf-8"))
+    assert tfvars == {"bundle_path": path.as_posix(), "bundle_sha256": digest}, (
+        "Terraform deploys under the digest that was checked and is recorded"
+    )
 
 
 @pytest.mark.negative
@@ -307,10 +312,17 @@ def _head_bundle(tmp_path):
 def test_a_stored_bundle_that_rebuilds_from_its_commit_is_deployed(tmp_path):
     """A rollback has no current release record to compare with, but the build is
     reproducible: the commit itself says which bytes are right."""
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True
+    ).stdout.strip()
     ran = run(
         find_step(*REBUILD)["run"],
         tmp_path,
-        env={"BUNDLE": _head_bundle(tmp_path).as_posix(), "RUNNER_TEMP": str(tmp_path)},
+        env={
+            "BUNDLE": _head_bundle(tmp_path).as_posix(),
+            "RUNNER_TEMP": str(tmp_path),
+            "SHA": head,
+        },
     )
     assert ran.status == 0, ran.output
 
@@ -459,18 +471,26 @@ def test_a_failure_choosing_the_tag_stops_the_step(tmp_path):
 
 # ---- Running from main only ---------------------------------------------------------------------
 
+GUARDS = [
+    ("deploy-environment.yml", "plan", "Check the inputs"),
+    ("promote-prod.yml", "resolve", "Refuse any branch but main"),
+    ("drift.yml", "detect", "Refuse any branch but main"),
+]
+VALID_INPUTS = {"ENVIRONMENT": "prod", "SHA": SHA}
+
 
 @pytest.mark.negative
-def test_a_dispatch_from_another_branch_fails_loudly(tmp_path):
-    step = find_step("rollback.yml", "main-only", "Refuse any branch but main")
-    ran = run(step["run"], tmp_path, env={"REF": "refs/heads/feature"})
+@pytest.mark.parametrize("guard", GUARDS, ids=lambda g: g[0])
+def test_a_dispatch_from_another_branch_fails_loudly(tmp_path, guard):
+    ran = run(find_step(*guard)["run"], tmp_path, env={**VALID_INPUTS, "REF": "refs/heads/x"})
     assert ran.status == 1
-    assert "::error::" in ran.output and "refs/heads/feature" in ran.output
+    assert "::error::" in ran.output and "refs/heads/x" in ran.output
 
 
-def test_a_run_from_main_goes_ahead(tmp_path):
-    step = find_step("rollback.yml", "main-only", "Refuse any branch but main")
-    assert run(step["run"], tmp_path, env={"REF": "refs/heads/main"}).status == 0
+@pytest.mark.parametrize("guard", GUARDS, ids=lambda g: g[0])
+def test_a_run_from_main_goes_ahead(tmp_path, guard):
+    ran = run(find_step(*guard)["run"], tmp_path, env={**VALID_INPUTS, "REF": "refs/heads/main"})
+    assert ran.status == 0, ran.output
 
 
 # ---- Choosing the commit to promote -------------------------------------------------------------
@@ -545,4 +565,5 @@ def test_drift_plans_with_the_released_bundle(tmp_path, bundle):
         env={"BUNDLE": target.as_posix(), "FIXTURE": str(path), "DIGEST": digest},
     )
     assert ran.status == 0, ran.output
-    assert target.with_name("vigilwatch.tfvars.json").exists()
+    tfvars = json.loads(target.with_name("vigilwatch.tfvars.json").read_text(encoding="utf-8"))
+    assert tfvars["bundle_sha256"] == digest

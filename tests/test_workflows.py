@@ -595,35 +595,35 @@ def test_every_job_has_a_timeout(name):
         assert 1 <= job.get("timeout-minutes", 0) <= 60, f"{name}:{job_name}"
 
 
-MAIN_ONLY = ["deploy-dev.yml", "promote-prod.yml", "rollback.yml", "drift.yml"]
+# The first step of every job a dispatch starts with: deploy-environment.yml's plan (called by
+# deploy-dev, promote-prod and rollback), promote-prod's resolve, and drift's detect.
+BRANCH_GUARDS = [
+    ("deploy-environment.yml", "plan"),
+    ("promote-prod.yml", "resolve"),
+    ("drift.yml", "detect"),
+]
 
 
-@pytest.mark.parametrize("name", MAIN_ONLY)
-def test_deploys_and_drift_refuse_to_run_from_another_branch(name):
+@pytest.mark.parametrize("name, job", BRANCH_GUARDS)
+def test_deploys_and_drift_refuse_to_run_from_another_branch(name, job):
     """workflow_dispatch can start any branch's copy of a workflow. Role trust, the commit check
     and the production branch rule already stop it; this stops it first, and in red: a skipped
     run would let someone believe a rollback happened."""
     _, wf = load(name)
-    step = wf["jobs"]["main-only"]["steps"][0]
-    assert step["env"]["REF"] == "${{ github.ref }}"
-    assert '"$REF" != "refs/heads/main"' in step["run"] and "exit 1" in step["run"]
-    for job_name, job in wf["jobs"].items():
-        assert "github.ref" not in str(job.get("if", "")), f"{job_name}: skipping is silent"
+    first = wf["jobs"][job]["steps"][0]
+    assert first["env"]["REF"] == "${{ github.ref }}"
+    assert '"$REF" != "refs/heads/main"' in first["run"] and "exit 1" in first["run"]
 
 
-@pytest.mark.parametrize("name", MAIN_ONLY)
-def test_every_job_waits_for_the_branch_guard(name):
+@pytest.mark.parametrize("name", all_workflows())
+def test_a_wrong_branch_is_never_skipped_quietly(name):
     _, wf = load(name)
-
-    def reaches(job_name):
-        needs = wf["jobs"][job_name].get("needs", [])
-        needs = [needs] if isinstance(needs, str) else needs
-        return job_name == "main-only" or any(reaches(n) for n in needs)
-
-    assert all(reaches(j) for j in wf["jobs"]), name
+    assert "main-only" not in wf["jobs"], "a job of its own costs a runner start per deploy"
+    for job_name, job in wf["jobs"].items():
+        assert "github.ref" not in str(job.get("if", "")), f"{name}:{job_name}: skipping is silent"
 
 
-def test_pull_request_ci_cancels_a_superseded_run_and_nothing_else(ci):
+def test_ci_cancels_superseded_pull_request_and_branch_runs_but_never_mains(ci):
     """A pull request, or a push to a branch other than main, cancels its superseded run. A run
     on main (deploy-dev.yml calls CI) gets a group of its own: nothing a deploy waits on."""
     text, wf = ci
@@ -668,32 +668,36 @@ def test_every_step_runs_in_bash_with_pipefail(name):
 
 
 @pytest.mark.parametrize("name", all_workflows())
-def test_the_bundle_digest_is_read_by_one_script_not_parsed_inline(name):
+def test_the_bundle_digest_is_computed_with_openssl_not_parsed_from_json(name):
     text, _ = load(name)
     assert "json.load" not in text, f"{name}: hash the bundle with openssl instead"
 
 
-# Options of scripts/build_bundle.py that every commit with a stored bundle has. The deploy and
-# drift jobs run the deployed commit's own copy of the script, so a newer option would break a
-# rollback to, or the drift check of, an older release.
-STABLE_BUILD_OPTIONS = {"--out", "--describe", "--allow-dirty"}
+# Options of scripts/build_bundle.py that every commit with a stored bundle has (both predate
+# the first stored bundle). The deploy and drift jobs run the deployed commit's own copy of the
+# script, so a newer option would break a rollback to, or the drift check of, an older release.
+STABLE_BUILD_OPTIONS = {"--out", "--rev"}
+
+
+def _commands(text: str) -> list[str]:
+    """Shell lines with backslash continuations joined, so no option hides on a later line."""
+    return re.sub(r"\\\n\s*", " ", text).splitlines()
 
 
 @pytest.mark.parametrize("name", ["deploy-environment.yml", "drift.yml"])
 def test_the_deployed_commits_build_script_is_called_only_with_options_it_has(name):
     text, _ = load(name)
-    calls = re.findall(r"scripts/build_bundle\.py(.*)", text)
-    assert calls, name
-    for options in calls:
-        assert set(re.findall(r"--[a-z-]+", options)) <= STABLE_BUILD_OPTIONS, options
+    for line in _commands(text):
+        for options in re.findall(r"scripts/build_bundle\.py(.*)", line):
+            assert set(re.findall(r"--[a-z-]+", options)) <= STABLE_BUILD_OPTIONS, options
+    assert "--describe" not in text, "the step writes the Terraform variables itself"
     assert "openssl dgst -sha256 -binary" in text, "the digest needs no script at all"
 
 
-def test_the_rebuild_check_builds_the_commit_even_with_local_edits(deploy):
-    """It builds HEAD's content, never the working tree, so uncommitted files do not matter."""
+def test_the_rebuild_check_builds_the_deployed_commit_not_the_working_tree(deploy):
     text, _ = deploy
-    rebuild = next(line for line in text.splitlines() if "rebuilt/vigilwatch.zip" in line)
-    assert "--allow-dirty" in rebuild
+    rebuild = next(line for line in _commands(text) if "rebuilt/vigilwatch.zip" in line)
+    assert '--rev "$SHA"' in rebuild and "--allow-dirty" not in rebuild
 
 
 @pytest.mark.parametrize("name", all_workflows())
