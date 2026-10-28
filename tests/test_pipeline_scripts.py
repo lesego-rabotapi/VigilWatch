@@ -27,25 +27,21 @@ OTHER_SHA = "b" * 40
 
 # A fake AWS CLI for the calls the workflows make. RECORD is the content of the release record
 # read (unset: there is none). AWS_FAILS makes every call fail the way a wrong bucket or a
-# missing permission does. RUNNING is the CodeSha256 of the deployed checker. Every call is
-# logged to AWS_LOG; an object written from stdin is saved under AWS_STORE at its key; a
-# download to a file copies FIXTURE.
+# missing permission does. Every call is logged to AWS_LOG; an object written from stdin is
+# saved under AWS_STORE at its key, and reads find it there first; a download to a file copies
+# FIXTURE.
 FAKE_AWS = r"""
 echo "$*" >> "$AWS_LOG"
 if [ -n "${AWS_FAILS:-}" ]; then
   echo "An error occurred (AccessDenied) when calling the operation: Access Denied" >&2
   exit 254
 fi
-if [ "$1 $2" = "lambda get-function" ]; then
-  printf '%s\n' "$RUNNING"
-  exit 0
-fi
 if [ "$1 $2" = "s3api list-objects-v2" ]; then
   while [ "$#" -gt 0 ]; do
     if [ "$1" = "--prefix" ]; then prefix="$2"; fi
     shift
   done
-  if [ -n "${RECORD+set}" ]; then echo "$prefix"; else echo None; fi
+  if [ -f "$AWS_STORE/$prefix" ] || [ -n "${RECORD+set}" ]; then echo "$prefix"; else echo None; fi
   exit 0
 fi
 if [ "$1 $2" = "s3 cp" ]; then
@@ -54,6 +50,11 @@ if [ "$1 $2" = "s3 cp" ]; then
     mkdir -p "$AWS_STORE/$(dirname "$key")"
     cat > "$AWS_STORE/$key"
   elif [ "$4" = "-" ]; then
+    key="${3#s3://*/}"
+    if [ -f "$AWS_STORE/$key" ]; then
+      cat "$AWS_STORE/$key"
+      exit 0
+    fi
     if [ -z "${RECORD+set}" ]; then
       echo "fatal error: An error occurred (404) when calling the HeadObject operation" >&2
       exit 1
@@ -275,11 +276,8 @@ def test_prod_deploys_a_stored_bundle_with_the_digest_dev_released(tmp_path, bun
 def test_the_release_record_holds_the_commit_and_its_bundle_digest(tmp_path, bundle):
     """releases/<env> says what runs now; releases/history/<env>/<sha> that it once passed."""
     _, digest = bundle
-    ran = run(
-        find_step(*RECORD)["run"],
-        tmp_path,
-        env={"ENVIRONMENT": "dev", "DIGEST": digest, "RUNNING": digest},
-    )
+    _store(tmp_path, "releases/dev.applied", SHA)
+    ran = run(find_step(*RECORD)["run"], tmp_path, env={"ENVIRONMENT": "dev", "DIGEST": digest})
     assert ran.status == 0, ran.output
     store = tmp_path / "s3"
     assert (store / "releases" / "dev").read_text(encoding="utf-8") == f"{SHA} {digest}"
@@ -288,6 +286,12 @@ def test_the_release_record_holds_the_commit_and_its_bundle_digest(tmp_path, bun
 
 
 @pytest.mark.negative
+def _store(tmp_path, key, content):
+    path = tmp_path / "s3" / key
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
 def test_a_release_without_a_digest_is_not_recorded(tmp_path):
     ran = run(find_step(*RECORD)["run"], tmp_path, env={"ENVIRONMENT": "dev", "DIGEST": ""})
     assert ran.status == 1
@@ -296,18 +300,22 @@ def test_a_release_without_a_digest_is_not_recorded(tmp_path):
 
 @pytest.mark.negative
 def test_a_rerun_after_a_newer_deploy_does_not_record_the_older_commit(tmp_path, bundle):
-    """Re-running an old run's smoke and record jobs tests and would record what no longer
-    runs: the environment's checker must hold exactly this bundle."""
+    """Re-running an old run's smoke and record jobs would record what no longer runs, even
+    when the newer commit changed only infrastructure and the bundle is the same."""
     _, digest = bundle
-    ran = run(
-        find_step(*RECORD)["run"],
-        tmp_path,
-        env={"ENVIRONMENT": "dev", "DIGEST": digest, "RUNNING": "N" * 43 + "="},
-    )
+    _store(tmp_path, "releases/dev.applied", OTHER_SHA)
+    ran = run(find_step(*RECORD)["run"], tmp_path, env={"ENVIRONMENT": "dev", "DIGEST": digest})
     assert ran.status == 1
     assert "::error::" in ran.output and "newer deploy" in ran.output
-    assert not (tmp_path / "s3").exists()
-    assert "vigilwatch-dev-uptime-check" in (tmp_path / "aws.log").read_text(encoding="utf-8")
+    assert not (tmp_path / "s3" / "releases" / "dev").exists()
+
+
+def test_the_apply_job_marks_the_commit_it_applied():
+    data = yaml.safe_load((WORKFLOWS / "deploy-environment.yml").read_text(encoding="utf-8"))
+    runs = [str(s.get("run", "")) for s in data["jobs"]["apply"]["steps"]]
+    applied = next(i for i, r in enumerate(runs) if "terraform apply" in r)
+    marker = next(i for i, r in enumerate(runs) if "releases/$ENVIRONMENT.applied" in r)
+    assert applied < marker
 
 
 ROLLBACK = ("deploy-environment.yml", "plan", "Roll back only to a commit dev released")
@@ -694,7 +702,7 @@ def test_promotion_with_the_read_only_role_goes_ahead(tmp_path):
 
 # ---- Dev deploys main's newest commit -----------------------------------------------------------
 
-ON_MAIN = ("deploy-environment.yml", "plan", "Deploy only commits that are on main")
+BEHIND = ("deploy-environment.yml", "plan", "Never put dev behind what it runs")
 
 
 @pytest.fixture
@@ -720,25 +728,32 @@ def history(tmp_path):
         git("commit", "-q", "-m", f"c{n}")
         shas.append(git("rev-parse", "HEAD"))
     git("update-ref", "refs/remotes/origin/main", shas[-1])
+    (repo / "scripts").mkdir()
+    shutil.copy(ROOT / "scripts" / "release.sh", repo / "scripts" / "release.sh")
     return repo, shas
 
 
 @pytest.mark.parametrize(
-    "build, which, passes", [(True, 1, True), (True, 0, False), (False, 0, True)]
+    "released, deploying, passes",
+    [(None, 1, True), (0, 1, True), (1, 1, True), (1, 0, False)],
+    ids=["first", "newer", "same", "older"],
 )
-def test_dev_builds_only_mains_newest_commit(tmp_path, history, build, which, passes):
+def test_dev_never_goes_behind_the_commit_it_runs(tmp_path, history, released, deploying, passes):
     """Re-running a week-old dev deploy would put old code on dev and make it the commit
-    promotion picks; a prod rollback to an older commit stays allowed."""
+    promotion picks. A newer commit landing during a run's CI is fine: it queues behind."""
     repo, shas = history
-    ran = run(
-        find_step(*ON_MAIN)["run"],
-        tmp_path,
-        env={"SHA": shas[which], "BUILD": str(build).lower()},
-        cwd=repo,
-    )
+    if released is not None:
+        _store(tmp_path, "releases/dev", f"{shas[released]} {'A' * 43}=")
+    ran = run(find_step(*BEHIND)["run"], tmp_path, env={"SHA": shas[deploying]}, cwd=repo)
     assert (ran.status == 0) is passes, ran.output
     if not passes:
-        assert "::error::" in ran.output and "newest" in ran.output
+        assert "::error::" in ran.output and "behind" in ran.output
+
+
+def test_the_behind_check_runs_for_dev_builds_only():
+    assert find_step(*BEHIND)["if"] == "${{ inputs.build }}"
+    on_main = find_step("deploy-environment.yml", "plan", "Deploy only commits that are on main")
+    assert "rev-parse origin/main" not in on_main["run"], "main's tip moves during a run's CI"
 
 
 @pytest.mark.negative
