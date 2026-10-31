@@ -8,6 +8,7 @@ import pytest
 
 from tests.e2e.config import ENVIRONMENTS, api_url, dashboard_url, get_environment, unavailable
 from tests.proxies import create_proxy_for_environment
+from tests.proxies import cognito
 from tests.proxies.base_proxy import ApiProxy, ProxyError, ReadOnlyEnvironmentError
 from tests.proxies.dev_proxy import DevProxy
 from tests.proxies.local_proxy import LocalProxy
@@ -82,13 +83,48 @@ def test_there_is_no_production_proxy_class():
         __import__("tests.proxies.prod_proxy")
 
 
-def test_the_factory_returns_the_right_proxy_per_environment(monkeypatch):
+@pytest.fixture
+def smoke_user(monkeypatch):
+    """The smoke-test user's settings, with Cognito answering a fixed token."""
+    monkeypatch.setenv("E2E_USERNAME", "smoke@example.test")
+    monkeypatch.setenv("E2E_PASSWORD", "not-a-real-password")
+    monkeypatch.setenv("COGNITO_CLIENT_ID", "smokeclient")
+    calls = []
+
+    def fake_token(client_id, username, password, region, timeout):
+        calls.append((client_id, username, region))
+        return "smoke-token"
+
+    monkeypatch.setattr(cognito, "cognito_token", fake_token)
+    return calls
+
+
+def test_the_factory_returns_the_right_proxy_per_environment(monkeypatch, smoke_user):
     monkeypatch.setenv("API_URL_DEV", "http://dev.test")
     monkeypatch.setenv("API_URL_PROD", "http://prod.test")
     assert isinstance(create_proxy_for_environment("dev"), DevProxy)
     assert isinstance(create_proxy_for_environment("local"), LocalProxy)
     prod = create_proxy_for_environment("prod")
     assert type(prod) is ApiProxy and prod.read_only is True
+
+
+@pytest.mark.req("VW-026")
+def test_a_deployed_environment_is_reached_signed_in_as_the_smoke_user(monkeypatch, smoke_user):
+    monkeypatch.setenv("API_URL_DEV", "http://dev.test")
+    monkeypatch.delenv("AWS_REGION", raising=False)
+    assert create_proxy_for_environment("dev").token == "smoke-token"
+    assert smoke_user == [("smokeclient", "smoke@example.test", "af-south-1")]
+    assert create_proxy_for_environment("local").token is None, "the local stack signs itself in"
+
+
+@pytest.mark.req("VW-026")
+@pytest.mark.negative
+def test_a_deployed_environment_without_smoke_credentials_says_what_to_set(monkeypatch):
+    monkeypatch.setenv("API_URL_DEV", "http://dev.test")
+    for name in ("E2E_USERNAME", "E2E_PASSWORD", "COGNITO_CLIENT_ID"):
+        monkeypatch.delenv(name, raising=False)
+    with pytest.raises(ProxyError, match="E2E_USERNAME, E2E_PASSWORD and COGNITO_CLIENT_ID"):
+        create_proxy_for_environment("dev")
 
 
 @pytest.mark.negative
@@ -162,3 +198,111 @@ def test_a_read_only_proxy_may_still_read_and_preflight(echo_server):
 def test_a_connection_failure_is_a_proxy_error_not_a_raw_urllib_exception():
     with pytest.raises(ProxyError, match="could not reach"):
         ApiProxy("http://127.0.0.1:1", timeout=0.2).checks("https://example.com/")
+
+
+# ---- signing in for the smoke tests (VW-026) -------------------------------------------------
+
+
+class _Cognito(BaseHTTPRequestHandler):
+    """Cognito's public InitiateAuth endpoint, as far as the smoke tests use it."""
+
+    answer: dict = {}
+    status = 200
+    seen: list = []
+
+    def do_POST(self):  # noqa: N802
+        length = int(self.headers.get("Content-Length") or 0)
+        _Cognito.seen.append((dict(self.headers), json.loads(self.rfile.read(length))))
+        payload = json.dumps(_Cognito.answer).encode()
+        self.send_response(_Cognito.status)
+        self.send_header("Content-Type", "application/x-amz-json-1.1")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, *args):
+        pass
+
+
+@pytest.fixture
+def cognito_server():
+    _Cognito.seen, _Cognito.status = [], 200
+    _Cognito.answer = {"AuthenticationResult": {"AccessToken": "the-token"}}
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), _Cognito)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{httpd.server_address[1]}/"
+    httpd.shutdown()
+
+
+def sign_in(endpoint):
+    return cognito.cognito_token(
+        "smokeclient", "smoke@example.test", "pw-123", "af-south-1", 5, endpoint=endpoint
+    )
+
+
+@pytest.mark.req("VW-026")
+def test_the_smoke_token_comes_from_cognitos_public_endpoint(cognito_server):
+    assert sign_in(cognito_server) == "the-token"
+    headers, body = _Cognito.seen[0]
+    assert headers["X-Amz-Target"] == "AWSCognitoIdentityProviderService.InitiateAuth"
+    assert headers["Content-Type"] == "application/x-amz-json-1.1"
+    assert body == {
+        "AuthFlow": "USER_PASSWORD_AUTH",
+        "ClientId": "smokeclient",
+        "AuthParameters": {"USERNAME": "smoke@example.test", "PASSWORD": "pw-123"},
+    }
+
+
+def test_the_endpoint_is_the_regions_cognito():
+    assert cognito.endpoint_for("af-south-1") == "https://cognito-idp.af-south-1.amazonaws.com/"
+
+
+@pytest.mark.req("VW-026")
+@pytest.mark.negative
+def test_a_user_who_must_still_set_a_password_is_explained(cognito_server):
+    _Cognito.answer = {"ChallengeName": "NEW_PASSWORD_REQUIRED", "Session": "s"}
+    with pytest.raises(ProxyError, match="permanent password"):
+        sign_in(cognito_server)
+
+
+@pytest.mark.req("VW-026")
+@pytest.mark.negative
+def test_a_refused_sign_in_never_repeats_the_password(cognito_server):
+    _Cognito.status = 400
+    _Cognito.answer = {
+        "__type": "NotAuthorizedException",
+        "message": "Incorrect username or password.",
+    }
+    with pytest.raises(ProxyError, match="could not sign in") as error:
+        sign_in(cognito_server)
+    assert "pw-123" not in str(error.value)
+    assert "NotAuthorizedException" in str(error.value)
+
+
+class _Headers(BaseHTTPRequestHandler):
+    seen: list = []
+
+    def do_GET(self):  # noqa: N802
+        _Headers.seen.append(self.headers.get("Authorization"))
+        self.send_response(200)
+        self.send_header("Content-Length", "2")
+        self.end_headers()
+        self.wfile.write(b"{}")
+
+    def log_message(self, *args):
+        pass
+
+
+@pytest.mark.req("VW-026")
+def test_a_signed_in_proxy_sends_its_token_and_its_anonymous_copy_does_not():
+    _Headers.seen = []
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), _Headers)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        proxy = ApiProxy(f"http://127.0.0.1:{httpd.server_address[1]}", token="tok")
+        proxy.checks("https://example.com/")
+        proxy.anonymous().checks("https://example.com/")
+        assert _Headers.seen == ["Bearer tok", None]
+        assert proxy.anonymous().read_only == proxy.read_only
+    finally:
+        httpd.shutdown()
