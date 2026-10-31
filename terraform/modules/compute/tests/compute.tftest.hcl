@@ -142,13 +142,15 @@ run "settings_reach_the_checker" {
     reminder_minutes   = 120
     metrics_enabled    = false
     max_endpoints      = 7
+    max_endpoints_per_user = 3
   }
 
   assert {
     condition = (aws_lambda_function.fn["uptime_check"].environment[0].variables["RECOVERY_THRESHOLD"] == "3"
       && aws_lambda_function.fn["uptime_check"].environment[0].variables["REMINDER_MINUTES"] == "120"
       && aws_lambda_function.fn["uptime_check"].environment[0].variables["METRICS_ENABLED"] == "false"
-    && aws_lambda_function.fn["register_endpoint"].environment[0].variables["MAX_ENDPOINTS"] == "7")
+      && aws_lambda_function.fn["register_endpoint"].environment[0].variables["MAX_ENDPOINTS"] == "7"
+    && aws_lambda_function.fn["register_endpoint"].environment[0].variables["MAX_ENDPOINTS_PER_USER"] == "3")
     error_message = "recovery_threshold, reminder_minutes, metrics_enabled and max_endpoints must be passed on"
   }
 }
@@ -235,4 +237,15 @@ run "rejects_an_unbounded_endpoint_cap" {
     max_endpoints = 500
   }
   expect_failures = [var.max_endpoints]
+}
+
+run "a_users_cap_cannot_exceed_the_global_one" {
+  command = plan
+
+  variables {
+    max_endpoints          = 5
+    max_endpoints_per_user = 6
+  }
+
+  expect_failures = [var.max_endpoints_per_user]
 }

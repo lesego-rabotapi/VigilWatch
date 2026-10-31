@@ -22,6 +22,10 @@ variables {
   aws_region   = "af-south-1"
   frontend_dir = "../../../frontend"
   api_base_url = "https://abc123.execute-api.af-south-1.amazonaws.com"
+  auth = {
+    hosted_ui_url = "https://vigilwatch-dev-123456789012.auth.af-south-1.amazoncognito.com"
+    client_id     = "dashboardclient"
+  }
 }
 
 run "bucket_is_private_and_named_for_the_environment" {
@@ -96,4 +100,18 @@ run "rejects_a_malformed_account_id" {
     account_id = "not-an-account"
   }
   expect_failures = [var.account_id]
+}
+
+run "the_dashboard_knows_where_to_sign_in" {
+  command = apply
+
+  assert {
+    condition = (strcontains(aws_s3_object.config.content, "\"https://vigilwatch-dev-123456789012.auth.af-south-1.amazoncognito.com\"")
+    && strcontains(aws_s3_object.config.content, "\"dashboardclient\""))
+    error_message = "config.js must carry the hosted UI and the dashboard's client id"
+  }
+  assert {
+    condition     = strcontains(aws_cloudfront_response_headers_policy.security.security_headers_config[0].content_security_policy[0].content_security_policy, "https://*.auth.af-south-1.amazoncognito.com")
+    error_message = "the dashboard exchanges the code for tokens at Cognito: connect-src must allow it"
+  }
 }

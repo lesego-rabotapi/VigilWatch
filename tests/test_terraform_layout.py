@@ -417,3 +417,18 @@ def test_paths_in_runbook_commands_exist_from_the_directory_they_run_in(heading)
             checked.append(token)
             assert (cwd / token).exists(), f"{token} does not exist from {cwd.relative_to(ROOT)}"
     assert checked, "the section runs no tests"
+
+
+@pytest.mark.req("VW-026")
+def test_the_deploy_role_may_manage_the_user_pools():
+    text = (TF / "bootstrap" / "main.tf").read_text(encoding="utf-8")
+    block = re.search(r'Sid\s*=\s*"StackServices"(.*?)\n\s*\}', text, re.S).group(1)
+    assert '"cognito-idp:*"' in block
+
+
+@pytest.mark.req("VW-026")
+def test_the_plan_role_can_read_the_user_pools_and_nothing_more():
+    _, policy = _plan_role()
+    for action in ("cognito-idp:Describe*", "cognito-idp:List*", "cognito-idp:Get*"):
+        assert f'"{action}"' in policy, action
+    assert '"cognito-idp:*"' not in policy

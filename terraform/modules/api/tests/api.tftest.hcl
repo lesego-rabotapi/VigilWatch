@@ -1,4 +1,4 @@
-# req: VW-001 VW-007 VW-011 VW-016
+# req: VW-001 VW-007 VW-011 VW-016 VW-026
 # The HTTP API in front of the two request-handling functions. The AWS provider is mocked.
 
 mock_provider "aws" {
@@ -24,6 +24,8 @@ variables {
   }
   function_names  = { register_endpoint = "vigilwatch-dev-register-endpoint", get_checks = "vigilwatch-dev-get-checks" }
   allowed_origins = ["https://d111111abcdef8.cloudfront.net", "http://localhost:3000"]
+  jwt_issuer      = "https://cognito-idp.af-south-1.amazonaws.com/af-south-1_MOCK"
+  jwt_audiences   = ["dashboardclient", "smokeclient"]
 }
 
 run "exactly_two_routes_reach_the_right_functions" {
@@ -140,5 +142,44 @@ run "every_access_log_line_is_json_even_when_a_value_is_missing" {
   assert {
     condition     = can(jsondecode(replace(aws_apigatewayv2_stage.default.access_log_settings[0].format, "/\\$context\\.[A-Za-z.]+/", "-")))
     error_message = "every $context value must be inside quotes"
+  }
+}
+
+run "no_route_is_unauthenticated" {
+  command = apply
+
+  assert {
+    condition     = alltrue([for r in aws_apigatewayv2_route.route : r.authorization_type == "JWT" && r.authorizer_id == aws_apigatewayv2_authorizer.jwt.id])
+    error_message = "every route must require a token checked by the JWT authorizer (ADR 0007)"
+  }
+}
+
+run "tokens_are_checked_against_this_environments_pool_and_clients" {
+  command = apply
+
+  assert {
+    condition     = aws_apigatewayv2_authorizer.jwt.authorizer_type == "JWT"
+    error_message = "the built-in JWT authorizer, not a Lambda authorizer"
+  }
+  assert {
+    condition     = aws_apigatewayv2_authorizer.jwt.jwt_configuration[0].issuer == "https://cognito-idp.af-south-1.amazonaws.com/af-south-1_MOCK"
+    error_message = "only this environment's user pool issues valid tokens"
+  }
+  assert {
+    condition     = toset(aws_apigatewayv2_authorizer.jwt.jwt_configuration[0].audience) == toset(["dashboardclient", "smokeclient"])
+    error_message = "only tokens for this environment's own clients"
+  }
+  assert {
+    condition     = toset(aws_apigatewayv2_authorizer.jwt.identity_sources) == toset(["$request.header.Authorization"])
+    error_message = "the token comes in the Authorization header"
+  }
+}
+
+run "the_browser_may_send_the_authorization_header" {
+  command = apply
+
+  assert {
+    condition     = contains(aws_apigatewayv2_api.http.cors_configuration[0].allow_headers, "authorization")
+    error_message = "CORS must allow the Authorization header, or the browser never sends the token"
   }
 }
