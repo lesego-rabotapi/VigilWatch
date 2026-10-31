@@ -359,6 +359,38 @@ def test_the_production_smoke_test_is_read_only_and_given_a_url_it_can_read(depl
     assert check["if"] == "${{ inputs.environment == 'prod' }}"
 
 
+@pytest.mark.req("VW-026")
+def test_the_smoke_test_signs_in_as_the_smoke_user_without_aws_credentials(deploy):
+    _, wf = deploy
+    smoke_job = wf["jobs"]["smoke"]
+    smoke = next(s for s in smoke_job["steps"] if "pytest" in str(s.get("run")))
+    assert smoke["env"]["COGNITO_CLIENT_ID"] == "${{ needs.apply.outputs.smoke_client_id }}"
+    assert smoke["env"]["E2E_USERNAME"] == "${{ vars.E2E_USERNAME }}"
+    assert smoke["env"]["E2E_PASSWORD"] == "${{ secrets.E2E_PASSWORD }}", (
+        "a secret, never a variable"
+    )
+    assert "smoke_client_id" in wf["jobs"]["apply"]["outputs"]
+    assert "id-token" not in smoke_job.get("permissions", {}), "Cognito's public endpoint is enough"
+
+
+@pytest.mark.req("VW-026")
+def test_the_smoke_password_reaches_the_reusable_workflow_as_a_secret(deploy):
+    _, wf = deploy
+    assert "E2E_PASSWORD" in wf["on"]["workflow_call"]["secrets"]
+    for name in ("deploy-dev.yml", "promote-prod.yml", "rollback.yml"):
+        _, caller = load(name)
+        assert caller["jobs"]["deploy"]["secrets"] == "inherit", name
+
+
+@pytest.mark.req("VW-026")
+def test_a_smoke_run_without_the_smoke_user_fails_with_what_to_set(deploy):
+    _, wf = deploy
+    check = next(s for s in wf["jobs"]["smoke"]["steps"] if "E2E_USERNAME" in str(s.get("run", "")))
+    assert "if" not in check, "every environment needs the smoke user"
+    assert "::error::" in check["run"] and "exit 1" in check["run"]
+    assert 'echo "$E2E_PASSWORD' not in check["run"], "the password is checked, never printed"
+
+
 def test_the_smoke_test_gets_the_address_of_the_environment_just_applied_only(deploy):
     """The harness reads API_URL_<ENV> before API_URL. Setting both DEV and PROD names to one
     address hid which environment a run was meant for; the generic names say just that."""

@@ -900,3 +900,25 @@ def test_drift_plans_with_the_released_bundle(tmp_path, bundle):
     assert ran.status == 0, ran.output
     tfvars = json.loads(target.with_name("vigilwatch.tfvars.json").read_text(encoding="utf-8"))
     assert tfvars["bundle_sha256"] == digest
+
+
+# ---- The smoke-test user ----------------------------------------------------------------------
+
+SMOKE_USER = ("deploy-environment.yml", "smoke", "Check the smoke test user")
+
+
+@pytest.mark.negative
+@pytest.mark.parametrize("missing", ["E2E_USERNAME", "E2E_PASSWORD"])
+def test_a_smoke_run_without_the_smoke_user_says_what_to_set(tmp_path, missing):
+    env = {"E2E_USERNAME": "smoke@example.test", "E2E_PASSWORD": "s3cret-value", missing: ""}
+    ran = run(find_step(*SMOKE_USER)["run"], tmp_path, env=env)
+    assert ran.status == 1
+    assert "::error::" in ran.output and missing in ran.output
+    assert "s3cret-value" not in ran.output, "never print the password"
+
+
+def test_a_smoke_run_with_the_smoke_user_goes_ahead(tmp_path):
+    env = {"E2E_USERNAME": "smoke@example.test", "E2E_PASSWORD": "s3cret-value"}
+    ran = run(find_step(*SMOKE_USER)["run"], tmp_path, env=env)
+    assert ran.status == 0, ran.output
+    assert "s3cret-value" not in ran.output
