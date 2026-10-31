@@ -1,7 +1,8 @@
 """HTTP client every end-to-end test talks through.
 
 Tests never call Lambda or DynamoDB directly: the only way in is the public API, exactly as a
-visitor would use it. A proxy for a read-only environment refuses writes before any network call.
+visitor would use it, signed in with a bearer token where the environment requires one. A proxy for
+a read-only environment refuses writes before any network call.
 """
 
 import json
@@ -35,15 +36,29 @@ class Response:
 
 
 class ApiProxy:
-    def __init__(self, base_url: str, read_only: bool = False, timeout: float = 20.0):
+    def __init__(
+        self,
+        base_url: str,
+        read_only: bool = False,
+        timeout: float = 20.0,
+        token: str | None = None,
+    ):
         self.base_url = base_url.rstrip("/")
         self.read_only = read_only
         self.timeout = timeout
+        self.token = token
+
+    def anonymous(self) -> "ApiProxy":
+        """The same environment without a token: what a visitor who is not signed in gets."""
+        return ApiProxy(self.base_url, read_only=self.read_only, timeout=self.timeout)
 
     def _send(self, method: str, path: str, body=None, headers=None) -> Response:
         data = json.dumps(body).encode() if body is not None else None
+        headers = dict(headers or {})
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
         request = urllib.request.Request(  # noqa: S310 (base URL comes from the environment)
-            self.base_url + path, data=data, method=method, headers=headers or {}
+            self.base_url + path, data=data, method=method, headers=headers
         )
         if data is not None:
             request.add_header("Content-Type", "application/json")
@@ -76,7 +91,7 @@ class ApiProxy:
             headers={
                 "Origin": origin,
                 "Access-Control-Request-Method": "POST",
-                "Access-Control-Request-Headers": "content-type",
+                "Access-Control-Request-Headers": "content-type,authorization",
             },
         )
 

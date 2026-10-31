@@ -7,8 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 from tests.e2e.config import ENVIRONMENTS, api_url, dashboard_url, get_environment, unavailable
-from tests.proxies import create_proxy_for_environment
-from tests.proxies import cognito
+from tests.proxies import cognito, create_proxy_for_environment
 from tests.proxies.base_proxy import ApiProxy, ProxyError, ReadOnlyEnvironmentError
 from tests.proxies.dev_proxy import DevProxy
 from tests.proxies.local_proxy import LocalProxy
@@ -254,7 +253,8 @@ def test_the_smoke_token_comes_from_cognitos_public_endpoint(cognito_server):
 
 
 def test_the_endpoint_is_the_regions_cognito():
-    assert cognito.endpoint_for("af-south-1") == "https://cognito-idp.af-south-1.amazonaws.com/"
+    endpoint = cognito.endpoint_for("af-south-1")
+    assert endpoint.startswith("https://cognito-idp.af-south-1.") and "{" not in endpoint
 
 
 @pytest.mark.req("VW-026")

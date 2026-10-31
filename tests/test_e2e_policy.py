@@ -10,6 +10,8 @@ pytestmark = pytest.mark.req("VW-017")
 
 TESTS = Path(__file__).resolve().parent
 ENDPOINT_PATTERNS = re.compile(r"execute-api|cloudfront\.net|\.amazonaws\.com|\.kimmyai\.")
+# AWS's own regional service address, a template with the region left open: not a deployment.
+SERVICE_TEMPLATES = re.compile(r"https://cognito-idp\.\{region\}\.amazonaws\.com/")
 SELF = Path(__file__).name
 
 
@@ -24,7 +26,7 @@ def test_no_deployed_endpoint_appears_in_test_code():
         for path in _python_files()
         if path.name != SELF
         for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
-        if ENDPOINT_PATTERNS.search(line)
+        if ENDPOINT_PATTERNS.search(SERVICE_TEMPLATES.sub("", line))
     ]
     assert offenders == [], f"URLs must come from environment variables: {offenders}"
 
