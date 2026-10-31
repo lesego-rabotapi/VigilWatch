@@ -1,0 +1,113 @@
+# ADR 0009: Pipeline, promotion, rollback and drift
+
+- Status: accepted (2026-10-27)
+
+## Context
+
+One workflow used to plan and apply prod on every push to `main`. ADR 0005 added a dev environment and a
+reproducible bundle, so the pipeline has to answer new questions. How does a change reach dev and then prod?
+How do we know prod runs the bytes dev ran? How do we go back? How do we notice a change made in the console?
+And how do we stop a green run from hiding a check that never ran?
+
+## Decision
+
+**Layout.** `ci.yml` runs on every change. `deploy-dev.yml` deploys dev on every push to `main`, after CI, or by hand (the first deploy after setup).
+`promote-prod.yml` and `rollback.yml` deploy prod by hand only. All three call one reusable workflow,
+`deploy-environment.yml`, with an environment and a full commit id. The steps are therefore written once:
+plan, apply in a GitHub environment, smoke test, then record the release. `pr-plan.yml` and `drift.yml` only
+read.
+
+**Build once, promote the artifact.** Dev builds the commit's bundle and stores it as `bundles/<sha>.zip` in the
+state bucket. If that object already exists, dev compares the bytes and fails on any difference (the build is
+reproducible, ADR 0005). Prod never deploys a build of its own: it fetches `bundles/<sha>.zip`, so it runs exactly what dev ran. A
+release counts only after its smoke test passes, and is then recorded in `releases/dev` or `releases/prod` as
+the commit and the bundle's SHA-256. Promotion deploys the commit in `releases/dev` and refuses any other, and
+refuses a stored bundle whose digest is not the one dev recorded: the object can be overwritten, the record says
+which bytes passed dev's tests. Drift checks the digest the same way. Prod deploys only commits that are on
+`main`. Reusing the state bucket, which is versioned, encrypted and already reachable by the deploy role, costs
+nothing and needs no new permission. GitHub artifacts would expire.
+
+**Rollback** is `rollback.yml`: redeploy an earlier commit that dev released (`releases/history/dev/<sha>`, written
+with every release; a stored bundle alone only proves dev built it) and its stored bundle, through the same plan,
+`production` approval and smoke test. Code and infrastructure go back together. A `git revert` through `main`
+remains the slower path.
+
+**Approval and identity.** Prod's apply job runs in the GitHub environment `production`, which requires a reviewer
+and accepts deployments from `main` only. The deploy role trusts `main` and that environment, nothing else. Dev
+applies run as `main` in no environment. A job can name any environment from any branch, and the OIDC subject
+then becomes `environment:<name>`, so an unreviewed dev environment trusted by the role would have handed the
+write role to every branch. Every job that assumes a
+role first compares `aws sts get-caller-identity` with `AWS_ACCOUNT_ID`, so no AWS call reaches another account.
+Terraform's `allowed_account_ids` already guarded Terraform itself.
+
+**Read-only paths.** Pull requests and the drift check use a second role, `vigilwatch-github-plan`. It can only
+Get, List and Describe, and it plans with `-lock=false`. A pull request's code has not been reviewed yet, so it
+may read the account and never change it. Pull requests from forks are skipped. The comment and the drift issue
+are written by separate jobs that hold only `pull-requests: write` or `issues: write` and no AWS access.
+
+**Drift** is a weekly `terraform plan -refresh-only -detailed-exitcode` of each environment's released commit
+and bundle. Exit code 2 means a resource differs from its state, so something changed outside the pipeline. The
+check comments on the single open drift issue, or opens one. A normal plan is not used: on `main` it would also
+report commits not yet promoted, which is not drift.
+
+**Gate integrity.** pytest exits 0 when every selected test skips. The smoke job therefore writes a JUnit report
+and `scripts/check_junit.py` fails it on any skip or on fewer tests than the deployed commit collects (none at
+all fails too). Prod runs the read-only smoke tests and dev runs every e2e test. The minimum is counted from the
+checked-out commit, not written into the workflow: the workflow comes from `main`, but a rollback runs an older
+commit's tests, and a fixed number would fail it after the apply. In CI, a
+missing address fails instead of skipping. No workflow may use `continue-on-error`, `|| true`, `set +e` or
+`-auto-approve`.
+
+**Package verification.** `scripts/verify_package.py` runs in CI inside `public.ecr.aws/lambda/python:3.12` with
+no network. It imports each handler Terraform deploys from the extracted bundle alone. It also sends the API
+handlers a request their validation rejects before any AWS call. Mutation checks: a bundle without
+`common/status.py`, or a handler answering 500, fails it.
+
+**Release notes.** The prod release is tagged after its smoke test. Its notes are generated by
+`scripts/changelog.py` from the conventional commit subjects since the previous tag. Failing-test commits are
+left out because the fix that follows each is the change.
+
+## Not adopted
+
+- **A committed `CHANGELOG.md`.** Writing it at tag time would need the pipeline to push to `main`. The GitHub
+  release notes are the changelog, generated from history, so they cannot drift from it.
+- **A single shared root for dev and prod** (one directory, per-environment tfvars and backend files). The two
+  environment roots are near-copies, a drift test keeps them in step, and adding a setting touches both. That is
+  the price of directory-per-environment, which the DevOps guidance prefers. A directory is the environment, a
+  `-var-file` mistake cannot plan prod with dev's settings, and each root pins its own provider lock file.
+- **Separate plan and apply roles for prod.** The approval gate is the `production` environment. A second
+  write role would add trust policy and no protection that the reviewer does not already give.
+
+## Consequences
+
+- A promoted bundle is provably the one dev ran: same key, and the digest dev recorded, shown in the plan
+  summary. Every deploy that fetches a bundle also rebuilds the commit and compares the bytes, without deploying
+  the rebuild. That is what guards a rollback, whose commit dev's record no longer names. The record and the
+  bundles share one bucket, so the digest catches a replaced or corrupted object, while the rebuild ties the
+  bytes to the reviewed source.
+- A deploy runs the deployed commit's own `scripts/build_bundle.py` (for the rebuild check, which must build
+  the way that commit builds), `check_junit.py` and `checklist.py`. Their command-line options are therefore an
+  interface: the workflows may use only options every commit with a stored bundle has (a policy test checks this
+  for `build_bundle.py`: `--out` and `--rev`), or a rollback to an older release would fail. The bundle digest
+  is computed once with `openssl`, and the same value is checked, written into Terraform's variables and
+  recorded, so what Terraform deploys is what the record says.
+- Before applying, the apply job writes `releases/<env>.deploying` (commit and digest), and a release is recorded
+  only if that still names the commit, so re-running an old run's smoke and record jobs cannot record a commit
+  that a newer deploy replaced, whatever it changed, even one whose apply failed halfway. Dev never deploys a
+  commit older than the one in that marker, so re-running an old dev deploy is refused; a commit that lands
+  while another run is in CI just queues. `scripts/not_behind.sh` checks both the marker and the last release,
+  in the plan job and again before the apply job moves dev's marker, so re-running one old dev apply job cannot
+  move it back either. Prod's marker may move back, since a rollback must, so two edges remain there, and both
+  fail safe. Re-running an old prod apply job rewrites the marker before its stale plan is refused. An apply that
+  fails before changing anything still moves the marker. In both cases recording the commit prod actually runs is
+  refused until the next prod deploy. The checks read and then write, so they rely on each environment's
+  deploys running one at a time (their concurrency groups).
+- Known limits, accepted for a one-maintainer repository: the weekly drift check takes no lock and can report a
+  change made by an apply running at that moment (re-run it); and the read-only role that pull request plans use
+  can read every state object, prod's included, so anyone who can push a branch can read prod's state. Forks
+  cannot. A pull-request-only role limited to dev's state is the fix if collaborators join.
+- Nothing above has run against AWS. The workflows are checked by policy tests (`tests/test_workflows.py`,
+  `tests/test_terraform_layout.py`) and the scripts by unit tests. The first real runs (dev deploy, promotion,
+  rollback, drift, PR plan) are `NEEDS-AWS` and are expected to need IAM iterations for the read-only role
+  (Stage 10).
+- The first prod smoke run fails until `E2E_READONLY_URL` names a URL monitored in prod (runbook, section 1).

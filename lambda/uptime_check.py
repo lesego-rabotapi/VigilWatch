@@ -1,149 +1,133 @@
+"""Scheduled uptime checker (EventBridge -> Lambda).
+
+Probes every enabled endpoint in parallel, then persists results serially
+(boto3 resources are not thread-safe). Endpoint downtime is data, not an
+error; the invocation only fails when VigilWatch itself could not process an
+endpoint, so the Lambda Errors alarm means "the monitor is broken".
+"""
+
 import json
 import os
-from datetime import datetime
-from urllib import request as urllib_request, error as urllib_error
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 
-import boto3 
+from common import logs
+from common.checker import Settings, apply_result, make_publisher, probe
+from common.controls import check_controls
+from common.repo import Repo
+from common.status import DEGRADED, DOWN, INCONCLUSIVE, UP, classify
 
-CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Api-Key",
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-}
-
-
-def _get_clients():
-    dynamodb = boto3.resource("dynamodb")
-    cloudwatch = boto3.client("cloudwatch")
-    sns = boto3.client("sns")
-    table = dynamodb.Table(TABLE_NAME)
-    return table, cloudwatch, sns
+logger = logs.get_logger(__name__)
 
 
-def _to_plain(obj):
+def utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
+def _emf(summary: dict, latencies: list[float], now: datetime, controls: str) -> str:
+    values = {
+        "ChecksRun": summary["checked"],
+        "EndpointsDown": summary["down"],
+        "EndpointsDegraded": summary["degraded"],
+        "EndpointsInconclusive": summary["inconclusive"],
+        "RunsCompleted": 1,
+    }
+    if controls in ("healthy", "failed"):  # only when connectivity was actually checked
+        values["ControlProbeFailed"] = 1 if controls == "failed" else 0
+    if latencies:
+        values["AvgLatencyMs"] = round(sum(latencies) / len(latencies), 1)
+    units = {"AvgLatencyMs": "Milliseconds"}
+    return json.dumps(
+        {
+            "_aws": {
+                "Timestamp": int(now.timestamp() * 1000),
+                "CloudWatchMetrics": [
+                    {
+                        "Namespace": "VigilWatch",
+                        # One dimension, one value per environment: a fixed number of custom
+                        # metrics whatever is monitored, and dev never feeds prod's alarms.
+                        "Dimensions": [["FunctionName"]],
+                        "Metrics": [
+                            {"Name": name, "Unit": units.get(name, "Count")} for name in values
+                        ],
+                    }
+                ],
+            },
+            "FunctionName": os.environ.get("AWS_LAMBDA_FUNCTION_NAME", "uptime-check"),
+            **values,
+        }
+    )
+
+
+def _judge_connectivity(settings: Settings, statuses: list[str]) -> tuple[str, bool]:
+    """('disabled' | 'not_needed' | 'healthy' | 'failed', whether DOWN results can be trusted).
+
+    Controls are only probed when something is down and nothing answered: a target that answered
+    correctly already proves the checker can reach the internet.
     """
-    Recursively convert DynamoDB Decimals to int/float so json.dumps works.
-    """
-    if isinstance(obj, list):
-        return [_to_plain(v) for v in obj]
-    if isinstance(obj, dict):
-        return {k: _to_plain(v) for k, v in obj.items()}
-    if isinstance(obj, Decimal):
-        return int(obj) if obj % 1 == 0 else float(obj)
-    return obj
+    if not settings.control_urls:
+        return "disabled", True
+    anything_down = DOWN in statuses
+    anything_answered = any(status in (UP, DEGRADED) for status in statuses)
+    if not anything_down or anything_answered:
+        return "not_needed", True
+    report = check_controls(settings.control_urls, probe, timeout=settings.timeout_s)
+    return ("healthy", True) if report.healthy else ("failed", False)
 
 
 def lambda_handler(event, context):
-    """
-    Extremely simple uptime check:
-    - Reads ?url=... from queryStringParameters
-    - Performs a single GET with 5s timeout
-    - Returns status code and success flag
-    - No DynamoDB, no SNS, no Decimals
-    """
-    try:
-        table, cloudwatch, sns = _get_clients()
+    logs.bind(context)
+    settings = Settings.from_env()
+    repo = Repo()
+    publish = make_publisher()
+    now = utcnow()
 
-        response = table.scan()
-        items = response.get("Items", [])
-
-        results = []
-
-        for item in items:
-            # Skip disabled checks
-            if not item.get("enabled", True):
-                continue
-
-            endpoint = item.get("endpoint")
-            if not endpoint:
-                print(f"Skipping item without endpoint: {json.dumps(_to_plain(item))}")
-                continue
-
-            method = item.get("method", "GET")
-            expected_status = int(item.get("expected_status", 200))
-
-            try:
-                if method != "GET":
-                    raise ValueError(f"Unsupported method: {method}")
-
-                req = urllib_request.Request(endpoint, method="GET")
-                with urllib_request.urlopen(req, timeout=5) as resp:
-                    actual_status = resp.getcode()
-                success = actual_status == expected_status
-
-            except urllib_error.HTTPError as e:
-                actual_status = e.code
-                success = actual_status == expected_status
-
-            except Exception:
-                success = False
-                actual_status = "timeout"
-
-            cloudwatch.put_metric_data(
-                Namespace="VigilWatch",
-                MetricData=[
-                    {
-                        "MetricName": "EndpointUp",
-                        "Dimensions": [
-                            {"Name": "Endpoint", "Value": endpoint},
-                        ],
-                        "Value": 1 if success else 0,
-                        "Unit": "Count",
-                    }
-                ],
+    endpoints = [e for e in repo.list_enabled_endpoints() if e.get("url")]
+    results = []
+    if endpoints:
+        workers = max(1, min(settings.max_workers, len(endpoints)))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            results = list(
+                pool.map(lambda e: probe(e["url"], timeout=settings.timeout_s), endpoints)
             )
 
-            if not success and SNS_TOPIC_ARN:
-                sns.publish(
-                    TopicArn=SNS_TOPIC_ARN,
-                    Subject="Uptime check failed",
-                    Message=json.dumps(
-                        _to_plain(
-                            {
-                                "endpoint": endpoint,
-                                "expected_status": expected_status,
-                                "actual_status": actual_status,
-                                "timestamp": datetime.utcnow().isoformat(),
-                            }
-                        ),
-                        indent=2,
-                    ),
-                )
+    statuses = [
+        classify(result, int(endpoint.get("expected_status", 200)), settings.degraded_ms)
+        for endpoint, result in zip(endpoints, results, strict=True)
+    ]
+    controls, controls_ok = _judge_connectivity(settings, statuses)
 
-            results.append(
-                {
-                    "endpoint": url,
-                    "expected_status": expected_status,
-                    "actual_status": actual_status,
-                    "success": success,
-                }
+    summary = {
+        "checked": len(endpoints),
+        "up": 0,
+        "degraded": 0,
+        "down": 0,
+        "inconclusive": 0,
+        "errors": 0,
+    }
+    counter = {UP: "up", DEGRADED: "degraded", DOWN: "down", INCONCLUSIVE: "inconclusive"}
+    for endpoint, result in zip(endpoints, results, strict=True):
+        try:
+            status = apply_result(
+                endpoint, result, repo, publish, now, settings, controls_ok=controls_ok
             )
+        except Exception:
+            summary["errors"] += 1
+            logger.exception(
+                "failed to process endpoint",
+                extra={"fields": {"endpoint_id": endpoint.get("endpoint_id")}},
+            )
+            continue
+        summary[counter[status]] += 1
 
-        # Convert any Decimals in results before returning
-        plain_body = _to_plain(
-            {
-                "status": "completed",
-                "checked": len(results),
-                "results": results,
-            }
+    latencies = [r.latency_ms for r in results if r.latency_ms is not None]
+    repo.record_heartbeat(now, {**summary, "controls": controls})
+    if settings.metrics_enabled:
+        print(_emf(summary, latencies, now, controls))
+    logger.info("run complete", extra={"fields": {**summary, "controls": controls}})
+
+    if summary["errors"]:
+        raise RuntimeError(
+            f"{summary['errors']} of {summary['checked']} endpoints failed internally"
         )
-
-        return {
-            "statusCode": 500,
-            "headers": CORS_HEADERS,
-            "body": json.dumps(plain_body),
-        }
-
-def checks(event, context):
-    try:
-        items = [{"repo": "lesego-rabotapi/VigilWatch", "score": Decimal("0.95")}]
-        body = json.dumps(to_json_safe(items))
-        return {"statusCode": 200, "headers": CORS_HEADERS, "body": body}
-    except Exception as e:
-        # Last-resort error
-        print("Error in simple uptime_check:", repr(e))
-        return {
-            "statusCode": 500,
-            "headers": CORS_HEADERS,
-            "body": json.dumps({"error": str(e)}),
-        }
+    return summary

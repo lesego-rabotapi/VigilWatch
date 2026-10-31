@@ -1,60 +1,61 @@
-import json
-from datetime import datetime
+"""POST /register - start monitoring a URL.
 
-import boto3
+Body: {"url": "https://example.com", "expected_status": 200}
+201 with the dashboard payload (after an immediate first check) for a new URL,
+200 for a URL that is already monitored. Errors are raised and mapped by `api_handler`.
+"""
 
-TABLE_NAME = "uptime_checks"
+import os
+from datetime import UTC, datetime
 
-CORS_HEADERS = {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-}
+from common import logs
+from common.api import api_handler
+from common.checker import Settings, apply_result, make_publisher, probe
+from common.http import BadRequest, json_body, response
+from common.repo import Repo
+from common.urlguard import default_resolver, endpoint_id, validate
+from common.view import build_view
+
+logger = logs.get_logger(__name__)
+
+resolver = default_resolver
 
 
-def _get_table():
-    dynamodb = boto3.resource("dynamodb")
-    return dynamodb.Table(TABLE_NAME)
+def utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
+def _expected_status(body: dict) -> int:
+    value = body.get("expected_status", 200)
+    if isinstance(value, bool) or not isinstance(value, int) or not 100 <= value <= 599:
+        raise BadRequest("expected_status must be an integer HTTP status (100-599)")
+    return value
+
+
+@api_handler
 def lambda_handler(event, context):
-    table = _get_table()
+    body = json_body(event)
+    raw_url = body.get("url") or body.get("endpoint")
+    if not isinstance(raw_url, str) or not raw_url.strip():
+        raise BadRequest("'url' is required")
+    expected_status = _expected_status(body)
+    url = validate(raw_url, resolver=resolver)
 
-    if "body" in event:
-        body = json.loads(event["body"]) if isinstance(event["body"], str) else event["body"]
-    else:
-        body = event
-
-    url = body.get("endpoint") or body.get("url")
-    if not url:
-        return {
-            "statusCode": 400,
-            "headers": CORS_HEADERS,
-            "body": json.dumps({"message": "Missing 'endpoint' or 'url' field"}),
-        }
-
-    endpoint_id = body.get("endpoint_id") or datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
-
-    table.put_item(
-        Item={
-            "endpoint_id": endpoint_id,
-            "timestamp": datetime.utcnow().isoformat(),
-            "endpoint": url,
-            "method": body.get("method", "GET"),
-            "expected_status": body.get("expected_status", 200),
-            "enabled": True,
-        }
+    repo = Repo()
+    now = utcnow()
+    max_endpoints = int(os.environ.get("MAX_ENDPOINTS", "10"))
+    endpoint, created = repo.put_endpoint(
+        endpoint_id(url), url, now, expected_status=expected_status, max_endpoints=max_endpoints
     )
 
-    return {
-        "statusCode": 201,
-        "headers": CORS_HEADERS,
-        "body": json.dumps(
-            {
-                "message": "Endpoint registered successfully",
-                "endpoint_id": endpoint_id,
-                "url": url,
-            }
-        ),
-    }
+    if created:
+        settings = Settings.from_env()
+        try:
+            result = probe(url, timeout=settings.timeout_s)
+            apply_result(endpoint, result, repo, make_publisher(), now, settings)
+            endpoint = repo.get_endpoint(endpoint["endpoint_id"])
+        except Exception:
+            # Registration succeeded; the scheduled checker will pick it up.
+            logger.exception("first check failed", extra={"fields": {"endpoint_url": url}})
+
+    return response(201 if created else 200, build_view(repo, endpoint, now))

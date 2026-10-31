@@ -1,0 +1,25 @@
+# Accepted risks for a zero-cost deployment. Each entry has a reason; revisit
+# if the project gets a budget (see docs/adr/0004-zero-cost-security-tradeoffs.md).
+
+# CloudFront without WAF: AWS WAF costs at least $5/month + per-request fees.
+# Abuse is bounded by API throttling, the endpoint cap and the static, read-only site.
+AVD-AWS-0011
+
+# CloudFront minimum TLS version: the default *.cloudfront.net certificate fixes the
+# policy; a custom domain + ACM certificate is out of scope.
+AVD-AWS-0013
+
+# Customer-managed KMS keys (S3, SNS, SQS, DynamoDB, logs) cost $1/key/month.
+# Everything is encrypted at rest with AWS-owned/managed keys instead.
+AVD-AWS-0132
+AVD-AWS-0136
+AVD-AWS-0135
+
+# SNS topic not encrypted: CloudWatch alarms cannot publish to a topic encrypted with
+# the AWS-managed aws/sns key, and a customer key costs money. Alerts carry no secrets.
+AVD-AWS-0095
+
+# Bootstrap deploy role uses service-level wildcards (dynamodb:*, lambda:*, ...) because
+# Terraform must create/update/delete those resources. IAM itself is limited to
+# roles named vigilwatch-*, and the role is only assumable from main/production via OIDC.
+AVD-AWS-0057

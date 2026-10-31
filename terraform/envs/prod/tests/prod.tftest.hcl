@@ -1,0 +1,98 @@
+# req: VW-013 VW-015 VW-016 VW-017 VW-022
+# The production environment as committed in terraform.tfvars. The AWS provider is mocked.
+
+mock_provider "aws" {
+  override_data {
+    target = module.stack.data.aws_caller_identity.current
+    values = { account_id = "123456789012" }
+  }
+
+  mock_resource "aws_iam_role" {
+    defaults = { arn = "arn:aws:iam::123456789012:role/mock" }
+  }
+  mock_resource "aws_cloudwatch_log_group" {
+    defaults = { arn = "arn:aws:logs:af-south-1:123456789012:log-group:mock" }
+  }
+  mock_resource "aws_lambda_function" {
+    defaults = {
+      arn        = "arn:aws:lambda:af-south-1:123456789012:function:mock"
+      invoke_arn = "arn:aws:apigateway:af-south-1:lambda:path/2015-03-31/functions/arn:aws:lambda:af-south-1:123456789012:function:mock/invocations"
+    }
+  }
+  mock_resource "aws_sqs_queue" {
+    defaults = {
+      arn = "arn:aws:sqs:af-south-1:123456789012:mock"
+      url = "https://sqs.af-south-1.amazonaws.com/123456789012/mock"
+    }
+  }
+  mock_resource "aws_sns_topic" {
+    defaults = { arn = "arn:aws:sns:af-south-1:123456789012:mock" }
+  }
+  mock_resource "aws_dynamodb_table" {
+    defaults = { arn = "arn:aws:dynamodb:af-south-1:123456789012:table/mock" }
+  }
+  mock_resource "aws_cloudwatch_event_rule" {
+    defaults = { arn = "arn:aws:events:af-south-1:123456789012:rule/mock" }
+  }
+  mock_resource "aws_s3_bucket" {
+    defaults = {
+      arn                         = "arn:aws:s3:::mock"
+      bucket_regional_domain_name = "mock.s3.af-south-1.amazonaws.com"
+    }
+  }
+  mock_resource "aws_cloudfront_distribution" {
+    defaults = {
+      arn         = "arn:aws:cloudfront::123456789012:distribution/EMOCK"
+      domain_name = "d111111abcdef8.cloudfront.net"
+    }
+  }
+  mock_resource "aws_apigatewayv2_api" {
+    defaults = {
+      execution_arn = "arn:aws:execute-api:af-south-1:123456789012:abc123"
+      api_endpoint  = "https://abc123.execute-api.af-south-1.amazonaws.com"
+    }
+  }
+  mock_resource "aws_apigatewayv2_stage" {
+    defaults = { invoke_url = "https://abc123.execute-api.af-south-1.amazonaws.com/" }
+  }
+}
+
+variables {
+  allowed_account_ids = ["123456789012"]
+  bundle_path         = "bundle.zip"
+  bundle_sha256       = "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="
+}
+
+run "production_is_named_for_itself" {
+  command = apply
+
+  assert {
+    condition     = output.environment == "prod" && output.endpoints_table == "vigilwatch-prod-endpoints"
+    error_message = "the production environment must be named prod"
+  }
+}
+
+run "production_carries_every_alarm" {
+  command = apply
+
+  assert {
+    condition     = length(output.alarm_names) == 5 && contains(output.alarm_names, "vigilwatch-prod-checker-blind")
+    error_message = "production keeps all five alarms, including the blind-checker alarm"
+  }
+}
+
+run "rejects_a_malformed_account_id" {
+  command = plan
+  variables {
+    allowed_account_ids = ["not-an-account"]
+  }
+  expect_failures = [var.allowed_account_ids]
+}
+
+run "rejects_an_empty_account_list" {
+  command = plan
+  variables {
+    allowed_account_ids = []
+  }
+  expect_failures = [var.allowed_account_ids]
+}

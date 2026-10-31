@@ -1,0 +1,157 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main] # main runs CI through deploy-dev.yml (workflow_call)
+  workflow_call:
+
+permissions:
+  contents: read
+
+# bash -eo pipefail: without `shell:`, GitHub runs bash -e and ignores a failure mid-pipeline.
+defaults:
+  run:
+    shell: bash
+
+# A new push to a pull request, or to a branch other than main, cancels its superseded run. A run
+# on main (called by deploy-dev.yml) gets a group of its own: nothing a deploy waits on is cancelled.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || (github.ref != 'refs/heads/main' && github.ref) || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  TF_VERSION: "1.16.6"
+  # Providers are reused between runs instead of downloaded each time. The modules' lock files are
+  # not committed, so Terraform may fill them from the cache; the environments' committed lock
+  # files still pin and verify their providers.
+  TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform-plugin-cache
+  TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE: "true"
+
+jobs:
+  python:
+    name: Python (lint, unit, integration, contract)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      # The IAM enforcement tests render the real policies with `terraform console`.
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: terraform-providers-python-${{ runner.os }}-${{ hashFiles('terraform/**/versions.tf', 'terraform/**/.terraform.lock.hcl') }}
+          restore-keys: terraform-providers-python-${{ runner.os }}-
+      - run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: pytest --cov --cov-report=term --cov-report=xml
+      - name: Test mix summary
+        run: python scripts/test_mix.py >> "$GITHUB_STEP_SUMMARY"
+
+  terraform:
+    name: Terraform (fmt, validate, test, lint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: terraform-providers-terraform-${{ runner.os }}-${{ hashFiles('terraform/**/versions.tf', 'terraform/**/.terraform.lock.hcl') }}
+          restore-keys: terraform-providers-terraform-${{ runner.os }}-
+      - run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
+      - run: terraform fmt -check -recursive terraform
+      # The free tier shared by dev and prod is checked by the Python job's test suite
+      # (the free-tier unit tests run the check on the repository), so it is not repeated here.
+      - name: Validate and test every module and every environment
+        run: |
+          set -euo pipefail
+          for dir in terraform/modules/* terraform/envs/*; do
+            echo "::group::$dir"
+            (cd "$dir" && terraform init -backend=false -input=false && terraform validate && terraform test)
+            echo "::endgroup::"
+          done
+      - name: Validate bootstrap stack
+        run: |
+          terraform -chdir=terraform/bootstrap init -backend=false -input=false
+          terraform -chdir=terraform/bootstrap validate
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.65.0
+      - run: tflint --init --config "$(pwd)/terraform/.tflint.hcl"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - run: tflint --recursive --config "$(pwd)/terraform/.tflint.hcl"
+
+  # Lessons 3 and 4: what Lambda loads is the bundle alone, in its own runtime. Import and call every
+  # handler there, from the bundle only, with no network.
+  package:
+    name: Package (Lambda runtime image)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build the bundle
+        run: python scripts/build_bundle.py --out "$RUNNER_TEMP/bundle.zip"
+      - name: Load and call every handler inside the Lambda Python 3.12 image
+        run: >
+          docker run --rm --network none
+          -v "$RUNNER_TEMP/bundle.zip:/bundle.zip:ro"
+          -v "$GITHUB_WORKSPACE/scripts:/verify:ro"
+          --entrypoint python3
+          public.ecr.aws/lambda/python:3.12
+          -I /verify/verify_package.py /bundle.zip
+
+  frontend:
+    name: Frontend (DOM + contract tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  security:
+    name: Security (secrets, IaC misconfiguration)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks (secret scan)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: trivy (IaC scan)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          trivyignores: .trivyignore

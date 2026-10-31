@@ -1,38 +1,124 @@
+import json
 import os
-import sys
-import types
+import re
+from pathlib import Path
 
-os.environ.setdefault("AWS_REGION", "af-south-1")
-os.environ.setdefault("AWS_DEFAULT_REGION", "af-south-1")
+import boto3
+import pytest
+
+from tests.taxonomy import find_unmarked, layer_for
+
+# Fake credentials so no test can ever reach a real AWS account.
+os.environ["AWS_ACCESS_KEY_ID"] = "testing"
+os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
+os.environ["AWS_SECURITY_TOKEN"] = "testing"
+os.environ["AWS_SESSION_TOKEN"] = "testing"
+os.environ["AWS_DEFAULT_REGION"] = "af-south-1"
+os.environ["AWS_REGION"] = "af-south-1"
+os.environ["ENDPOINTS_TABLE"] = "vigilwatch-endpoints"
+os.environ["HISTORY_TABLE"] = "vigilwatch-history"
 
 
-if "boto3" not in sys.modules:
-    fake_boto3 = types.ModuleType("boto3")
+@pytest.fixture
+def aws():
+    from moto import mock_aws  # imported lazily so the unit layer never needs moto
 
-    def _fake_resource(*args, **kwargs):
-        class FakeTable:
-            def scan(self, *a, **k):
-                return {"Items": []}
+    from common import aws as aws_clients
 
-            def put_item(self, *a, **k):
-                return {}
+    aws_clients.reset()  # a cached client must not outlive the mock it was built in
+    with mock_aws():
+        yield
+    aws_clients.reset()
 
-        class FakeDynamo:
-            def Table(self, name):
-                return FakeTable()
 
-        return FakeDynamo()
+def _create_table(name, key_schema, attributes):
+    boto3.client("dynamodb").create_table(
+        TableName=name,
+        KeySchema=key_schema,
+        AttributeDefinitions=attributes,
+        BillingMode="PROVISIONED",
+        ProvisionedThroughput={"ReadCapacityUnits": 5, "WriteCapacityUnits": 5},
+    )
 
-    def _fake_client(*args, **kwargs):
-        class FakeClient:
-            def put_metric_data(self, *a, **k):
-                return {}
 
-            def publish(self, *a, **k):
-                return {}
+@pytest.fixture
+def tables(aws):
+    """Tables mirroring terraform/modules/data/main.tf."""
+    _create_table(
+        os.environ["ENDPOINTS_TABLE"],
+        [{"AttributeName": "endpoint_id", "KeyType": "HASH"}],
+        [{"AttributeName": "endpoint_id", "AttributeType": "S"}],
+    )
+    _create_table(
+        os.environ["HISTORY_TABLE"],
+        [
+            {"AttributeName": "endpoint_id", "KeyType": "HASH"},
+            {"AttributeName": "sk", "KeyType": "RANGE"},
+        ],
+        [
+            {"AttributeName": "endpoint_id", "AttributeType": "S"},
+            {"AttributeName": "sk", "AttributeType": "S"},
+        ],
+    )
+    yield
 
-        return FakeClient()
 
-    fake_boto3.resource = _fake_resource
-    fake_boto3.client = _fake_client
-    sys.modules["boto3"] = fake_boto3
+@pytest.fixture
+def sns_topic(aws, monkeypatch):
+    arn = boto3.client("sns").create_topic(Name="vigilwatch-alerts")["TopicArn"]
+    monkeypatch.setenv("SNS_TOPIC_ARN", arn)
+    return arn
+
+
+@pytest.fixture
+def alerts(tables, sns_topic):
+    """Subscribe an SQS queue to the alert topic so published alerts can be read back."""
+    sqs = boto3.client("sqs")
+    queue_url = sqs.create_queue(QueueName="alerts")["QueueUrl"]
+    queue_arn = sqs.get_queue_attributes(QueueUrl=queue_url, AttributeNames=["QueueArn"])[
+        "Attributes"
+    ]["QueueArn"]
+    boto3.client("sns").subscribe(TopicArn=sns_topic, Protocol="sqs", Endpoint=queue_arn)
+
+    def read():
+        msgs = sqs.receive_message(QueueUrl=queue_url, MaxNumberOfMessages=10).get("Messages", [])
+        for m in msgs:
+            sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=m["ReceiptHandle"])
+        return [json.loads(m["Body"]) for m in msgs]
+
+    return read
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--env",
+        action="store",
+        default=os.environ.get("ENV", "dev").lower(),
+        choices=["local", "dev", "prod"],
+        help="environment for e2e tests (addresses come from API_URL_<ENV>); prod is read-only",
+    )
+
+
+def pytest_bdd_apply_tag(tag, function):
+    """Gherkin tags like @VW-001 become the `req` marker; other tags behave as usual."""
+    if re.fullmatch(r"VW-\d{3}", tag):
+        pytest.mark.req(tag)(function)
+        return True
+    return None
+
+
+def pytest_collection_modifyitems(config, items):
+    """Mark each test with its layer from its location, and refuse unmarked or ambiguous tests."""
+    root = Path(config.rootpath)
+    for item in items:
+        try:
+            relative = Path(item.path).relative_to(root).as_posix()
+        except ValueError:
+            continue
+        layer = layer_for(relative)
+        if layer and not any(m.name == layer for m in item.iter_markers()):
+            item.add_marker(getattr(pytest.mark, layer))
+    unmarked = find_unmarked(items)
+    if unmarked:
+        names = ", ".join(item.nodeid for item in unmarked)
+        raise pytest.UsageError(f"tests without exactly one layer marker: {names}")
