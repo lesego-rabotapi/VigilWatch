@@ -1,6 +1,6 @@
 "use strict";
 
-// req: VW-001 VW-014
+// req: VW-001 VW-014 VW-026
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -9,6 +9,7 @@ const path = require("node:path");
 const { JSDOM } = require("jsdom");
 
 const view = require("../view.js");
+const VigilAuth = require("../auth.js");
 const initApp = require("../app.js");
 
 const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
@@ -35,7 +36,7 @@ const reply = (status, body) => ({
 });
 
 /** A dashboard page with fakes for the network, timers and console. */
-function setup({ config = { apiBase: API }, responses = [] } = {}) {
+function setup({ config = { apiBase: API }, responses = [], auth = VigilAuth } = {}) {
   const dom = new JSDOM(html, { url: "https://dashboard.test/" });
   const { window } = dom;
   const calls = [];
@@ -43,6 +44,7 @@ function setup({ config = { apiBase: API }, responses = [] } = {}) {
   const cleared = [];
   const errors = [];
   window.VigilView = view;
+  window.VigilAuth = auth;
   if (config) window.VIGILWATCH_CONFIG = config;
   window.fetch = (url, options) => {
     calls.push({ url, options });
@@ -189,6 +191,7 @@ test("loaded as a plain browser script it starts itself without a module system"
   };
   window.VIGILWATCH_CONFIG = { apiBase: API };
   window.eval(fs.readFileSync(path.join(__dirname, "../view.js"), "utf8"));
+  window.eval(fs.readFileSync(path.join(__dirname, "../auth.js"), "utf8"));
   window.eval(fs.readFileSync(path.join(__dirname, "../app.js"), "utf8"));
 
   try {
@@ -200,5 +203,102 @@ test("loaded as a plain browser script it starts itself without a module system"
     assert.deepEqual(calls, [`${API}/register`]);
   } finally {
     window.close(); // the poller started a real 15 s interval; closing clears it
+  }
+});
+
+// ---- Sign-in (ADR 0007) -----------------------------------------------------------------------
+
+const SIGNED = { apiBase: API, auth: { hostedUiUrl: "https://x.auth.af-south-1.amazoncognito.com", clientId: "c" } };
+
+/** A stand-in for auth.js: signed in with `token`, or signed out when it is null. */
+function fakeAuth({ token = null, redirectError = null } = {}) {
+  const log = [];
+  let current = token;
+  return {
+    log,
+    createAuth: () => ({
+      enabled: true,
+      token: () => current,
+      handleRedirect: () => (redirectError ? Promise.reject(new Error(redirectError)) : Promise.resolve(Boolean(current))),
+      signIn: () => { log.push("signIn"); return Promise.resolve(); },
+      signOut: () => { log.push("signOut"); current = null; },
+      forget: () => { log.push("forget"); current = null; },
+    }),
+  };
+}
+
+test("signed out, the form is closed and the only way on is to sign in", async () => {
+  const auth = fakeAuth();
+  const page = setup({ config: SIGNED, auth });
+  try {
+    await page.start();
+    assert.equal(page.$("start-button").disabled, true);
+    assert.equal(page.$("endpoint-url").disabled, true);
+    assert.equal(page.$("sign-in").classList.contains("hidden"), false);
+    assert.equal(page.$("sign-out").classList.contains("hidden"), true);
+    page.$("sign-in").click();
+    assert.deepEqual(auth.log, ["signIn"]);
+  } finally {
+    page.done();
+  }
+});
+
+test("signed in, every request carries the token and the form is open", async () => {
+  const auth = fakeAuth({ token: "tok" });
+  const page = setup({ config: SIGNED, auth, responses: [reply(201, payload()), reply(200, payload())] });
+  try {
+    await page.start();
+    assert.equal(page.$("start-button").disabled, false);
+    assert.equal(page.$("sign-out").classList.contains("hidden"), false);
+    await page.submit("https://example.com");
+    page.timers[0].fn();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    for (const call of page.calls) {
+      assert.equal(call.options.headers.Authorization, "Bearer tok", call.url);
+    }
+    page.$("sign-out").click();
+    assert.ok(auth.log.includes("signOut"));
+  } finally {
+    page.done();
+  }
+});
+
+test("a session the API no longer accepts returns the page to signed out", async () => {
+  const auth = fakeAuth({ token: "expired" });
+  const page = setup({ config: SIGNED, auth, responses: [reply(401, { message: "Unauthorized", code: "unauthorized" })] });
+  try {
+    await page.start();
+    await page.submit("https://example.com");
+    assert.ok(auth.log.includes("forget"));
+    assert.match(page.$("input-error").textContent, /sign in again/i);
+    assert.equal(page.$("sign-in").classList.contains("hidden"), false);
+    assert.equal(page.$("start-button").disabled, true);
+  } finally {
+    page.done();
+  }
+});
+
+test("a failed sign-in is explained and leaves the page signed out", async () => {
+  const auth = fakeAuth({ redirectError: "Denied by the user" });
+  const page = setup({ config: SIGNED, auth });
+  try {
+    await page.start();
+    assert.match(page.$("input-error").textContent, /Denied by the user/);
+    assert.equal(page.$("sign-in").classList.contains("hidden"), false);
+  } finally {
+    page.done();
+  }
+});
+
+test("on the local stack (no sign-in settings) requests go without a token and no session buttons show", async () => {
+  const page = setup({ responses: [reply(201, payload())] });
+  try {
+    await page.start();
+    await page.submit("https://example.com");
+    assert.equal(page.calls[0].options.headers.Authorization, undefined);
+    assert.equal(page.$("sign-in").classList.contains("hidden"), true);
+    assert.equal(page.$("sign-out").classList.contains("hidden"), true);
+  } finally {
+    page.done();
   }
 });
