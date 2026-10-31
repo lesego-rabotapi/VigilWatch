@@ -317,3 +317,14 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* Sign-in and sign-out, at the right of the header */
+.session {
+  display: flex;
+  gap: 8px;
+}
+
+.session button.secondary {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}

@@ -158,3 +158,28 @@ test("sign-in settings that are not https are refused", () => {
     /https/,
   );
 });
+
+test("with sign-in off every operation is a harmless no-op", async () => {
+  const b = browser();
+  const auth = VigilAuth.createAuth(b.window, undefined, { navigate: b.navigate });
+  assert.equal(await auth.handleRedirect(), false);
+  await auth.signIn();
+  auth.signOut();
+  auth.forget();
+  assert.deepEqual(b.visits, [], "nothing navigates");
+  assert.equal(b.window.sessionStorage.length, 0, "nothing is stored");
+});
+
+test("forgetting the token signs the page out without leaving it", async () => {
+  const start = browser();
+  const first = VigilAuth.createAuth(start.window, CONFIG, { navigate: start.navigate });
+  await first.signIn();
+  const saved = start.window.sessionStorage.getItem("vigilwatch.pkce");
+  const back = browser(`https://dashboard.test/?code=c&state=${JSON.parse(saved).state}`);
+  back.window.sessionStorage.setItem("vigilwatch.pkce", saved);
+  const auth = VigilAuth.createAuth(back.window, CONFIG, { navigate: back.navigate });
+  await auth.handleRedirect();
+  auth.forget();
+  assert.equal(auth.token(), null);
+  assert.deepEqual(back.visits, [], "no redirect: the user chooses when to sign in again");
+});

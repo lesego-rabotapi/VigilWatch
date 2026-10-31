@@ -150,7 +150,7 @@ test("API error messages are surfaced from the JSON body", async () => {
 test("index.html loads config before the app and has no inline script", () => {
   const doc = dom();
   const srcs = [...doc.querySelectorAll("script")].map((s) => s.getAttribute("src"));
-  assert.deepEqual(srcs, ["config.js", "view.js", "app.js"]);
+  assert.deepEqual(srcs, ["config.js", "view.js", "auth.js", "app.js"]);
 });
 
 // ---- an honest checker: INCONCLUSIVE ------------------------------------------------------------

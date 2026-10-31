@@ -302,3 +302,36 @@ test("on the local stack (no sign-in settings) requests go without a token and n
     page.done();
   }
 });
+
+test("a sign-in that cannot start says so", async () => {
+  const auth = fakeAuth();
+  const broken = { createAuth: (...args) => ({ ...auth.createAuth(...args), signIn: () => Promise.reject(new Error("no crypto")) }) };
+  const page = setup({ config: SIGNED, auth: broken });
+  try {
+    await page.start();
+    page.$("sign-in").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.match(page.$("input-error").textContent, /Could not start the sign-in: no crypto/);
+  } finally {
+    page.done();
+  }
+});
+
+test("a poll the API refuses signs the page out quietly", async () => {
+  const auth = fakeAuth({ token: "tok" });
+  const page = setup({
+    config: SIGNED,
+    auth,
+    responses: [reply(201, payload()), reply(401, { message: "Unauthorized", code: "unauthorized" })],
+  });
+  try {
+    await page.start();
+    await page.submit("https://example.com");
+    page.timers[0].fn();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepEqual(page.errors, [], "a signed-out poll is not an error to log");
+    assert.match(page.$("input-error").textContent, /sign in again/i);
+  } finally {
+    page.done();
+  }
+});
