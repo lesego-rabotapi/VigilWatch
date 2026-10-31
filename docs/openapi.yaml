@@ -7,8 +7,11 @@ info:
     The source of truth for the API contract. `scripts/export_schema.py` exports the JSON Schema that
     the Python and frontend tests validate against, and a drift test fails if they diverge.
 
-    CORS is configured on the gateway, so the functions return no CORS headers.
+    CORS is configured on the gateway, so the functions return no CORS headers. Every operation
+    needs a Cognito token, and each user sees only the endpoints they registered.
     Requirement IDs refer to `docs/design/requirements.md`.
+security:
+  - cognito: []
 servers:
   - url: "{apiBase}"
     description: The `api_base_url` Terraform output (also written to the dashboard's config.js).
@@ -49,8 +52,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "401":
+          description: No valid Cognito token, refused before the function runs (or, as a second check, by it).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
-          description: The monitoring limit has been reached.
+          description: The monitoring limit has been reached, the caller's own or the global one.
           content:
             application/json:
               schema:
@@ -88,8 +97,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "401":
+          description: No valid Cognito token, refused before the function runs (or, as a second check, by it).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
-          description: The URL is not being monitored.
+          description: The caller does not monitor this URL (another user's URL is not found either).
           content:
             application/json:
               schema:
@@ -101,6 +116,15 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 components:
+  securitySchemes:
+    cognito:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        An access token from the environment's Cognito user pool (ADR 0007), checked by API Gateway's
+        JWT authorizer: `Authorization: Bearer <token>`. The dashboard gets one with the authorization
+        code flow and PKCE. Endpoints belong to the signed-in user.
   schemas:
     Timestamp:
       type: string
