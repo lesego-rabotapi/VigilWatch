@@ -35,6 +35,10 @@ on:
         description: refuse unless this commit is the one dev last deployed successfully
         type: boolean
         default: false
+    secrets:
+      E2E_PASSWORD:
+        description: the smoke-test user's password (docs/RUNBOOK.md, section 1)
+        required: false
 
 permissions:
   contents: read
@@ -252,6 +256,7 @@ jobs:
     outputs:
       api_base_url: ${{ steps.outputs.outputs.api_base_url }}
       dashboard_url: ${{ steps.outputs.outputs.dashboard_url }}
+      smoke_client_id: ${{ steps.outputs.outputs.smoke_client_id }}
     permissions:
       contents: read
       id-token: write
@@ -317,6 +322,7 @@ jobs:
           echo "dashboard_url=$(terraform output -raw dashboard_url)" >> "$GITHUB_OUTPUT"
           echo "api_base_url=$(terraform output -raw api_base_url)" >> "$GITHUB_OUTPUT"
           echo "distribution_id=$(terraform output -raw cloudfront_distribution_id)" >> "$GITHUB_OUTPUT"
+          echo "smoke_client_id=$(terraform output -raw smoke_client_id)" >> "$GITHUB_OUTPUT"
           echo "Dashboard: $(terraform output -raw dashboard_url)" >> "$GITHUB_STEP_SUMMARY"
       - name: Invalidate CloudFront cache
         env:
@@ -342,6 +348,19 @@ jobs:
             echo "::error::Set the repository variable E2E_READONLY_URL to a URL already monitored in prod (docs/RUNBOOK.md, section 1), then re-run this job."
             exit 1
           fi
+      # The API needs a signed-in caller (ADR 0007): the smoke tests sign in as a test user through
+      # Cognito's public endpoint, so this job still holds no AWS credentials.
+      - name: Check the smoke test user
+        env:
+          E2E_USERNAME: ${{ vars.E2E_USERNAME }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+        run: |
+          for name in E2E_USERNAME E2E_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Set $name for the smoke-test user (docs/RUNBOOK.md, section 1), then re-run this job."
+              exit 1
+            fi
+          done
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.sha }}
@@ -357,6 +376,9 @@ jobs:
           API_URL: ${{ needs.apply.outputs.api_base_url }}
           DASHBOARD_URL: ${{ needs.apply.outputs.dashboard_url }}
           E2E_READONLY_URL: ${{ vars.E2E_READONLY_URL }}
+          COGNITO_CLIENT_ID: ${{ needs.apply.outputs.smoke_client_id }}
+          E2E_USERNAME: ${{ vars.E2E_USERNAME }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
         run: |
           pip install -r requirements-dev.txt
           pytest --collect-only -q -m "$MARKERS" tests/e2e --env="$ENVIRONMENT" > collected.txt

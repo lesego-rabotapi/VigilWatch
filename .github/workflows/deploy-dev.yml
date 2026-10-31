@@ -31,6 +31,7 @@ jobs:
     needs: [ci]
     if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_ACCOUNT_ID != '' && vars.TF_STATE_BUCKET != '' }}
     uses: ./.github/workflows/deploy-environment.yml
+    secrets: inherit # the smoke-test password
     permissions:
       contents: read
       id-token: write
