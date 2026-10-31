@@ -35,8 +35,8 @@ def test_spec_documents_exactly_the_routes_the_api_serves():
 @pytest.mark.parametrize(
     "path, method, statuses",
     [
-        ("/register", "post", {"200", "201", "400", "429", "500"}),
-        ("/checks", "get", {"200", "400", "404", "500"}),
+        ("/register", "post", {"200", "201", "400", "401", "429", "500"}),
+        ("/checks", "get", {"200", "400", "401", "404", "500"}),
     ],
 )
 def test_every_status_the_handlers_can_return_is_documented(path, method, statuses):
@@ -119,3 +119,28 @@ def test_inconclusive_is_a_documented_status_in_the_payload_and_the_exported_sch
         "incidents": [],
     }
     jsonschema.validate(payload, build_schema("ChecksResponse"))
+
+
+@pytest.mark.req("VW-026")
+@pytest.mark.security
+def test_every_operation_requires_a_cognito_bearer_token():
+    spec = load_spec()
+    scheme = spec["components"]["securitySchemes"]["cognito"]
+    assert scheme == {**scheme, "type": "http", "scheme": "bearer", "bearerFormat": "JWT"}
+    assert spec["security"] == [{"cognito": []}], "every operation, unless one opts out"
+    for path, methods in spec["paths"].items():
+        for method, operation in methods.items():
+            where = f"{method.upper()} {path}"
+            assert operation.get("security", spec["security"]) == [{"cognito": []}], where
+            unauthorized = operation["responses"]["401"]["content"]["application/json"]
+            assert unauthorized["schema"] == {"$ref": "#/components/schemas/Error"}
+
+
+@pytest.mark.req("VW-026")
+@pytest.mark.negative
+def test_the_unauthorized_error_matches_the_error_schema():
+    response = get_checks.lambda_handler(
+        {"queryStringParameters": {"url": "https://x.example"}}, None
+    )
+    assert response["statusCode"] == 401
+    _error_schema_validator().validate(json.loads(response["body"]))
