@@ -222,6 +222,8 @@ def test_a_backup_has_unix_line_endings_on_every_platform(table, tmp_path):
         ),
         (['{"endpoint_id": {"S": "a"}, "z": {"NULL": 1}}'], "typed"),
         (['{"endpoint_id": {"S": "a"}, "n": {"N": "1..5"}}'], "typed"),
+        (['{"endpoint_id": {"S": "a"}, "n": {"N": "+5"}}'], "typed"),
+        (['{"endpoint_id": {"S": "a"}, "n": {"N": ".5"}}'], "typed"),
     ],
     ids=[
         "untyped-key",
@@ -241,6 +243,8 @@ def test_a_backup_has_unix_line_endings_on_every_platform(table, tmp_path):
         "too-many-digits",
         "null-not-true",
         "two-points",
+        "explicit-plus",
+        "no-leading-digit",
     ],
 )
 def test_a_damaged_backup_writes_nothing(table, tmp_path, lines, reason):
@@ -318,11 +322,28 @@ def test_a_counter_without_its_number_is_repaired_not_a_crash(table):
     assert table.get_item(Key={"endpoint_id": COUNTER_ID})["Item"]["n"] == repo.count() == 2
 
 
-@pytest.mark.parametrize("number", [".5", "5.", "+5", "-0.25e3", "0"])
-def test_numbers_written_the_ways_dynamodb_accepts_are_restored(table, tmp_path, number):
+@pytest.mark.parametrize("number", ["0", "-7", "0.25", "-0.25e3", "1E+5"])
+def test_numbers_in_the_form_backups_are_written_in_are_restored(table, tmp_path, number):
     good = tmp_path / "good.jsonl"
     good.write_text(
         f'{{"endpoint_id": {{"S": "https://n.example"}}, "x": {{"N": "{number}"}}}}\n',
         encoding="utf-8",
     )
     assert restore_tables.restore(TABLE, good) == 1
+
+
+def test_only_the_endpoints_table_gets_the_counter_rules(aws, tmp_path):
+    """A table keyed by endpoint_id alone but not named *-endpoints keeps its '_' items and gets
+    no counter written into it."""
+    client = boto3.client("dynamodb")
+    client.create_table(
+        TableName="vigilwatch-settings",
+        KeySchema=[{"AttributeName": "endpoint_id", "KeyType": "HASH"}],
+        AttributeDefinitions=[{"AttributeName": "endpoint_id", "AttributeType": "S"}],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    out = tmp_path / "settings.jsonl"
+    out.write_text('{"endpoint_id":{"S":"_defaults"}}\n', encoding="utf-8")
+    assert restore_tables.restore("vigilwatch-settings", out) == 1
+    names = [i["endpoint_id"]["S"] for i in client.scan(TableName="vigilwatch-settings")["Items"]]
+    assert names == ["_defaults"]

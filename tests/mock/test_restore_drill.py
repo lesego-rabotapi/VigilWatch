@@ -181,7 +181,7 @@ def test_a_scratch_table_still_being_created_is_waited_for_then_deleted(backup):
 
 
 @pytest.mark.negative
-def test_a_create_retried_after_a_lost_response_still_deletes_its_table(backup):
+def test_a_create_retried_after_a_lost_response_goes_on_with_the_table_it_made(backup):
     """The name is random, so 'already exists' means the first, unanswered create made it."""
     client = boto3.client("dynamodb")
     real_create = client.create_table
@@ -193,9 +193,28 @@ def test_a_create_retried_after_a_lost_response_still_deletes_its_table(backup):
         )
 
     client.create_table = made_then_retried
-    with pytest.raises(client.exceptions.ResourceInUseException):
-        restore_drill.drill(TABLE, backup, client=client)
+    result = restore_drill.drill(TABLE, backup, client=client)
+    assert result.problems == [] and result.items == 12
     assert set(table_names()) == {TABLE, "vigilwatch-history"}
+
+
+@pytest.mark.negative
+def test_a_failed_cleanup_does_not_hide_why_the_create_failed(backup, capsys):
+    client = boto3.client("dynamodb")
+
+    def denied(operation):
+        def call(**_kwargs):
+            raise client.exceptions.ClientError(
+                {"Error": {"Code": "AccessDeniedException", "Message": operation}}, operation
+            )
+
+        return call
+
+    client.create_table = denied("CreateTable")
+    client.delete_table = denied("DeleteTable")
+    with pytest.raises(client.exceptions.ClientError, match="CreateTable"):
+        restore_drill.drill(TABLE, backup, client=client)
+    assert "DeleteTable" in capsys.readouterr().err, "the cleanup failure is still reported"
 
 
 def test_two_drills_started_together_get_different_scratch_tables():

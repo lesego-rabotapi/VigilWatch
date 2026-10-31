@@ -126,7 +126,8 @@ run "every_access_log_line_is_json_even_when_a_value_is_missing" {
   # Values are written unescaped: free text such as an integration error message could hold a
   # quote and break the line, so only fixed-form values are logged (errors are in function logs).
   assert {
-    condition     = !strcontains(aws_apigatewayv2_stage.default.access_log_settings[0].format, "ErrorMessage")
+    condition = !anytrue([for v in ["ErrorMessage", "error.message", "integration.error", "authorizer.error"] :
+    strcontains(aws_apigatewayv2_stage.default.access_log_settings[0].format, v)])
     error_message = "no free-text value in the access log"
   }
   assert {

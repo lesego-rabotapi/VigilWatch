@@ -23,6 +23,21 @@ NOW = datetime(2026, 10, 2, 12, 0, 0, tzinfo=UTC)
 COUNTER_KEY = {"endpoint_id": "_system#count"}
 
 
+def test_checking_the_counter_exists_costs_an_eventually_consistent_read(tables, monkeypatch):
+    """It runs on every registration against 2 to 5 units; the conditional create covers a race."""
+    repo = new_repo()
+    reads = []
+    real = repo.table.get_item
+
+    def spy(**kwargs):
+        reads.append(kwargs.get("ConsistentRead", False))
+        return real(**kwargs)
+
+    monkeypatch.setattr(repo.table, "get_item", spy)
+    repo._ensure_counter()
+    assert reads[0] is False
+
+
 def new_repo():
     """A repository on its own boto3 resource, as a separate Lambda container would have."""
     return EndpointRepository(boto3.resource("dynamodb").Table("vigilwatch-endpoints"))
