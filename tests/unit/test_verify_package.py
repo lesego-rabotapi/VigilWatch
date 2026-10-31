@@ -71,3 +71,13 @@ def test_it_checks_exactly_the_handlers_terraform_deploys():
     compute = (ROOT / "terraform" / "modules" / "compute" / "main.tf").read_text(encoding="utf-8")
     deployed = set(re.findall(r'handler\s*=\s*"([\w.]+)"', compute))
     assert set(verify_package.HANDLERS) == deployed
+
+
+@pytest.mark.req("VW-026")
+def test_the_probes_sign_in_so_they_reach_the_handlers_validation():
+    """Unsigned, every handler stops at 401 and the probe would prove only the sign-in check."""
+    from common.auth import caller
+
+    for event, expected in verify_package.PROBES.values():
+        assert caller(event)
+        assert expected == 400
