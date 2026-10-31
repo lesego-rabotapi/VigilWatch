@@ -43,7 +43,7 @@ def new_repo():
     return EndpointRepository(boto3.resource("dynamodb").Table("vigilwatch-endpoints"))
 
 
-def register_concurrently(entries, cap):
+def register_concurrently(entries, cap, owner=None, per_owner=None):
     """Start every (endpoint_id, url) registration together; return (created, over_cap, errors)."""
     outcomes, errors = [], []
     gate = threading.Barrier(len(entries))
@@ -51,7 +51,9 @@ def register_concurrently(entries, cap):
     def worker(endpoint_id, url):
         try:
             gate.wait(timeout=5)
-            _, created = new_repo().put(endpoint_id, url, NOW, max_endpoints=cap)
+            _, created = new_repo().put(
+                endpoint_id, url, NOW, max_endpoints=cap, owner=owner, max_per_owner=per_owner
+            )
             outcomes.append("created" if created else "existing")
         except EndpointLimitReached:
             outcomes.append("over_cap")
@@ -86,8 +88,8 @@ def slow_count(monkeypatch, serialised_requests):
     """Widen the race window: every reader of the count sees it before anyone else writes."""
     real = EndpointRepository.count
 
-    def slow(self):
-        value = real(self)
+    def slow(self, owner=None):
+        value = real(self, owner=owner)
         time.sleep(0.15)
         return value
 
@@ -101,6 +103,16 @@ def test_concurrent_registrations_never_exceed_the_cap(tables, slow_count):
     assert errors == []
     assert (created, over_cap) == (3, 7)
     assert new_repo().count() == 3
+
+
+@pytest.mark.negative
+@pytest.mark.req("VW-026")
+def test_concurrent_registrations_by_one_user_never_exceed_their_cap(tables, slow_count):
+    entries = [(f"id{i:02d}", f"https://h{i}.example.com/") for i in range(8)]
+    created, over_cap, errors = register_concurrently(entries, cap=50, owner="u1", per_owner=2)
+    assert errors == []
+    assert (created, over_cap) == (2, 6)
+    assert new_repo().count(owner="u1") == 2
 
 
 def test_concurrent_registrations_of_the_same_url_create_it_once(tables, slow_count):

@@ -228,3 +228,13 @@ As an owner I want stated service levels for the monitor and a dashboard that sh
 - Each environment has one dashboard with the four golden signals (latency, traffic, errors, saturation) for its API, functions, queue and tables.
 - Saved Logs Insights queries cover function errors, checker runs, API server errors and slow API requests.
 - `docs/slo.md` states each objective, how it is measured, its error budget and the alarm that guards it.
+
+### VW-026: Only signed-in users, each seeing only their own endpoints
+
+As an owner I want only people I invited to use the monitor, and each of them to see only what they registered.
+
+**Acceptance:**
+- Every API route requires a valid Cognito token; a request without a signed-in caller is refused with 401.
+- An endpoint belongs to the user who registered it. Asking for another user's URL returns 404, the same answer as for a URL nobody monitors.
+- Each user has a cap (default 5) as well as the global cap; neither can be passed by concurrent registrations.
+- The dashboard signs in with the authorization code flow and PKCE and keeps the token in memory only.
