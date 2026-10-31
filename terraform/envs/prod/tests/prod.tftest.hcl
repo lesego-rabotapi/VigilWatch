@@ -28,6 +28,9 @@ mock_provider "aws" {
   mock_resource "aws_sns_topic" {
     defaults = { arn = "arn:aws:sns:af-south-1:123456789012:mock" }
   }
+  mock_resource "aws_cognito_user_pool" {
+    defaults = { id = "af-south-1_MOCK", endpoint = "cognito-idp.af-south-1.amazonaws.com/af-south-1_MOCK" }
+  }
   mock_resource "aws_dynamodb_table" {
     defaults = { arn = "arn:aws:dynamodb:af-south-1:123456789012:table/mock" }
   }

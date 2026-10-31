@@ -16,7 +16,7 @@ resource "aws_apigatewayv2_api" "http" {
   cors_configuration {
     allow_origins = var.allowed_origins
     allow_methods = ["GET", "POST", "OPTIONS"]
-    allow_headers = ["content-type"]
+    allow_headers = ["content-type", "authorization"] # the browser sends the token
     max_age       = 3600
   }
 }
@@ -30,12 +30,28 @@ resource "aws_apigatewayv2_integration" "api" {
   payload_format_version = "2.0"
 }
 
+# Every request needs a valid token from this environment's user pool (ADR 0007). API Gateway checks
+# signature, issuer, expiry and audience before a function runs; CORS preflights need no token.
+resource "aws_apigatewayv2_authorizer" "jwt" {
+  api_id           = aws_apigatewayv2_api.http.id
+  name             = "${var.name_prefix}-cognito"
+  authorizer_type  = "JWT"
+  identity_sources = ["$request.header.Authorization"]
+
+  jwt_configuration {
+    issuer   = var.jwt_issuer
+    audience = var.jwt_audiences
+  }
+}
+
 resource "aws_apigatewayv2_route" "route" {
   for_each = local.api_routes
 
-  api_id    = aws_apigatewayv2_api.http.id
-  route_key = each.key
-  target    = "integrations/${aws_apigatewayv2_integration.api[each.value].id}"
+  api_id             = aws_apigatewayv2_api.http.id
+  route_key          = each.key
+  target             = "integrations/${aws_apigatewayv2_integration.api[each.value].id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
 }
 
 resource "aws_cloudwatch_log_group" "api_access" {

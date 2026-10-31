@@ -57,3 +57,23 @@ output "region" {
   description = "AWS region."
   value       = module.stack.region
 }
+
+output "user_pool_id" {
+  description = "Cognito user pool: create users with aws cognito-idp admin-create-user."
+  value       = module.stack.user_pool_id
+}
+
+output "hosted_ui_url" {
+  description = "Cognito hosted UI the dashboard signs in on."
+  value       = module.stack.hosted_ui_url
+}
+
+output "dashboard_client_id" {
+  description = "The dashboard's public Cognito client."
+  value       = module.stack.dashboard_client_id
+}
+
+output "smoke_client_id" {
+  description = "The Cognito client the smoke tests sign in with."
+  value       = module.stack.smoke_client_id
+}

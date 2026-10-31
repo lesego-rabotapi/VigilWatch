@@ -17,6 +17,7 @@ module "stack" {
   extra_cors_origins           = var.extra_cors_origins
   check_interval_minutes       = var.check_interval_minutes
   max_endpoints                = var.max_endpoints
+  max_endpoints_per_user       = var.max_endpoints_per_user
   failure_threshold            = var.failure_threshold
   recovery_threshold           = var.recovery_threshold
   reminder_minutes             = var.reminder_minutes

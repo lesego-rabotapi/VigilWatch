@@ -91,6 +91,17 @@ variable "max_endpoints" {
   }
 }
 
+variable "max_endpoints_per_user" {
+  description = "Maximum number of URLs one user may monitor, so nobody takes the whole max_endpoints."
+  type        = number
+  default     = 5
+
+  validation {
+    condition     = var.max_endpoints_per_user >= 1 && var.max_endpoints_per_user <= var.max_endpoints
+    error_message = "max_endpoints_per_user must be between 1 and max_endpoints."
+  }
+}
+
 variable "failure_threshold" {
   description = "Consecutive DOWN checks before an incident is opened and an alert is sent."
   type        = number

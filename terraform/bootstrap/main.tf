@@ -154,7 +154,7 @@ resource "aws_iam_role_policy" "deploy" {
         Effect = "Allow"
         Action = [
           "dynamodb:*", "lambda:*", "apigateway:*", "events:*", "sns:*", "sqs:*",
-          "logs:*", "cloudwatch:*", "cloudfront:*",
+          "logs:*", "cloudwatch:*", "cloudfront:*", "cognito-idp:*",
         ]
         Resource = "*"
       },
@@ -259,6 +259,7 @@ resource "aws_iam_role_policy" "plan" {
           "events:Describe*", "events:List*", "sns:Get*", "sns:List*", "sqs:Get*", "sqs:List*",
           "logs:Describe*", "logs:List*", "cloudwatch:Describe*", "cloudwatch:List*",
           "cloudwatch:Get*", "cloudfront:Get*", "cloudfront:List*",
+          "cognito-idp:Describe*", "cognito-idp:List*", "cognito-idp:Get*",
         ]
         Resource = "*"
       },

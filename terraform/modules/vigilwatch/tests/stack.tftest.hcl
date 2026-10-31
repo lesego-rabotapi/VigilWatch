@@ -29,6 +29,9 @@ mock_provider "aws" {
   mock_resource "aws_sns_topic" {
     defaults = { arn = "arn:aws:sns:af-south-1:123456789012:mock" }
   }
+  mock_resource "aws_cognito_user_pool" {
+    defaults = { id = "af-south-1_MOCK", endpoint = "cognito-idp.af-south-1.amazonaws.com/af-south-1_MOCK" }
+  }
   mock_resource "aws_dynamodb_table" {
     defaults = { arn = "arn:aws:dynamodb:af-south-1:123456789012:table/mock" }
   }
@@ -154,4 +157,17 @@ run "rejects_a_name_that_would_overflow_resource_name_limits" {
     environment  = "production"
   }
   expect_failures = [var.project_name]
+}
+
+run "sign_in_is_wired_through_the_stack" {
+  command = apply
+
+  assert {
+    condition     = startswith(output.hosted_ui_url, "https://vigilwatch-dev-") && endswith(output.hosted_ui_url, ".auth.af-south-1.amazoncognito.com")
+    error_message = "the environment exports its own hosted UI"
+  }
+  assert {
+    condition     = output.dashboard_client_id != output.smoke_client_id
+    error_message = "the dashboard and the smoke tests sign in with different clients"
+  }
 }

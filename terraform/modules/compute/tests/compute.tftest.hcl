@@ -138,10 +138,10 @@ run "settings_reach_the_checker" {
   command = apply
 
   variables {
-    recovery_threshold = 3
-    reminder_minutes   = 120
-    metrics_enabled    = false
-    max_endpoints      = 7
+    recovery_threshold     = 3
+    reminder_minutes       = 120
+    metrics_enabled        = false
+    max_endpoints          = 7
     max_endpoints_per_user = 3
   }
 

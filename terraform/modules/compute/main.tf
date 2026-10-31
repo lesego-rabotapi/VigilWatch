@@ -23,17 +23,18 @@ locals {
   function_names = { for key, _ in local.functions : key => "${var.name_prefix}-${replace(key, "_", "-")}" }
 
   function_env = {
-    ENDPOINTS_TABLE    = var.endpoints_table
-    HISTORY_TABLE      = var.history_table
-    SNS_TOPIC_ARN      = var.sns_topic_arn
-    MAX_ENDPOINTS      = tostring(var.max_endpoints)
-    FAILURE_THRESHOLD  = tostring(var.failure_threshold)
-    DEGRADED_MS        = tostring(var.degraded_ms)
-    RECOVERY_THRESHOLD = tostring(var.recovery_threshold)
-    REMINDER_MINUTES   = tostring(var.reminder_minutes)
-    METRICS_ENABLED    = tostring(var.metrics_enabled)
-    PROBE_TIMEOUT_S    = "5"
-    CONTROL_URLS       = join(",", var.control_urls)
+    ENDPOINTS_TABLE        = var.endpoints_table
+    HISTORY_TABLE          = var.history_table
+    SNS_TOPIC_ARN          = var.sns_topic_arn
+    MAX_ENDPOINTS          = tostring(var.max_endpoints)
+    MAX_ENDPOINTS_PER_USER = tostring(var.max_endpoints_per_user)
+    FAILURE_THRESHOLD      = tostring(var.failure_threshold)
+    DEGRADED_MS            = tostring(var.degraded_ms)
+    RECOVERY_THRESHOLD     = tostring(var.recovery_threshold)
+    REMINDER_MINUTES       = tostring(var.reminder_minutes)
+    METRICS_ENABLED        = tostring(var.metrics_enabled)
+    PROBE_TIMEOUT_S        = "5"
+    CONTROL_URLS           = join(",", var.control_urls)
   }
 }
 

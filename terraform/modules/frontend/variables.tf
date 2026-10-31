@@ -27,3 +27,16 @@ variable "api_base_url" {
   description = "Base URL of the deployed API, written to config.js for the dashboard."
   type        = string
 }
+
+variable "auth" {
+  description = "Where the dashboard signs in: the hosted UI's address and the dashboard's public client id."
+  type = object({
+    hosted_ui_url = string
+    client_id     = string
+  })
+
+  validation {
+    condition     = startswith(var.auth.hosted_ui_url, "https://")
+    error_message = "auth.hosted_ui_url must be an https address."
+  }
+}

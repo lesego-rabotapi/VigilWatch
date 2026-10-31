@@ -77,13 +77,17 @@ resource "aws_s3_object" "site" {
   cache_control = endswith(each.value, ".html") ? "no-cache" : "public, max-age=300"
 }
 
-# Runtime configuration for the dashboard, generated from the deployed API.
+# Runtime configuration for the dashboard, generated from the deployed API and user pool. The
+# sign-in redirect returns to the page's own origin, which is the client's callback URL.
 resource "aws_s3_object" "config" {
   bucket        = aws_s3_bucket.frontend.id
   key           = "config.js"
   content_type  = "application/javascript; charset=utf-8"
   cache_control = "no-cache"
-  content       = "window.VIGILWATCH_CONFIG = ${jsonencode({ apiBase = var.api_base_url })};\n"
+  content = "window.VIGILWATCH_CONFIG = ${jsonencode({
+    apiBase = var.api_base_url
+    auth    = { hostedUiUrl = var.auth.hosted_ui_url, clientId = var.auth.client_id }
+  })};\n"
 }
 
 # Served by this deployment's own CloudFront. The checker probes it as a connectivity control: if it
@@ -114,13 +118,14 @@ resource "aws_cloudfront_response_headers_policy" "security" {
 
   security_headers_config {
     content_security_policy {
-      # API origin is matched by wildcard to avoid a CloudFront <-> API dependency cycle.
+      # The API and Cognito origins are matched by wildcard: naming them exactly would make
+      # CloudFront depend on them, and they depend on CloudFront (CORS, the sign-in callback).
       content_security_policy = join("; ", [
         "default-src 'self'",
         "script-src 'self'",
         "style-src 'self'",
         "img-src 'self' data:",
-        "connect-src 'self' https://*.execute-api.${var.aws_region}.amazonaws.com",
+        "connect-src 'self' https://*.execute-api.${var.aws_region}.amazonaws.com https://*.auth.${var.aws_region}.amazoncognito.com",
         "frame-ancestors 'none'",
         "base-uri 'self'",
         "form-action 'self'",

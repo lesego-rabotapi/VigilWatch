@@ -61,6 +61,13 @@ variable "max_endpoints" {
   default     = 10
 }
 
+variable "max_endpoints_per_user" {
+  description = "Maximum number of URLs one user may monitor (at most max_endpoints)."
+  type        = number
+  nullable    = false
+  default     = 5
+}
+
 variable "failure_threshold" {
   description = "Consecutive DOWN checks before an incident is opened and an alert is sent."
   type        = number

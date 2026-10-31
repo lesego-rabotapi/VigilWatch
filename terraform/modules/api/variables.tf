@@ -55,3 +55,23 @@ variable "log_retention_days" {
     error_message = "log_retention_days must be one of 1, 3, 5, 7, 14 (kept short for cost)."
   }
 }
+
+variable "jwt_issuer" {
+  description = "Issuer of the tokens the API accepts: the environment's Cognito user pool."
+  type        = string
+
+  validation {
+    condition     = startswith(var.jwt_issuer, "https://cognito-idp.")
+    error_message = "jwt_issuer must be a Cognito user pool issuer."
+  }
+}
+
+variable "jwt_audiences" {
+  description = "Client ids whose tokens the API accepts."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.jwt_audiences) > 0
+    error_message = "jwt_audiences must name at least one client."
+  }
+}

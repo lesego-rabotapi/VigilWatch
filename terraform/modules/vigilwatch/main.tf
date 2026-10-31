@@ -39,6 +39,7 @@ module "compute" {
   control_urls           = concat(["https://${module.frontend.domain_name}/healthz.txt"], var.extra_control_urls)
   check_interval_minutes = var.check_interval_minutes
   max_endpoints          = var.max_endpoints
+  max_endpoints_per_user = var.max_endpoints_per_user
   failure_threshold      = var.failure_threshold
   recovery_threshold     = var.recovery_threshold
   reminder_minutes       = var.reminder_minutes
@@ -57,6 +58,8 @@ module "api" {
   throttle_rate        = var.api_throttle_rate
   throttle_burst       = var.api_throttle_burst
   log_retention_days   = var.log_retention_days
+  jwt_issuer           = module.auth.issuer
+  jwt_audiences        = module.auth.audiences
 }
 
 module "frontend" {
@@ -67,6 +70,18 @@ module "frontend" {
   aws_region   = var.aws_region
   frontend_dir = var.frontend_dir
   api_base_url = module.api.base_url
+  auth         = { hosted_ui_url = module.auth.hosted_ui_url, client_id = module.auth.dashboard_client_id }
+}
+
+# Sign-in (ADR 0007). The pool follows the tables' deletion protection: on in prod, off in dev.
+module "auth" {
+  source = "../auth"
+
+  name_prefix         = local.name_prefix
+  account_id          = local.account_id
+  aws_region          = var.aws_region
+  callback_urls       = concat([module.frontend.dashboard_url], var.extra_cors_origins)
+  deletion_protection = var.dynamodb_deletion_protection
 }
 
 module "monitoring" {

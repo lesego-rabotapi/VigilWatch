@@ -75,6 +75,12 @@ variable "max_endpoints" {
   default     = null
 }
 
+variable "max_endpoints_per_user" {
+  description = "Maximum number of URLs one user may monitor. Unset (null) keeps the module default."
+  type        = number
+  default     = null
+}
+
 variable "failure_threshold" {
   description = "Consecutive DOWN checks before an incident opens and an alert is sent. Unset (null) keeps the module default."
   type        = number
