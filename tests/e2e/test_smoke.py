@@ -4,6 +4,9 @@
     pytest -m e2e tests/e2e --env=local       # against `python scripts/local_api.py`
     pytest -m e2e -m smoke --env=prod         # read-only subset; needs E2E_READONLY_URL
 
+A deployed environment is reached signed in as the smoke-test user: set E2E_USERNAME,
+E2E_PASSWORD and COGNITO_CLIENT_ID (the smoke_client_id output). The local stack signs itself in.
+
 Tests marked `smoke` only read, so they may run anywhere, including production. Tests that
 modify data take the `writable` fixture, which skips them in read-only environments. The API has
 no delete route: write tests register one stable, idempotent target, so reruns create nothing new.
@@ -70,3 +73,16 @@ def test_cors_allows_the_dashboard_origin(proxy, dashboard):
     reply = proxy.preflight("/register", origin=dashboard.base_url)
     assert reply.status in (200, 204)
     assert reply.header("access-control-allow-origin") == dashboard.base_url
+    assert "authorization" in (reply.header("access-control-allow-headers") or "").lower(), (
+        "without it the browser never sends the token"
+    )
+
+
+@pytest.mark.smoke
+@pytest.mark.security
+@pytest.mark.req("VW-026")
+def test_a_request_without_a_token_is_refused(proxy, env_config):
+    """The JWT authorizer answers before any function runs (ADR 0007)."""
+    if env_config.name == "local":
+        pytest.skip("the local stack has no Cognito: it signs every request in itself")
+    assert proxy.anonymous().checks(TARGET).status == 401
