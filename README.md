@@ -41,7 +41,7 @@ CloudWatch: logs (14 days), EMF metrics, 4 alarms ──> SNS
 ```
 
 More detail: [docs/README.md](docs/README.md). Operations: [docs/RUNBOOK.md](docs/RUNBOOK.md). Recovery and
-service levels: [docs/resilience.md](docs/resilience.md), [docs/slo.md](docs/slo.md).
+service levels: [docs/resilience.md](docs/resilience.md), [docs/slo.md](docs/slo.md). Security: [docs/security.md](docs/security.md).
 Decisions: [docs/adr/](docs/adr/).
 
 ## Why these technologies?

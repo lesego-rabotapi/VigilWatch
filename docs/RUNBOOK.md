@@ -26,10 +26,13 @@ contains no secrets; keep a copy somewhere safe (password manager or a private s
    `AWS_DEPLOY_ROLE_ARN`, `TF_STATE_BUCKET`, `AWS_ACCOUNT_ID` (the only account Terraform may touch; never committed),
    `AWS_PLAN_ROLE_ARN` (pull request plans, the drift check and reading `releases/dev` before a promotion;
    without it they are skipped), and
-   optionally `NOTIFICATION_EMAIL`. After the first prod deploy, register one URL on the prod dashboard and add it as
-   `E2E_READONLY_URL`. Prod's smoke test is read-only, so it reads that URL back instead of registering one. It fails
-   without it, so the first prod smoke job is expected to fail with that message: set the variable, then re-run only
-   the smoke job (it has no AWS access and does not apply anything again).
+   optionally `NOTIFICATION_EMAIL`. The smoke tests sign in as a test user (ADR 0007): add its email as the variable
+   `E2E_USERNAME` and its password as the repository **secret** `E2E_PASSWORD` (Settings -> Secrets and variables ->
+   Actions -> Secrets), and create that user in each environment after its first deploy (step 7). After the first
+   prod deploy, sign in to the prod dashboard as that user, register one URL, and add it as `E2E_READONLY_URL`:
+   endpoints belong to the user who registered them, so the smoke user must own it. Prod's smoke test is read-only,
+   so it reads that URL back instead of registering one. The first smoke jobs are expected to fail with a message
+   naming what to set: set it, then re-run only the smoke job (it has no AWS access and applies nothing again).
 5. In GitHub (Settings -> Environments) create `production`, add yourself as a required
    reviewer (the approval gate before every prod apply), and under Deployment branches and tags
    choose "Selected branches and tags" with the single rule `main`. The deploy role trusts `main`
@@ -38,6 +41,18 @@ contains no secrets; keep a copy somewhere safe (password manager or a private s
    `main` in no environment; do not create another environment for them.
 6. Cost backstop: in AWS Billing -> Budgets, create a budget from the "Zero spend budget"
    template. Two budgets are free.
+7. Users (after each environment's first deploy). Self sign-up is off: create every user, yourself first. A new
+   user gets a temporary password by email and sets their own at first sign-in. The smoke-test user needs a
+   permanent password, the one in the `E2E_PASSWORD` secret, because the smoke job cannot answer a challenge:
+
+   ```bash
+   POOL="$(terraform -chdir=terraform/envs/dev output -raw user_pool_id)"
+   aws cognito-idp admin-create-user --user-pool-id "$POOL" --username you@example.com
+   aws cognito-idp admin-create-user --user-pool-id "$POOL" --username smoke@example.com --message-action SUPPRESS
+   aws cognito-idp admin-set-user-password --user-pool-id "$POOL" --username smoke@example.com --password "<E2E_PASSWORD>" --permanent
+   ```
+
+   Repeat with `terraform/envs/prod`. Type the password at the prompt rather than keeping it in shell history.
 
 ## 2. Migrating an existing deployment
 
@@ -114,6 +129,8 @@ API_URL_DEV=$(terraform output -raw api_base_url) DASHBOARD_URL_DEV=$(terraform 
 | Back up the monitored URLs | `python scripts/backup_tables.py --table vigilwatch-prod-endpoints --out backups/endpoints-$(date +%F).jsonl` (after changing the list, and weekly; `docs/resilience.md`) |
 | Restore them | Pause registrations (register no URL) while it runs, then `python scripts/restore_tables.py --table vigilwatch-prod-endpoints --from backups/<file>.jsonl` (idempotent; recreate the table with `terraform apply` first if it is gone; the cap counter is not restored but set to the real count) |
 | Prove a backup restores | `python scripts/restore_drill.py --table vigilwatch-prod-endpoints --from backups/<file>.jsonl`, then paste its row into the drill log in `docs/resilience.md` |
+| Invite a user | `aws cognito-idp admin-create-user --user-pool-id "$(terraform -chdir=terraform/envs/prod output -raw user_pool_id)" --username <email>`: they get a temporary password by email. Each user sees only their own URLs, up to `max_endpoints_per_user` (default 5) |
+| Remove a user | `aws cognito-idp admin-delete-user --user-pool-id <pool> --username <email>`; their endpoints stay until removed from the `endpoints` table (`owner_sub` is their subject) |
 | Which commit runs where | `aws s3 cp s3://<state bucket>/releases/dev -` (and `releases/prod`): the commit, then the SHA-256 of its bundle |
 
 ## 5. Alarms
@@ -191,8 +208,10 @@ environment first:
 ```bash
 cd terraform/envs/prod
 API="$(terraform output -raw api_base_url)"
-URL="https://example.com"   # the monitored URL, as registered
-ID="$(python -c "import sys; sys.path.insert(0, '../../../lambda'); from common.urlguard import normalize, endpoint_id; print(endpoint_id(normalize(sys.argv[1])))" "$URL")"
+URL="https://example.com"            # the monitored URL, as registered
+EMAIL="user@example.com"             # the user who registered it: endpoints belong to their owner
+OWNER="$(aws cognito-idp admin-get-user --user-pool-id "$(terraform output -raw user_pool_id)" --username "$EMAIL" --query "UserAttributes[?Name=='sub'].Value" --output=text)"
+ID="$(python -c "import sys; sys.path.insert(0, '../../../lambda'); from common.urlguard import normalize, endpoint_id; owner, url = sys.argv[1:3]; print(endpoint_id(owner, normalize(url)))" "$OWNER" "$URL")"
 ```
 
 **Write path: did the checker store anything?**
@@ -212,12 +231,16 @@ and look at the `checker-not-running` and `checker-errors` alarms.
 **Read path: does the API return it?**
 
 ```bash
-aws apigatewayv2 get-routes --api-id "$(aws apigatewayv2 get-apis --query "Items[?Name=='vigilwatch-prod-http'].ApiId" --output=text)" --query "Items[].RouteKey"
-curl -sS -G "$API/checks" --data-urlencode "url=$URL" -o checks.json -w "%{http_code}\n"
+aws apigatewayv2 get-routes --api-id "$(aws apigatewayv2 get-apis --query "Items[?Name=='vigilwatch-prod-http'].ApiId" --output=text)" --query "Items[].[RouteKey, AuthorizationType]"
+TOKEN="$(aws cognito-idp initiate-auth --auth-flow USER_PASSWORD_AUTH --client-id "$(terraform output -raw smoke_client_id)" --auth-parameters "USERNAME=$E2E_USERNAME,PASSWORD=$E2E_PASSWORD" --query AuthenticationResult.AccessToken --output=text)"
+curl -sS -G "$API/checks" --data-urlencode "url=$URL" -H "Authorization: Bearer $TOKEN" -o checks.json -w "%{http_code}\n"
 ```
 
-The routes must include `GET /checks` and `POST /register`. A 4xx names the problem in its `code` field. A
-5xx is in the `api-5xx` saved query and the function's log group.
+The routes must include `GET /checks` and `POST /register`, both with authorization type `JWT`. The token
+above is the smoke user's, and the API shows each user only their own URLs: for another user's URL a 404 is
+expected, so check theirs from the dashboard signed in as them (the browser's network tab shows the reply). A
+401 means the token was refused; other 4xx name the problem in their `code` field. A 5xx is in the `api-5xx`
+saved query and the function's log group.
 
 **Display path: can the dashboard draw what the API returned?**
 
