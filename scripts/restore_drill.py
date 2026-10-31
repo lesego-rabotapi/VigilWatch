@@ -80,6 +80,15 @@ def _create_scratch_table(client, source: str, name: str) -> None:
     )
 
 
+def _cleanup_after_failure(client, name: str) -> None:
+    """Delete the scratch table while another error is on its way: report a failed delete
+    instead of letting it replace that error."""
+    try:
+        _delete_scratch_table(client, name)
+    except Exception as error:  # noqa: BLE001 - reported, and the original error is raised
+        print(f"could not delete scratch table {name}: {error}", file=sys.stderr)
+
+
 def scratch_name(source: str) -> str:
     """Unique even for two drills started in the same second."""
     return f"{source}-drill-{datetime.now(UTC):%Y%m%d%H%M%S}-{secrets.token_hex(3)}"
@@ -108,14 +117,14 @@ def drill(source: str, backup_path: Path, client=None, sample: int = 25) -> Dril
     client = client or boto3.client("dynamodb")
     keys = restore_tables.key_types(client, source)
     # What a restore writes: the cap counter is set by the application, not restored.
-    items = restore_tables.restorable(restore_tables.read_backup(backup_path, keys), keys)
+    items = restore_tables.restorable(restore_tables.read_backup(backup_path, keys), keys, source)
     scratch = scratch_name(source)
     try:
         _create_scratch_table(client, source, scratch)
+    except client.exceptions.ResourceInUseException:
+        pass  # the name is random: our own create, retried after its response was lost
     except BaseException:
-        # The service may have made it before the error. The name is random, so even "already
-        # exists" means our own create, retried after its response was lost.
-        _delete_scratch_table(client, scratch)
+        _cleanup_after_failure(client, scratch)  # the service may have made it anyway
         raise
     try:
         client.get_waiter("table_exists").wait(TableName=scratch)

@@ -56,11 +56,12 @@ class EndpointRepository:
 
     def _ensure_counter(self) -> None:
         """Create the counter from the real item count if it does not exist yet."""
-        if self._read_counter() is None:
+        if self._read_counter(consistent=False) is None:  # the conditional create covers a race
             self._write_count(None, self.count())  # False: someone else created it first, fine
 
-    def _read_counter(self) -> dict | None:
-        return self.table.get_item(Key={"endpoint_id": COUNTER_ID}, ConsistentRead=True).get("Item")
+    def _read_counter(self, consistent: bool = True) -> dict | None:
+        key = {"endpoint_id": COUNTER_ID}
+        return self.table.get_item(Key=key, ConsistentRead=consistent).get("Item")
 
     def _write_count(self, seen: dict | None, actual: int) -> bool:
         """Set the counter to `actual` if it still is as read (`seen`). False if it moved.
@@ -101,8 +102,9 @@ class EndpointRepository:
         """
         seen = self._read_counter()
         actual = self.count()
-        moved = (seen is None or seen.get("n") != actual) and not self._write_count(seen, actual)
-        if moved:
+        if seen is not None and seen.get("n") == actual:
+            return actual < max_endpoints  # nothing to repair
+        if not self._write_count(seen, actual):
             return True  # the counter moved under us; just try the creation again
         return actual < max_endpoints
 

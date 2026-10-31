@@ -45,7 +45,8 @@ def key_types(client, table: str) -> dict[str, str]:
 
 
 _EXACT = Context(prec=100)  # the default 28 digits would round before the 38-digit check
-_NUMBER = re.compile(r"[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?")
+# The form backup_tables.py writes (DynamoDB returns numbers this way); nothing looser is assumed.
+_NUMBER = re.compile(r"-?\d+(\.\d+)?([eE][-+]?\d+)?")
 
 
 def _number(text) -> Decimal:
@@ -140,15 +141,15 @@ def read_backup(path: Path, keys: dict[str, str]) -> list[dict]:
     return items
 
 
-def is_endpoints_table(keys: dict[str, str]) -> bool:
-    """The endpoints table is the one keyed by endpoint_id alone (history adds sk)."""
-    return list(keys) == ["endpoint_id"]
+def is_endpoints_table(table: str, keys: dict[str, str]) -> bool:
+    """The endpoints table: named <prefix>-endpoints and keyed by endpoint_id alone."""
+    return table.endswith("-endpoints") and list(keys) == ["endpoint_id"]
 
 
-def restorable(items: list[dict], keys: dict[str, str]) -> list[dict]:
+def restorable(items: list[dict], keys: dict[str, str], table: str) -> list[dict]:
     """In the endpoints table, everything but the application's own bookkeeping (ids starting with
     `_`). Other tables, such as history and its `_system` heartbeat, are restored whole."""
-    if not is_endpoints_table(keys):
+    if not is_endpoints_table(table, keys):
         return items
     return [i for i in items if not i["endpoint_id"].get("S", "").startswith(_RESERVED_PREFIX)]
 
@@ -175,9 +176,9 @@ def restore(table: str, path: Path, session=None) -> int:
     session = session or boto3.Session()
     client = session.client("dynamodb")
     keys = key_types(client, table)
-    items = restorable(read_backup(path, keys), keys)
+    items = restorable(read_backup(path, keys), keys, table)
     write(client, table, items)
-    if is_endpoints_table(keys):
+    if is_endpoints_table(table, keys):
         EndpointRepository(session.resource("dynamodb").Table(table)).repair_counter()
     return len(items)
 
