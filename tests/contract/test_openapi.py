@@ -11,6 +11,7 @@ from openapi_spec_validator import validate
 import get_checks
 import register_endpoint
 from export_schema import SCHEMA_PATH, build_schema, load_spec
+from tests.auth_events import signed_in
 
 pytestmark = pytest.mark.req("VW-011", "VW-012")
 
@@ -82,20 +83,20 @@ def _error_schema_validator():
 
 
 def test_validation_errors_from_register_match_the_error_schema():
-    response = register_endpoint.lambda_handler({"body": "{not json"}, None)
+    response = register_endpoint.lambda_handler(signed_in({"body": "{not json"}), None)
     assert response["statusCode"] == 400
     _error_schema_validator().validate(json.loads(response["body"]))
 
 
 def test_missing_parameter_error_from_checks_matches_the_error_schema():
-    response = get_checks.lambda_handler({"queryStringParameters": None}, None)
+    response = get_checks.lambda_handler(signed_in({"queryStringParameters": None}), None)
     assert response["statusCode"] == 400
     _error_schema_validator().validate(json.loads(response["body"]))
 
 
 def test_not_found_error_from_checks_matches_the_error_schema(tables):
     event = {"queryStringParameters": {"url": "https://never-registered.example.org/"}}
-    response = get_checks.lambda_handler(event, None)
+    response = get_checks.lambda_handler(signed_in(event), None)
     assert response["statusCode"] == 404
     _error_schema_validator().validate(json.loads(response["body"]))
 

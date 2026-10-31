@@ -3,8 +3,9 @@
     pip install -r requirements-dev.txt
     python scripts/local_api.py            # http://127.0.0.1:8787
 
-Emulates API Gateway (routes, CORS, payload v2.0) and CloudFront (static files,
-generated config.js, security headers) around the real Lambda handlers. The
+Emulates API Gateway (routes, CORS, payload v2.0, and the JWT authorizer: every request is signed
+in as one local user, since there is no Cognito here) and CloudFront (static files, generated
+config.js, security headers) around the real Lambda handlers. The
 scheduled checker runs in a background thread. Probes hit the real internet.
 Also used to exercise the e2e smoke tests without an AWS account:
 
@@ -72,6 +73,27 @@ def start_mock_aws():
     return mock
 
 
+LOCAL_USER = "local-user"
+
+
+def api_event(method: str, path: str, query: str, headers: dict, body: str | None) -> dict:
+    """The payload v2.0 event API Gateway sends, signed in as LOCAL_USER."""
+    return {
+        "version": "2.0",
+        "routeKey": f"{method} {path}",
+        "rawPath": path,
+        "rawQueryString": query,
+        "headers": {k.lower(): v for k, v in headers.items()},
+        "queryStringParameters": dict(parse_qsl(query)) or None,
+        "requestContext": {
+            "http": {"method": method, "path": path},
+            "authorizer": {"jwt": {"claims": {"sub": LOCAL_USER}}},
+        },
+        "body": body,
+        "isBase64Encoded": False,
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "VigilWatchLocal/1.0"
     routes: dict = {}
@@ -120,17 +142,7 @@ class Handler(BaseHTTPRequestHandler):
         parts = urlsplit(self.path)
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length).decode() if length else None
-        event = {
-            "version": "2.0",
-            "routeKey": f"{self.command} {parts.path}",
-            "rawPath": parts.path,
-            "rawQueryString": parts.query,
-            "headers": {k.lower(): v for k, v in self.headers.items()},
-            "queryStringParameters": dict(parse_qsl(parts.query)) or None,
-            "requestContext": {"http": {"method": self.command, "path": parts.path}},
-            "body": body,
-            "isBase64Encoded": False,
-        }
+        event = api_event(self.command, parts.path, parts.query, dict(self.headers.items()), body)
         handler = self.routes.get((self.command, parts.path))
         if handler is None:
             self._send(404, b'{"message":"Not Found"}', "application/json")

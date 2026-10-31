@@ -2,7 +2,8 @@
 
 Body: {"url": "https://example.com", "expected_status": 200}
 201 with the dashboard payload (after an immediate first check) for a new URL,
-200 for a URL that is already monitored. Errors are raised and mapped by `api_handler`.
+200 for a URL the caller already monitors. The endpoint belongs to the signed-in caller.
+Errors are raised and mapped by `api_handler`.
 """
 
 import os
@@ -10,6 +11,7 @@ from datetime import UTC, datetime
 
 from common import logs
 from common.api import api_handler
+from common.auth import caller
 from common.checker import Settings, apply_result, make_publisher, probe
 from common.http import BadRequest, json_body, response
 from common.repo import Repo
@@ -34,6 +36,7 @@ def _expected_status(body: dict) -> int:
 
 @api_handler
 def lambda_handler(event, context):
+    owner = caller(event)
     body = json_body(event)
     raw_url = body.get("url") or body.get("endpoint")
     if not isinstance(raw_url, str) or not raw_url.strip():
@@ -43,9 +46,14 @@ def lambda_handler(event, context):
 
     repo = Repo()
     now = utcnow()
-    max_endpoints = int(os.environ.get("MAX_ENDPOINTS", "10"))
     endpoint, created = repo.put_endpoint(
-        endpoint_id(url), url, now, expected_status=expected_status, max_endpoints=max_endpoints
+        endpoint_id(owner, url),
+        url,
+        now,
+        expected_status=expected_status,
+        max_endpoints=int(os.environ.get("MAX_ENDPOINTS", "10")),
+        owner=owner,
+        max_per_owner=int(os.environ.get("MAX_ENDPOINTS_PER_USER", "5")),
     )
 
     if created:

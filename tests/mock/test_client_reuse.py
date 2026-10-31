@@ -5,6 +5,7 @@ import pytest
 
 import get_checks
 from common.checker import make_publisher
+from tests.auth_events import signed_in
 
 pytestmark = pytest.mark.req("VW-020")
 
@@ -25,7 +26,7 @@ def test_the_dynamodb_resource_is_created_at_most_once_across_invocations(tables
     calls = _counting(monkeypatch, "resource")
     event = {"queryStringParameters": {"url": "https://nothing.example.com/"}}
     for _ in range(3):
-        assert get_checks.lambda_handler(event, None)["statusCode"] == 404
+        assert get_checks.lambda_handler(signed_in(event), None)["statusCode"] == 404
     assert len(calls) <= 1, f"boto3.resource called {len(calls)} times for 3 invocations"
 
 

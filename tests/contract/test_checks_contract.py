@@ -14,6 +14,7 @@ from common.checker import Settings, apply_result
 from common.repo import Repo
 from common.status import CheckResult
 from common.urlguard import endpoint_id
+from tests.auth_events import OWNER, signed_in
 
 pytestmark = pytest.mark.req("VW-011", "VW-012")
 
@@ -34,7 +35,7 @@ def get_event(params):
 
 
 def call_get(params):
-    r = get_checks.lambda_handler(get_event(params), None)
+    r = get_checks.lambda_handler(signed_in(get_event(params)), None)
     return r["statusCode"], json.loads(r["body"])
 
 
@@ -43,7 +44,7 @@ def seeded(tables, monkeypatch):
     """One endpoint with a history: up, slow, two failures (incident), recovery."""
     monkeypatch.setattr(get_checks, "utcnow", lambda: T0 + timedelta(minutes=30))
     repo = Repo()
-    endpoint, _ = repo.put_endpoint(endpoint_id(URL), URL, T0)
+    endpoint, _ = repo.put_endpoint(endpoint_id(OWNER, URL), URL, T0, owner=OWNER)
     script = [
         CheckResult(200, 100.0),
         CheckResult(200, 1500.0),
@@ -102,7 +103,8 @@ def test_register_response_matches_the_same_contract(tables, monkeypatch):
     monkeypatch.setattr(register_endpoint, "resolver", lambda host: ["93.184.215.14"])
     monkeypatch.setattr(register_endpoint, "probe", lambda url, **_: CheckResult(200, 50.0))
     r = register_endpoint.lambda_handler(
-        {"version": "2.0", "body": json.dumps({"url": URL}), "isBase64Encoded": False}, None
+        signed_in({"version": "2.0", "body": json.dumps({"url": URL}), "isBase64Encoded": False}),
+        None,
     )
     jsonschema.validate(json.loads(r["body"]), SCHEMA)
 
@@ -128,7 +130,7 @@ def test_unknown_endpoint_is_404(tables):
 
 
 def test_no_cors_headers_from_function(seeded):
-    r = get_checks.lambda_handler(get_event({"url": URL}), None)
+    r = get_checks.lambda_handler(signed_in(get_event({"url": URL})), None)
     assert not any(h.lower().startswith("access-control-") for h in r["headers"])
 
 

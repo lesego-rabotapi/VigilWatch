@@ -11,7 +11,7 @@ diagnosable by the owner and tells an attacker nothing.
 import functools
 
 from common import logs
-from common.endpoints_repo import EndpointLimitReached
+from common.endpoints_repo import EndpointLimitReached, OwnerLimitReached
 from common.errors import AppError
 from common.http import BadRequest, error
 from common.urlguard import UnresolvableHost, UnsafeURL
@@ -29,6 +29,8 @@ def _translate(exc: Exception) -> tuple[int, str, str] | None:
         return 400, "unsafe_url", str(exc)
     if isinstance(exc, BadRequest):
         return 400, "bad_request", str(exc)
+    if isinstance(exc, OwnerLimitReached):  # before EndpointLimitReached, its parent class
+        return 429, "limit_reached", f"Your monitoring limit reached ({exc.args[0]} endpoints)"
     if isinstance(exc, EndpointLimitReached):
         return 429, "limit_reached", f"Monitoring limit reached ({exc.args[0]} endpoints)"
     return None

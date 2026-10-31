@@ -27,9 +27,17 @@ HANDLERS = (
     "get_checks.lambda_handler",
 )
 # Requests rejected before any AWS call, and the status each handler must answer with.
+# Signed in, as API Gateway's JWT authorizer passes requests on, so the probe reaches validation.
+_SIGNED_IN = {"authorizer": {"jwt": {"claims": {"sub": "verify-package"}}}}
 PROBES = {
-    "register_endpoint.lambda_handler": ({"version": "2.0", "body": "{}"}, 400),
-    "get_checks.lambda_handler": ({"version": "2.0", "queryStringParameters": {}}, 400),
+    "register_endpoint.lambda_handler": (
+        {"version": "2.0", "requestContext": _SIGNED_IN, "body": "{}"},
+        400,
+    ),
+    "get_checks.lambda_handler": (
+        {"version": "2.0", "requestContext": _SIGNED_IN, "queryStringParameters": {}},
+        400,
+    ),
 }
 # The settings Terraform gives the functions, with values that cannot reach a real resource.
 ENVIRONMENT = {

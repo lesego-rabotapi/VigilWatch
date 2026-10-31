@@ -49,8 +49,12 @@ class Repo:
         now: datetime,
         expected_status: int = 200,
         max_endpoints: int = 10,
+        owner: str | None = None,
+        max_per_owner: int | None = None,
     ) -> tuple[dict, bool]:
-        return self._endpoints.put(endpoint_id, url, now, expected_status, max_endpoints)
+        return self._endpoints.put(
+            endpoint_id, url, now, expected_status, max_endpoints, owner, max_per_owner
+        )
 
     def list_enabled_endpoints(self) -> list[dict]:
         return self._endpoints.list_enabled()

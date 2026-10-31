@@ -18,6 +18,7 @@ import uptime_check
 from common.repo import Repo
 from common.status import CheckResult
 from common.urlguard import UnresolvableHost, endpoint_id, normalize
+from tests.auth_events import OWNER, signed_in
 
 START = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
 DEFAULT_RESULT = CheckResult(status_code=200, latency_ms=50.0)
@@ -78,7 +79,7 @@ def _respond(ctx, lambda_response):
 
 def _register(ctx, url):
     event = {"version": "2.0", "body": json.dumps({"url": url}), "isBase64Encoded": False}
-    _respond(ctx, register_endpoint.lambda_handler(event, None))
+    _respond(ctx, register_endpoint.lambda_handler(signed_in(event), None))
     ctx.clock.advance()
 
 
@@ -162,7 +163,7 @@ def _already_monitored(ctx, url):
 
 @given(parsers.parse('"{url}" is disabled'))
 def _disabled(ctx, url):
-    Repo().update_endpoint(endpoint_id(normalize(url)), enabled=False)
+    Repo().update_endpoint(endpoint_id(OWNER, normalize(url)), enabled=False)
 
 
 # ---- When --------------------------------------------------------------------------------------
@@ -187,12 +188,12 @@ def _check_runs_n(ctx, n):
 
 @when(parsers.parse('I ask for the status of "{url}"'))
 def _ask_status(ctx, url):
-    _respond(ctx, get_checks.lambda_handler(_status_event(url), None))
+    _respond(ctx, get_checks.lambda_handler(signed_in(_status_event(url)), None))
 
 
 @when("I ask for the status without a url")
 def _ask_status_without_url(ctx):
-    _respond(ctx, get_checks.lambda_handler(_status_event(None), None))
+    _respond(ctx, get_checks.lambda_handler(signed_in(_status_event(None)), None))
 
 
 # ---- Then --------------------------------------------------------------------------------------
@@ -240,7 +241,7 @@ def _checked(ctx, n):
 
 
 def _dashboard(ctx, url):
-    response = get_checks.lambda_handler(_status_event(url), None)
+    response = get_checks.lambda_handler(signed_in(_status_event(url)), None)
     assert response["statusCode"] == 200, response
     return json.loads(response["body"])
 
@@ -266,7 +267,7 @@ def _alert_subject(ctx, i, prefix):
 
 
 def _incidents(url):
-    return Repo().incidents(endpoint_id(normalize(url)))
+    return Repo().incidents(endpoint_id(OWNER, normalize(url)))
 
 
 @then(parsers.parse('"{url}" has {n:d} incidents'))
@@ -276,7 +277,7 @@ def _incident_count(ctx, url, n):
 
 @then(parsers.parse('the failure count of "{url}" is {n:d}'))
 def _failure_count(ctx, url, n):
-    assert Repo().get_endpoint(endpoint_id(normalize(url)))["consecutive_failures"] == n
+    assert Repo().get_endpoint(endpoint_id(OWNER, normalize(url)))["consecutive_failures"] == n
 
 
 @then(parsers.parse('"{url}" has {n:d} open incident'))

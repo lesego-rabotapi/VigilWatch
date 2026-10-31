@@ -8,6 +8,7 @@ import register_endpoint
 from common.repo import Repo
 from common.status import CheckResult
 from common.urlguard import UnresolvableHost, endpoint_id
+from tests.auth_events import OWNER, signed_in
 
 pytestmark = pytest.mark.req("VW-001", "VW-002", "VW-003")
 
@@ -35,7 +36,7 @@ def http_event(body, *, raw=False, b64=False):
 
 
 def call(event):
-    response = register_endpoint.lambda_handler(event, None)
+    response = register_endpoint.lambda_handler(signed_in(event), None)
     return response["statusCode"], json.loads(response["body"]), response["headers"]
 
 
@@ -64,7 +65,7 @@ def test_registers_new_endpoint_and_runs_first_check(env):
 
     assert status == 201
     assert body["url"] == "https://example.com/"
-    assert body["endpoint_id"] == endpoint_id("https://example.com/")
+    assert body["endpoint_id"] == endpoint_id(OWNER, "https://example.com/")
     assert body["status"] == "UP"
     assert body["latest_latency_ms"] == 87
     assert body["uptime_30d"] == 100.0

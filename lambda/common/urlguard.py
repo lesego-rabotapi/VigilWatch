@@ -68,8 +68,10 @@ def normalize(url: str) -> str:
     return urlunsplit((scheme, netloc, parts.path or "/", parts.query, ""))
 
 
-def endpoint_id(normalized_url: str) -> str:
-    return hashlib.sha256(normalized_url.encode("utf-8")).hexdigest()[:16]
+def endpoint_id(owner: str, normalized_url: str) -> str:
+    """One endpoint per user and URL: two users monitoring one URL have two endpoints, and one
+    user's id says nothing about another's. The owner holds no newline (common.auth)."""
+    return hashlib.sha256(f"{owner}\n{normalized_url}".encode()).hexdigest()[:16]
 
 
 def _is_public(address: str) -> bool:

@@ -1,6 +1,7 @@
 import pytest
 
 from common.urlguard import UnresolvableHost, UnsafeURL, endpoint_id, normalize, validate
+from tests.auth_events import OWNER
 
 pytestmark = pytest.mark.req("VW-002")
 
@@ -107,8 +108,8 @@ def test_normalize_is_canonical():
 
 
 def test_endpoint_id_is_stable_and_case_insensitive_on_host():
-    a = endpoint_id(normalize("https://EXAMPLE.com/"))
-    b = endpoint_id(normalize("https://example.com"))
+    a = endpoint_id(OWNER, normalize("https://EXAMPLE.com/"))
+    b = endpoint_id(OWNER, normalize("https://example.com"))
     assert a == b
     assert len(a) == 16
-    assert a != endpoint_id(normalize("https://example.org/"))
+    assert a != endpoint_id(OWNER, normalize("https://example.org/"))

@@ -10,6 +10,7 @@ import register_endpoint
 from common.repo import Repo
 from common.status import CheckResult
 from common.urlguard import UnresolvableHost
+from tests.auth_events import signed_in
 
 pytestmark = pytest.mark.req("VW-001", "VW-002", "VW-003", "VW-007", "VW-008")
 
@@ -32,12 +33,14 @@ def fakes(tables, monkeypatch):
 
 def register(body):
     payload = body if isinstance(body, str) else json.dumps(body)
-    response = register_endpoint.lambda_handler({"version": "2.0", "body": payload}, None)
+    response = register_endpoint.lambda_handler(
+        signed_in({"version": "2.0", "body": payload}), None
+    )
     return response["statusCode"], json.loads(response["body"])
 
 
 def check(url):
-    response = get_checks.lambda_handler({"queryStringParameters": {"url": url}}, None)
+    response = get_checks.lambda_handler(signed_in({"queryStringParameters": {"url": url}}), None)
     return response["statusCode"], json.loads(response["body"])
 
 

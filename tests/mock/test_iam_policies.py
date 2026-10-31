@@ -30,6 +30,7 @@ from common import aws as aws_clients
 from common.repo import Repo
 from common.status import CheckResult
 from common.urlguard import endpoint_id
+from tests.auth_events import OWNER, signed_in
 
 pytestmark = pytest.mark.req("VW-016")
 requires_terraform = pytest.mark.skipif(
@@ -238,16 +239,17 @@ def scenario_env(tables, sns_topic, monkeypatch):
 def register_scenario():
     """Register, register again (a lookup), then hit the cap."""
     body = json.dumps({"url": URL})
-    first = register_endpoint.lambda_handler({"version": "2.0", "body": body}, None)
-    again = register_endpoint.lambda_handler({"version": "2.0", "body": body}, None)
+    first = register_endpoint.lambda_handler(signed_in({"version": "2.0", "body": body}), None)
+    again = register_endpoint.lambda_handler(signed_in({"version": "2.0", "body": body}), None)
     other = register_endpoint.lambda_handler(
-        {"version": "2.0", "body": json.dumps({"url": "https://other.example.com/"})}, None
+        signed_in({"version": "2.0", "body": json.dumps({"url": "https://other.example.com/"})}),
+        None,
     )
     return [first["statusCode"], again["statusCode"], other["statusCode"]]
 
 
 def read_scenario():
-    response = get_checks.lambda_handler({"queryStringParameters": {"url": URL}}, None)
+    response = get_checks.lambda_handler(signed_in({"queryStringParameters": {"url": URL}}), None)
     return [response["statusCode"]]
 
 
@@ -276,7 +278,7 @@ def run_as(function, policy, enforcement, monkeypatch):
         except Exception as error:  # noqa: BLE001 - a refused permission surfaces as any error
             return ["raised", type(error).__name__]
     if function != "get_checks":
-        stored = Repo().get_endpoint(endpoint_id(URL)) or {}
+        stored = Repo().get_endpoint(endpoint_id(OWNER, URL)) or {}
         outcome.append(stored.get("last_alert_sent") is not None)
     return outcome
 
@@ -287,7 +289,7 @@ def prepare(name, monkeypatch):
         monkeypatch.setenv("MAX_ENDPOINTS", "1")
     else:
         monkeypatch.setenv("MAX_ENDPOINTS", "10")
-        Repo().put_endpoint(endpoint_id(URL), URL, NOW)
+        Repo().put_endpoint(endpoint_id(OWNER, URL), URL, NOW, owner=OWNER)
 
 
 RUNNERS = {

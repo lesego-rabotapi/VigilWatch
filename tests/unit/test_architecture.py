@@ -18,6 +18,7 @@ pytestmark = pytest.mark.req("VW-019")
 COMMON = Path(__file__).resolve().parents[2] / "lambda" / "common"
 
 LAYER = {
+    "auth": 1,
     "aws": 0,
     "dynamo": 0,
     "errors": 0,

@@ -7,6 +7,7 @@ import pytest
 import get_checks
 import register_endpoint
 from export_schema import load_spec
+from tests.auth_events import signed_in
 
 pytestmark = pytest.mark.req("VW-002", "VW-003", "VW-012")
 
@@ -14,12 +15,12 @@ CODES = set(load_spec()["components"]["schemas"]["ErrorCode"]["enum"])
 
 
 def _register(body, tables=None):
-    return register_endpoint.lambda_handler({"version": "2.0", "body": body}, None)
+    return register_endpoint.lambda_handler(signed_in({"version": "2.0", "body": body}), None)
 
 
 def _check(url):
     params = None if url is None else {"url": url}
-    return get_checks.lambda_handler({"queryStringParameters": params}, None)
+    return get_checks.lambda_handler(signed_in({"queryStringParameters": params}), None)
 
 
 @pytest.fixture(autouse=True)

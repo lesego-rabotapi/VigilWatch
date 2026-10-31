@@ -140,7 +140,7 @@ def test_the_counter_repair_stands_down_and_retries_when_a_registration_lands(ta
     real_count = EndpointRepository.count
     raced = []
 
-    def count_while_someone_registers(self):
+    def count_while_someone_registers(self, owner=None):
         if not raced:
             raced.append(True)
             table.put_item(Item={"endpoint_id": "https://racer.example"})
@@ -149,7 +149,7 @@ def test_the_counter_repair_stands_down_and_retries_when_a_registration_lands(ta
                 UpdateExpression="SET n = n + :one",
                 ExpressionAttributeValues={":one": 1},
             )
-        return real_count(self)
+        return real_count(self, owner)
 
     monkeypatch.setattr(EndpointRepository, "count", count_while_someone_registers)
     assert repo.repair_counter() == 3

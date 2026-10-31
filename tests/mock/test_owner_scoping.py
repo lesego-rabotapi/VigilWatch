@@ -102,7 +102,7 @@ def test_each_user_has_their_own_cap(monkeypatch):
     assert register("https://b.example/")[0] == 201
     status, body = register("https://c.example/")
     assert status == 429 and body["code"] == "limit_reached"
-    assert "your" in body["error"].lower(), "say it is the user's own limit"
+    assert "your" in body["message"].lower(), "say it is the user's own limit"
     assert register("https://c.example/", sub=OTHER)[0] == 201, "others are not affected"
 
 
@@ -112,7 +112,7 @@ def test_the_global_cap_still_bounds_everyone_together(monkeypatch):
     assert register("https://a.example/", sub=OWNER)[0] == 201
     assert register("https://b.example/", sub=OTHER)[0] == 201
     status, body = register("https://c.example/", sub=THIRD)
-    assert status == 429 and "your" not in body["error"].lower()
+    assert status == 429 and "your" not in body["message"].lower()
 
 
 def test_each_users_counter_is_updated_with_each_registration():
