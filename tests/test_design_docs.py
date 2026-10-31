@@ -141,3 +141,23 @@ def test_environments_adr_records_the_decisions_and_the_free_tier_arithmetic():
 def test_environments_adr_records_that_prod_no_longer_allows_localhost():
     text = (ROOT / "docs" / "adr" / "0005-environments-and-modules.md").read_text(encoding="utf-8")
     assert "localhost" in text and "extra_cors_origins" in text
+
+
+def test_authentication_adr_records_the_decision_options_and_limits():
+    text = (ROOT / "docs" / "adr" / "0007-authentication.md").read_text(encoding="utf-8")
+    for term in (
+        "Status:",
+        "Cognito",
+        "JWT authorizer",
+        "PKCE",
+        "in memory",
+        "self sign-up",
+        "MAU",
+        "per-user cap",
+        "404",
+        "Lambda authorizer",
+        "API key",
+        "WAF",
+        "NEEDS-AWS",
+    ):
+        assert term in text, f"ADR 0007 does not mention {term!r}"
