@@ -306,3 +306,20 @@ def test_a_signed_in_proxy_sends_its_token_and_its_anonymous_copy_does_not():
         assert proxy.anonymous().read_only == proxy.read_only
     finally:
         httpd.shutdown()
+
+
+@pytest.mark.req("VW-026")
+@pytest.mark.negative
+def test_a_non_json_error_page_still_gives_the_clear_sign_in_message(cognito_server, monkeypatch):
+    """A gateway error is HTML: the message must name the user and the status, not a parse error."""
+
+    def html_error(self):
+        body = b"<html>Service Unavailable</html>"
+        self.send_response(503)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    monkeypatch.setattr(_Cognito, "do_POST", html_error)
+    with pytest.raises(ProxyError, match=r"could not sign in as smoke@example.test: 503"):
+        sign_in(cognito_server)

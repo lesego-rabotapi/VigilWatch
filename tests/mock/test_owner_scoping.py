@@ -138,3 +138,17 @@ def test_a_users_counter_that_drifted_high_is_repaired_on_refusal(monkeypatch):
     monkeypatch.setenv("MAX_ENDPOINTS_PER_USER", "1")
     endpoints_table().put_item(Item={"endpoint_id": owner_counter_id(OWNER), "n": 1})
     assert register("https://a.example/")[0] == 201
+
+
+def test_a_repair_scans_the_table_once_however_many_users_there_are(monkeypatch):
+    for index, sub in enumerate((OWNER, OTHER, THIRD)):
+        register(f"https://{index}.example/", sub=sub)
+    table = endpoints_table()
+    repo = EndpointRepository(table)
+    scans = []
+    real_scan = table.scan
+    monkeypatch.setattr(table, "scan", lambda **kw: scans.append(kw) or real_scan(**kw))
+    repo.repair_counter()
+    assert len(scans) <= 2, f"{len(scans)} scans for three users"
+    for sub in (OWNER, OTHER, THIRD):
+        assert table.get_item(Key={"endpoint_id": owner_counter_id(sub)})["Item"]["n"] == 1
