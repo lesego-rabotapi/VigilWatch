@@ -137,21 +137,21 @@ def test_the_cap_counter_is_rebuilt_from_the_real_count_not_restored_stale(table
 def test_the_counter_repair_stands_down_and_retries_when_a_registration_lands(table, monkeypatch):
     """The counter is only rewritten if it still holds the value read before counting."""
     repo = EndpointRepository(table)
-    real_count = EndpointRepository.count
-    raced = []
+    real_tally = EndpointRepository._tally
+    scans = []
 
-    def count_while_someone_registers(self, owner=None):
-        if not raced:
-            raced.append(True)
+    def tally_while_someone_registers(self):
+        scans.append(1)
+        if len(scans) == 2:  # after the counters were read, before the count that feeds them
             table.put_item(Item={"endpoint_id": "https://racer.example"})
             table.update_item(
                 Key={"endpoint_id": COUNTER_ID},
                 UpdateExpression="SET n = n + :one",
                 ExpressionAttributeValues={":one": 1},
             )
-        return real_count(self, owner)
+        return real_tally(self)
 
-    monkeypatch.setattr(EndpointRepository, "count", count_while_someone_registers)
+    monkeypatch.setattr(EndpointRepository, "_tally", tally_while_someone_registers)
     assert repo.repair_counter() == 3
     assert table.get_item(Key={"endpoint_id": COUNTER_ID})["Item"]["n"] == 3
 

@@ -64,5 +64,9 @@ topic, the operator's address. Per-user alert addresses are not built.
 
 - No route is unauthenticated (a `terraform test` assertion), and cross-user access returns 404 (mock tests).
 - Endpoints registered before this change have ids without an owner and would no longer be found. None exist:
-  nothing has been deployed yet.
+  nothing has been deployed yet. A restored backup from before this change is the one way to meet them:
+  they would still count against the global cap and be checked, but nobody could read or re-register them.
+  Delete them, or re-register their URLs and then delete the old items, before running the repair.
+- The dashboard's `app.js` is cached for up to five minutes. On the deploy that switches sign-in on, a browser
+  can briefly run the old script against an API that now answers 401; it clears itself and happens once.
 - Sign-in, the hosted UI and the JWT authorizer are `NEEDS-AWS`, verified on the first deploy (Stage 10).

@@ -70,6 +70,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "503":
+          description: Several registrations collided and a retry did not clear it. Not a limit; try again.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /checks:
     get:
       operationId: getChecks
@@ -248,12 +254,13 @@ components:
         - limit_reached
         - unauthorized
         - internal_error
+        - busy
       description: |
         Stable, machine-readable reason. Wording in `message` may change; codes will not.
         bad_request: the body is missing or malformed. validation_error: a parameter is missing or invalid.
         unsafe_url: the URL is not allowed. host_unresolvable: the host name has no DNS records.
         not_found: nothing is monitored at that URL. limit_reached: the monitoring limit is hit.
-        unauthorized: sign-in is required. internal_error: VigilWatch failed; quote `request_id`.
+        unauthorized: sign-in is required. busy: registrations collided, try again. internal_error: VigilWatch failed; quote `request_id`.
     Error:
       title: Error
       type: object

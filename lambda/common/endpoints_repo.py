@@ -14,6 +14,7 @@ from datetime import datetime
 from botocore.exceptions import ClientError
 
 from common.dynamo import plain
+from common.errors import Busy
 from common.timefmt import iso
 
 COUNTER_ID = "_system#count"
@@ -41,8 +42,10 @@ class EndpointRepository:
     def __init__(self, table):
         self.table = table
 
-    def get(self, endpoint_id: str) -> dict | None:
-        item = self.table.get_item(Key={"endpoint_id": endpoint_id}).get("Item")
+    def get(self, endpoint_id: str, consistent: bool = False) -> dict | None:
+        item = self.table.get_item(Key={"endpoint_id": endpoint_id}, ConsistentRead=consistent).get(
+            "Item"
+        )
         return plain(item) if item else None
 
     def count(self, owner: str | None = None) -> int:
@@ -130,38 +133,48 @@ class EndpointRepository:
             return True  # the counter moved under us; just try the creation again
         return actual < limit
 
-    def _repair_one(self, owner: str | None, attempts: int) -> int:
-        for _ in range(attempts):
-            seen = self._read_counter(owner)
-            actual = self.count(owner)
-            if self._write_count(seen, actual, owner):
-                return actual
-        raise RuntimeError(f"the endpoint counter kept changing over {attempts} attempts")
-
-    def _owners(self) -> set[str]:
-        """Every user with an endpoint or a counter."""
-        owners, kwargs = set(), {"ProjectionExpression": "endpoint_id, owner_sub"}
+    def _tally(self) -> tuple[int, dict[str, int], set[str]]:
+        """One consistent scan: (all endpoints, endpoints per user, users who have a counter)."""
+        total, per_owner, countered = 0, {}, set()
+        kwargs = {"ConsistentRead": True, "ProjectionExpression": "endpoint_id, owner_sub"}
         while True:
             page = self.table.scan(**kwargs)
             for item in page["Items"]:
                 if item["endpoint_id"].startswith(OWNER_COUNTER_PREFIX):
-                    owners.add(item["endpoint_id"][len(OWNER_COUNTER_PREFIX) :])
-                elif _is_endpoint(item) and item.get("owner_sub"):
-                    owners.add(item["owner_sub"])
+                    countered.add(item["endpoint_id"][len(OWNER_COUNTER_PREFIX) :])
+                elif _is_endpoint(item):
+                    total += 1
+                    if item.get("owner_sub"):
+                        per_owner[item["owner_sub"]] = per_owner.get(item["owner_sub"], 0) + 1
             if "LastEvaluatedKey" not in page:
-                return owners
+                return total, per_owner, countered
             kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
 
     def repair_counter(self, attempts: int = 5) -> int:
         """Set every counter to its real count, after a restore. Returns the global count.
 
-        Each write retries when a registration lands in between, and no counter is deleted: a
-        registration racing a missing counter would start it again from zero.
+        Two scans a round however many users there are. Each counter is read before the scan
+        and written only if it still is as read, so a registration landing in between makes
+        that counter's write fail and only it is retried. No counter is deleted: a registration
+        racing a missing counter would start it again from zero.
         """
-        total = self._repair_one(None, attempts)
-        for owner in sorted(self._owners()):
-            self._repair_one(owner, attempts)
-        return total
+        _, per_owner, countered = self._tally()
+        pending: set[str | None] = {None, *per_owner, *countered}
+        total = 0
+        for _ in range(attempts):
+            seen = {owner: self._read_counter(owner) for owner in pending}
+            all_endpoints, per_owner, _ = self._tally()
+            moved = set()
+            for owner in pending:
+                actual = all_endpoints if owner is None else per_owner.get(owner, 0)
+                if not self._write_count(seen[owner], actual, owner):
+                    moved.add(owner)
+                elif owner is None:
+                    total = actual
+            if not moved:
+                return total
+            pending = moved
+        raise RuntimeError(f"the endpoint counters kept changing over {attempts} attempts")
 
     def _create(
         self, item: dict, max_endpoints: int, owner: str | None, max_per_owner: int | None
@@ -235,26 +248,31 @@ class EndpointRepository:
             except ClientError as exc:
                 if exc.response["Error"]["Code"] != "TransactionCanceledException":
                     raise
-                codes = [r.get("Code") for r in exc.response.get("CancellationReasons", [])]
-                if codes and codes[0] == "ConditionalCheckFailed":
-                    existing = self.get(endpoint_id)  # created by a concurrent registration
+                reasons = [r.get("Code") for r in exc.response.get("CancellationReasons", [])]
+
+                def failed(index, reasons=reasons):  # reasons follow the operations' order
+                    return len(reasons) > index and reasons[index] == "ConditionalCheckFailed"
+
+                if failed(0):  # created by a concurrent registration: read it, never a stale copy
+                    existing = self.get(endpoint_id, consistent=True)
                     if existing:
                         return existing, False
-                # Which cap refused it: the reasons follow the operations' order.
-                owner_full = per_owner and len(codes) > 2 and codes[2] == "ConditionalCheckFailed"
-                global_full = not owner_full or (
-                    len(codes) > 1 and codes[1] == "ConditionalCheckFailed"
-                )
+                global_full, owner_full = failed(1), per_owner and failed(2)
                 if attempt == 1:
-                    freed = (not global_full or self._reconcile(max_endpoints)) and (
+                    # A counter that drifted above the real count is repaired; any other
+                    # cancellation (a conflict with another transaction) is simply retried.
+                    if not (global_full or owner_full):
+                        continue
+                    if (not global_full or self._reconcile(max_endpoints)) and (
                         not owner_full or self._reconcile(max_per_owner, owner)
-                    )
-                    if freed:
-                        continue  # a counter had drifted above the real count; try once more
+                    ):
+                        continue
+                if owner_full:
+                    raise OwnerLimitReached(max_per_owner) from exc
                 if global_full:
                     raise EndpointLimitReached(max_endpoints) from exc
-                raise OwnerLimitReached(max_per_owner) from exc
-        raise EndpointLimitReached(max_endpoints)  # pragma: no cover (loop always returns/raises)
+                raise Busy("Too many people are registering at once; try again") from exc
+        raise Busy("Too many people are registering at once; try again")  # pragma: no cover
 
     def list_enabled(self) -> list[dict]:
         items, kwargs = [], {}

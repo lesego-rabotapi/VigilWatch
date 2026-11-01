@@ -39,7 +39,10 @@ def cognito_token(
         with urllib.request.urlopen(request, timeout=timeout) as reply:  # noqa: S310
             answer = json.loads(reply.read())
     except urllib.error.HTTPError as exc:
-        reason = json.loads(exc.read() or b"{}").get("__type", exc.code)
+        try:
+            reason = json.loads(exc.read() or b"{}").get("__type", exc.code)
+        except (ValueError, AttributeError):  # a gateway's HTML page, or a body that is no object
+            reason = exc.code
         raise ProxyError(f"could not sign in as {username}: {reason}") from None
     except (urllib.error.URLError, OSError) as exc:
         raise ProxyError(f"could not reach Cognito: {exc}") from None

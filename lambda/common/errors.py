@@ -33,3 +33,10 @@ class NotFoundError(AppError):
 class LimitError(AppError):
     status = 429
     code = "limit_reached"
+
+
+class Busy(AppError):
+    """The table was contended and a retry did not clear it: not the caller's fault, try again."""
+
+    status = 503
+    code = "busy"

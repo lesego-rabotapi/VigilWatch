@@ -39,7 +39,7 @@ module "compute" {
   control_urls           = concat(["https://${module.frontend.domain_name}/healthz.txt"], var.extra_control_urls)
   check_interval_minutes = var.check_interval_minutes
   max_endpoints          = var.max_endpoints
-  max_endpoints_per_user = var.max_endpoints_per_user
+  max_endpoints_per_user = coalesce(var.max_endpoints_per_user, min(5, var.max_endpoints))
   failure_threshold      = var.failure_threshold
   recovery_threshold     = var.recovery_threshold
   reminder_minutes       = var.reminder_minutes

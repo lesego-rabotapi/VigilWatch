@@ -62,10 +62,9 @@ variable "max_endpoints" {
 }
 
 variable "max_endpoints_per_user" {
-  description = "Maximum number of URLs one user may monitor (at most max_endpoints)."
+  description = "Maximum number of URLs one user may monitor (at most max_endpoints). Unset (null) means 5, or max_endpoints when that is lower."
   type        = number
-  nullable    = false
-  default     = 5
+  default     = null
 }
 
 variable "failure_threshold" {
@@ -159,7 +158,14 @@ variable "api_throttle_burst" {
 }
 
 variable "extra_cors_origins" {
-  description = "Additional origins allowed to call the API (for example a local dev server)."
+  description = "Additional origins allowed to call the API (for example a local dev server). They are also sign-in redirects."
   type        = list(string)
   default     = []
+
+  # Cognito accepts only https origins or http://localhost as redirects: refuse the others here,
+  # where the cause is obvious, instead of failing inside the auth module.
+  validation {
+    condition     = alltrue([for o in var.extra_cors_origins : can(regex("^(https://[^/]+|http://localhost(:[0-9]+)?)$", o))])
+    error_message = "extra_cors_origins must be https origins without a path or trailing slash, or http://localhost with an optional port: they are also the sign-in redirects."
+  }
 }

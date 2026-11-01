@@ -77,3 +77,8 @@ output "smoke_client_id" {
   description = "The Cognito client the smoke tests sign in with."
   value       = module.auth.smoke_client_id
 }
+
+output "max_endpoints_per_user" {
+  description = "The per-user cap in force."
+  value       = coalesce(var.max_endpoints_per_user, min(5, var.max_endpoints))
+}

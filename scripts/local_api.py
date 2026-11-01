@@ -123,7 +123,7 @@ class Handler(BaseHTTPRequestHandler):
             "text/plain",
             {
                 "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-                "Access-Control-Allow-Headers": "content-type",
+                "Access-Control-Allow-Headers": "content-type,authorization",
                 "Access-Control-Max-Age": "3600",
             },
         )
