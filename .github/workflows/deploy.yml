@@ -36,6 +36,8 @@ jobs:
 
   deploy:
     name: Deploy Infrastructure
+    # Off until AWS is set up on purpose: set the repository variable AWS_DEPLOY_ENABLED to 'true'.
+    if: ${{ vars.AWS_DEPLOY_ENABLED == 'true' }}
     needs: test
     runs-on: ubuntu-latest
 
