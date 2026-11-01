@@ -3,11 +3,15 @@ import os
 from datetime import datetime
 from urllib import request as urllib_request, error as urllib_error
 
-import boto3 
+import boto3
+
+TABLE_NAME = os.environ.get("DYNAMODB_TABLE", "uptime_checks")
+SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN")
 
 CORS_HEADERS = {
+    "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Api-Key",
+    "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
 }
 
@@ -20,26 +24,10 @@ def _get_clients():
     return table, cloudwatch, sns
 
 
-def _to_plain(obj):
-    """
-    Recursively convert DynamoDB Decimals to int/float so json.dumps works.
-    """
-    if isinstance(obj, list):
-        return [_to_plain(v) for v in obj]
-    if isinstance(obj, dict):
-        return {k: _to_plain(v) for k, v in obj.items()}
-    if isinstance(obj, Decimal):
-        return int(obj) if obj % 1 == 0 else float(obj)
-    return obj
-
-
 def lambda_handler(event, context):
     """
-    Extremely simple uptime check:
-    - Reads ?url=... from queryStringParameters
-    - Performs a single GET with 5s timeout
-    - Returns status code and success flag
-    - No DynamoDB, no SNS, no Decimals
+    Periodic uptime check Lambda.
+    Always returns CORS headers, even on error.
     """
     try:
         table, cloudwatch, sns = _get_clients()
@@ -54,15 +42,17 @@ def lambda_handler(event, context):
             if not item.get("enabled", True):
                 continue
 
+            # SAFELY get endpoint; skip malformed items
             endpoint = item.get("endpoint")
             if not endpoint:
-                print(f"Skipping item without endpoint: {json.dumps(_to_plain(item))}")
+                print(f"Skipping item without endpoint: {json.dumps(item)}")
                 continue
 
             method = item.get("method", "GET")
             expected_status = int(item.get("expected_status", 200))
 
             try:
+                # For now, only support GET (UI only does GET checks)
                 if method != "GET":
                     raise ValueError(f"Unsupported method: {method}")
 
@@ -98,52 +88,42 @@ def lambda_handler(event, context):
                     TopicArn=SNS_TOPIC_ARN,
                     Subject="Uptime check failed",
                     Message=json.dumps(
-                        _to_plain(
-                            {
-                                "endpoint": endpoint,
-                                "expected_status": expected_status,
-                                "actual_status": actual_status,
-                                "timestamp": datetime.utcnow().isoformat(),
-                            }
-                        ),
+                        {
+                            "endpoint": endpoint,
+                            "expected_status": expected_status,
+                            "actual_status": actual_status,
+                            "timestamp": datetime.utcnow().isoformat(),
+                        },
                         indent=2,
                     ),
                 )
 
             results.append(
                 {
-                    "endpoint": url,
+                    "endpoint": endpoint,
                     "expected_status": expected_status,
                     "actual_status": actual_status,
                     "success": success,
                 }
             )
 
-        # Convert any Decimals in results before returning
-        plain_body = _to_plain(
-            {
-                "status": "completed",
-                "checked": len(results),
-                "results": results,
-            }
-        )
-
         return {
-            "statusCode": 500,
+            "statusCode": 200,
             "headers": CORS_HEADERS,
-            "body": json.dumps(plain_body),
+            "body": json.dumps(
+                {
+                    "status": "completed",
+                    "checked": len(results),
+                    "results": results,
+                }
+            ),
         }
 
-def checks(event, context):
-    try:
-        items = [{"repo": "lesego-rabotapi/VigilWatch", "score": Decimal("0.95")}]
-        body = json.dumps(to_json_safe(items))
-        return {"statusCode": 200, "headers": CORS_HEADERS, "body": body}
     except Exception as e:
-        # Last-resort error
-        print("Error in simple uptime_check:", repr(e))
+        # Ensure CORS headers even on unexpected failure
+        print("Error in uptime_check:", repr(e))
         return {
             "statusCode": 500,
             "headers": CORS_HEADERS,
-            "body": json.dumps({"error": str(e)}),
+            "body": json.dumps({"message": "Internal server error"}),
         }
