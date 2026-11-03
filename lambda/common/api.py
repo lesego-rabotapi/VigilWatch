@@ -36,7 +36,11 @@ def _translate(exc: Exception) -> tuple[int, str, str] | None:
             f"You have reached your monitoring limit ({exc.args[0]} endpoints)",
         )
     if isinstance(exc, EndpointLimitReached):
-        return 429, "limit_reached", f"Monitoring limit reached ({exc.args[0]} endpoints)"
+        return (
+            429,
+            "limit_reached",
+            f"VigilWatch has reached its monitoring limit ({exc.args[0]} endpoints)",
+        )
     return None
 
 

@@ -65,7 +65,8 @@
     startButton.disabled = true;
     signOutButton.classList.add("hidden");
     signInButton.classList.remove("hidden");
-    if (message) inputError.textContent = message;
+    startButton.textContent = "Start Monitoring";
+    inputError.textContent = message || ""; // nothing of the last session's errors stays
   }
 
   function headers(extra = {}) {

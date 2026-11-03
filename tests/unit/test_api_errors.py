@@ -42,7 +42,12 @@ def call(handler, request_id="req-1"):
             "host_unresolvable",
             "Could not resolve that host name",
         ),
-        (EndpointLimitReached(5), 429, "limit_reached", "Monitoring limit reached (5 endpoints)"),
+        (
+            EndpointLimitReached(5),
+            429,
+            "limit_reached",
+            "VigilWatch has reached its monitoring limit (5 endpoints)",
+        ),
     ],
 )
 def test_typed_errors_become_consistent_responses(exc, status, code, message):

@@ -411,3 +411,23 @@ test("a poll that finishes after sign-out changes nothing", async () => {
     page.done();
   }
 });
+
+test("signing out leaves no error text or half-finished label behind", async () => {
+  const auth = fakeAuth({ token: "tok" });
+  let finish;
+  const late = new Promise((resolve) => (finish = resolve));
+  const page = setup({ config: SIGNED, auth, responses: [late] });
+  try {
+    await page.start();
+    page.$("input-error").textContent = "Could not start monitoring: https://private.example refused";
+    const submitted = page.submit("https://example.com");
+    assert.equal(page.$("start-button").textContent, "Starting...");
+    page.$("sign-out").click();
+    assert.equal(page.$("input-error").textContent, "");
+    assert.equal(page.$("start-button").textContent, "Start Monitoring");
+    finish(reply(201, payload()));
+    await submitted;
+  } finally {
+    page.done();
+  }
+});
