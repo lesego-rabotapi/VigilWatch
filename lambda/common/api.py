@@ -30,7 +30,11 @@ def _translate(exc: Exception) -> tuple[int, str, str] | None:
     if isinstance(exc, BadRequest):
         return 400, "bad_request", str(exc)
     if isinstance(exc, OwnerLimitReached):  # before EndpointLimitReached, its parent class
-        return 429, "limit_reached", f"Your monitoring limit reached ({exc.args[0]} endpoints)"
+        return (
+            429,
+            "limit_reached",
+            f"You have reached your monitoring limit ({exc.args[0]} endpoints)",
+        )
     if isinstance(exc, EndpointLimitReached):
         return 429, "limit_reached", f"Monitoring limit reached ({exc.args[0]} endpoints)"
     return None

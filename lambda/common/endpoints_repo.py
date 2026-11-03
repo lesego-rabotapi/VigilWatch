@@ -267,10 +267,10 @@ class EndpointRepository:
                         not owner_full or self._reconcile(max_per_owner, owner)
                     ):
                         continue
+                if global_full:  # the shared cap is named first: deleting one's own would not help
+                    raise EndpointLimitReached(max_endpoints) from exc
                 if owner_full:
                     raise OwnerLimitReached(max_per_owner) from exc
-                if global_full:
-                    raise EndpointLimitReached(max_endpoints) from exc
                 raise Busy("Too many people are registering at once; try again") from exc
         raise Busy("Too many people are registering at once; try again")  # pragma: no cover
 

@@ -122,6 +122,28 @@
       : "No alerts sent yet";
   }
 
+  /** Back to the empty page: nothing of the last endpoint stays behind (a shared computer). */
+  function clearView(doc) {
+    const $ = (id) => doc.getElementById(id);
+    $("endpoint-label").textContent = "No endpoint selected";
+    $("status-empty").classList.remove("hidden");
+    $("latency-empty").classList.remove("hidden");
+    $("status-grid").classList.add("hidden");
+    $("status-note").textContent = "";
+    $("status-note").classList.add("hidden");
+    setStatusPill($("status-pill"), "UNKNOWN");
+    $("metric-uptime").textContent = DASH;
+    $("metric-latency").textContent = DASH;
+    $("metric-last-check").textContent = DASH;
+    $("latency-panel").classList.add("hidden");
+    $("latency-bars").replaceChildren();
+    $("latency-range").textContent = "";
+    $("incidents-panel").classList.add("hidden");
+    $("incidents-empty").classList.remove("hidden");
+    $("incidents-body").replaceChildren();
+    $("alert-last").textContent = "No alerts sent yet";
+  }
+
   function createPoller(timers, intervalMs) {
     let id = null;
     return {
@@ -155,6 +177,7 @@
     renderLatency,
     renderIncidents,
     updateView,
+    clearView,
     createPoller,
     readJson,
   };

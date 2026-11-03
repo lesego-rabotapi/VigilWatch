@@ -86,7 +86,12 @@
       const code = params.get("code");
       if (!code) return false;
       clearAddressBar();
-      const pending = JSON.parse(win.sessionStorage.getItem(PENDING) || "null");
+      let pending = null;
+      try {
+        pending = JSON.parse(win.sessionStorage.getItem(PENDING) || "null");
+      } catch {
+        /* a truncated value is the same as none: ask to sign in again */
+      }
       win.sessionStorage.removeItem(PENDING); // a code is redeemed once, or not at all
       if (!pending || pending.state !== params.get("state")) {
         throw new Error("This sign-in was not started here. Sign in again.");

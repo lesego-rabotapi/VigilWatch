@@ -52,8 +52,15 @@
     setIdle("Start Monitoring");
   }
 
+  /** False once signed out: a reply that arrives after that must not touch the page. */
+  function stillSignedIn() {
+    return !auth.enabled || Boolean(auth.token());
+  }
+
   function showSignedOut(message) {
     poller.stop();
+    View.clearView(doc);
+    urlInput.value = "";
     urlInput.disabled = true;
     startButton.disabled = true;
     signOutButton.classList.add("hidden");
@@ -117,19 +124,22 @@
 
     return register(value)
       .then((data) => {
+        if (!stillSignedIn()) return; // signed out while the request was in flight
         View.updateView(doc, data);
         setIdle("Monitor another URL");
         // Poll with the canonical URL the API stored.
         poller.start(() => {
           poll(data.url)
-            .then((latest) => View.updateView(doc, latest))
+            .then((latest) => {
+              if (stillSignedIn()) View.updateView(doc, latest);
+            })
             .catch((err) => {
               if (!(err instanceof SignedOut)) console.error("Poll error:", err);
             });
         });
       })
       .catch((err) => {
-        if (err instanceof SignedOut) return; // already signed out, with the reason shown
+        if (err instanceof SignedOut || !stillSignedIn()) return; // signed out, reason shown
         console.error(err);
         inputError.textContent = `Could not start monitoring: ${err.message}`;
         setIdle("Start Monitoring");
