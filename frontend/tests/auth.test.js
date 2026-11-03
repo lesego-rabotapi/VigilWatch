@@ -100,6 +100,15 @@ test("a code whose state was not issued here is refused, and nothing is exchange
   assert.equal(auth.token(), null);
 });
 
+test("a corrupt stored sign-in state is cleared and asks to sign in again", async () => {
+  const b = browser("https://dashboard.test/?code=x&state=y");
+  b.window.sessionStorage.setItem("vigilwatch.pkce", "{truncated");
+  const auth = VigilAuth.createAuth(b.window, CONFIG, { navigate: b.navigate });
+  await assert.rejects(auth.handleRedirect(), /Sign in again/);
+  assert.equal(b.window.sessionStorage.getItem("vigilwatch.pkce"), null, "never left behind");
+  assert.equal(b.requests.length, 0);
+});
+
 test("a code with no sign-in started here is refused", async () => {
   const b = browser("https://dashboard.test/?code=x&state=y");
   const auth = VigilAuth.createAuth(b.window, CONFIG, { navigate: b.navigate });

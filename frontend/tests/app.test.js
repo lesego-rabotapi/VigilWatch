@@ -335,3 +335,79 @@ test("a poll the API refuses signs the page out quietly", async () => {
     page.done();
   }
 });
+
+test("signing out clears the previous user's data from the page", async () => {
+  const auth = fakeAuth({ token: "tok" });
+  const page = setup({ config: SIGNED, auth, responses: [reply(201, payload())] });
+  try {
+    await page.start();
+    await page.submit("https://example.com");
+    assert.equal(page.$("status-grid").classList.contains("hidden"), false);
+    page.$("sign-out").click();
+    assert.equal(page.$("status-grid").classList.contains("hidden"), true);
+    assert.equal(page.$("status-empty").classList.contains("hidden"), false);
+    assert.equal(page.$("endpoint-label").textContent, "No endpoint selected");
+    assert.equal(page.$("endpoint-url").value, "");
+    assert.equal(page.$("latency-bars").children.length, 0);
+    assert.equal(page.$("incidents-body").children.length, 0);
+  } finally {
+    page.done();
+  }
+});
+
+test("a session the API ends also clears the data", async () => {
+  const auth = fakeAuth({ token: "tok" });
+  const page = setup({
+    config: SIGNED,
+    auth,
+    responses: [reply(201, payload()), reply(401, { message: "Unauthorized", code: "unauthorized" })],
+  });
+  try {
+    await page.start();
+    await page.submit("https://example.com");
+    page.timers[0].fn();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(page.$("status-grid").classList.contains("hidden"), true);
+  } finally {
+    page.done();
+  }
+});
+
+test("a registration that finishes after sign-out changes nothing", async () => {
+  const auth = fakeAuth({ token: "tok" });
+  let finish;
+  const late = new Promise((resolve) => (finish = resolve));
+  const page = setup({ config: SIGNED, auth, responses: [late] });
+  try {
+    await page.start();
+    const submitted = page.submit("https://example.com");
+    page.$("sign-out").click();
+    finish(reply(201, payload()));
+    await submitted;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(page.$("start-button").disabled, true, "the form stays closed");
+    assert.equal(page.$("endpoint-url").disabled, true);
+    assert.equal(page.$("status-grid").classList.contains("hidden"), true, "no data for nobody");
+    assert.deepEqual(page.timers, [], "no poller on a signed-out page");
+  } finally {
+    page.done();
+  }
+});
+
+test("a poll that finishes after sign-out changes nothing", async () => {
+  const auth = fakeAuth({ token: "tok" });
+  let finish;
+  const late = new Promise((resolve) => (finish = resolve));
+  const page = setup({ config: SIGNED, auth, responses: [reply(201, payload()), late] });
+  try {
+    await page.start();
+    await page.submit("https://example.com");
+    page.timers[0].fn();
+    page.$("sign-out").click();
+    finish(reply(200, payload({ status: "DOWN" })));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(page.$("status-grid").classList.contains("hidden"), true);
+  } finally {
+    page.done();
+  }
+});

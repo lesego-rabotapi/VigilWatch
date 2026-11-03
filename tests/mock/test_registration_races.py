@@ -82,8 +82,9 @@ def test_a_stale_read_after_a_duplicate_put_still_returns_the_existing_endpoint(
     [
         ((None, "ConditionalCheckFailed", None), EndpointLimitReached),
         ((None, None, "ConditionalCheckFailed"), OwnerLimitReached),
+        ((None, "ConditionalCheckFailed", "ConditionalCheckFailed"), EndpointLimitReached),
     ],
-    ids=["global", "owner"],
+    ids=["global", "owner", "both-the-shared-cap-is-named"],
 )
 def test_each_cap_is_blamed_only_when_its_own_check_failed(repo, monkeypatch, reasons, expected):
     monkeypatch.setattr(repo, "_create", lambda *a: (_ for _ in ()).throw(cancelled(*reasons)))
@@ -91,3 +92,11 @@ def test_each_cap_is_blamed_only_when_its_own_check_failed(repo, monkeypatch, re
     with pytest.raises(expected) as caught:
         put(repo)
     assert type(caught.value) is expected
+
+
+def test_the_per_user_limit_is_worded_as_a_sentence():
+    from common.api import _translate
+
+    status, code, message = _translate(OwnerLimitReached(5))
+    assert (status, code) == (429, "limit_reached")
+    assert message == "You have reached your monitoring limit (5 endpoints)"
