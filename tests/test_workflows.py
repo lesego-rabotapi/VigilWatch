@@ -831,3 +831,12 @@ def test_terraform_version_has_a_single_source_of_truth():
             continue
         versions = re.findall(r'TF_VERSION:\s*"([\d.]+)"', text)
         assert versions == [pinned], f"{name} pins {versions}, expected {pinned}"
+
+
+@pytest.mark.req("VW-026")
+def test_an_older_release_without_the_smoke_client_output_can_still_be_applied(deploy):
+    """A rollback to a commit from before sign-in has no smoke_client_id output."""
+    _, wf = deploy
+    step = next(s for s in wf["jobs"]["apply"]["steps"] if s.get("id") == "outputs")
+    assert "terraform output -raw smoke_client_id" not in step["run"], "fails on older releases"
+    assert "smoke_client_id" in step["run"]

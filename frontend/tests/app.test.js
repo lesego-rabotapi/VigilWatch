@@ -431,3 +431,21 @@ test("signing out leaves no error text or half-finished label behind", async () 
     page.done();
   }
 });
+
+test("a 401 that arrives after a deliberate sign-out does not announce an ended session", async () => {
+  const auth = fakeAuth({ token: "tok" });
+  let finish;
+  const late = new Promise((resolve) => (finish = resolve));
+  const page = setup({ config: SIGNED, auth, responses: [late] });
+  try {
+    await page.start();
+    const submitted = page.submit("https://example.com");
+    page.$("sign-out").click();
+    finish(reply(401, { message: "Unauthorized", code: "unauthorized" }));
+    await submitted;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(page.$("input-error").textContent, "");
+  } finally {
+    page.done();
+  }
+});

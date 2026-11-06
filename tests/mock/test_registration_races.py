@@ -100,3 +100,17 @@ def test_the_per_user_limit_is_worded_as_a_sentence():
     status, code, message = _translate(OwnerLimitReached(5))
     assert (status, code) == (429, "limit_reached")
     assert message == "You have reached your monitoring limit (5 endpoints)"
+
+
+def test_a_repaired_shared_counter_does_not_hide_the_users_own_full_cap(repo, monkeypatch):
+    """Both checks failed, the shared counter had only drifted: the user's own cap is the blocker."""
+    monkeypatch.setattr(
+        repo,
+        "_create",
+        lambda *a: (_ for _ in ()).throw(
+            cancelled(None, "ConditionalCheckFailed", "ConditionalCheckFailed")
+        ),
+    )
+    monkeypatch.setattr(repo, "_reconcile", lambda limit, owner=None: owner is None)
+    with pytest.raises(OwnerLimitReached):
+        put(repo)
