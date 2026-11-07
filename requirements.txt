@@ -1,5 +1,3 @@
-﻿boto3
-pytest
-pytest-cov
-moto
-requests
+# Lambda runtime dependencies.
+# Intentionally empty: the functions use only the standard library and the
+# boto3 build that ships with the AWS Lambda Python runtime.

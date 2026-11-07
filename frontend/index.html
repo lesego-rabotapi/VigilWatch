@@ -17,6 +17,10 @@
         <p>Real-Time Endpoint Monitoring</p>
       </div>
     </div>
+    <div class="session">
+      <button id="sign-in" type="button" class="hidden">Sign in</button>
+      <button id="sign-out" type="button" class="secondary hidden">Sign out</button>
+    </div>
   </header>
 
   <main class="main">
@@ -45,6 +49,8 @@
       <p id="status-empty" class="muted">
         No data yet. Start monitoring to see live metrics.
       </p>
+
+      <p id="status-note" class="muted small hidden" role="status"></p>
 
       <div id="status-grid" class="grid hidden">
         <div class="metric">
@@ -129,6 +135,9 @@
     VigilWatch · Serverless uptime & incident monitoring
   </footer>
 
+  <script src="config.js"></script>
+  <script src="view.js"></script>
+  <script src="auth.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

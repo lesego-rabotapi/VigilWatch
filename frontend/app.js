@@ -1,224 +1,160 @@
-const form = document.getElementById("monitor-form");
-const urlInput = document.getElementById("endpoint-url");
-const startButton = document.getElementById("start-button");
-const inputError = document.getElementById("input-error");
-
-const statusEmpty = document.getElementById("status-empty");
-const statusGrid = document.getElementById("status-grid");
-const statusPill = document.getElementById("status-pill");
-const metricUptime = document.getElementById("metric-uptime");
-const metricLatency = document.getElementById("metric-latency");
-const metricLastCheck = document.getElementById("metric-last-check");
-
-const endpointLabel = document.getElementById("endpoint-label");
-const latencyEmpty = document.getElementById("latency-empty");
-const latencyPanel = document.getElementById("latency-panel");
-const latencyBars = document.getElementById("latency-bars");
-const latencyRange = document.getElementById("latency-range");
-
-const incidentsEmpty = document.getElementById("incidents-empty");
-const incidentsPanel = document.getElementById("incidents-panel");
-const incidentsBody = document.getElementById("incidents-body");
-
-const alertLast = document.getElementById("alert-last");
-
-const API_BASE = "https://xihi7lu6jh.execute-api.af-south-1.amazonaws.com/prod";
-
-let currentUrl = null;
-let pollId = null;
-
-form.addEventListener("submit", (e) => {
-  e.preventDefault();
-  inputError.textContent = "";
-
-  const value = urlInput.value.trim();
-  if (!isValidHttpUrl(value)) {
-    inputError.textContent = "Please enter a valid http/https URL.";
-    return;
+/* VigilWatch dashboard wiring. Rendering lives in view.js and sign-in in auth.js; the API URL
+ * and the sign-in settings come from config.js, which Terraform generates at deploy time.
+ *
+ * In a browser this file starts itself. Under Node (tests) it exports init(window)
+ * so the whole flow can be driven against a jsdom window. */
+(function (root, factory) {
+  if (typeof module === "object" && module.exports) {
+    module.exports = factory;
+  } else {
+    factory(root);
   }
+})(typeof self !== "undefined" ? self : this, function init(win) {
+  "use strict";
 
-  startMonitoring(value);
-});
+  const View = win.VigilView;
+  const doc = win.document;
+  const POLL_MS = 15000;
+  const SESSION_ENDED = "Your session has ended. Sign in again.";
 
-function isValidHttpUrl(value) {
+  const form = doc.getElementById("monitor-form");
+  const urlInput = doc.getElementById("endpoint-url");
+  const startButton = doc.getElementById("start-button");
+  const inputError = doc.getElementById("input-error");
+  const signInButton = doc.getElementById("sign-in");
+  const signOutButton = doc.getElementById("sign-out");
+
+  let api;
+  let auth;
   try {
-    const u = new URL(value);
-    return u.protocol === "http:" || u.protocol === "https:";
-  } catch {
-    return false;
+    api = View.apiBase(win.VIGILWATCH_CONFIG);
+    auth = win.VigilAuth.createAuth(win, win.VIGILWATCH_CONFIG.auth);
+  } catch (err) {
+    inputError.textContent = err.message;
+    startButton.disabled = true;
+    return Promise.resolve();
   }
-}
 
-function startMonitoring(url) {
-  currentUrl = url;
-  endpointLabel.textContent = url;
+  const poller = View.createPoller(win, POLL_MS);
+
+  /** Thrown when the API refused the token: the page is already signed out by then. */
+  class SignedOut extends Error {}
+
+  function setIdle(label) {
+    urlInput.disabled = false;
+    startButton.disabled = false;
+    startButton.textContent = label;
+  }
+
+  function showSignedIn() {
+    signInButton.classList.add("hidden");
+    signOutButton.classList.remove("hidden");
+    setIdle("Start Monitoring");
+  }
+
+  /** False once signed out: a reply that arrives after that must not touch the page. */
+  function stillSignedIn() {
+    return !auth.enabled || Boolean(auth.token());
+  }
+
+  function showSignedOut(message) {
+    poller.stop();
+    View.clearView(doc);
+    urlInput.value = "";
+    urlInput.disabled = true;
+    startButton.disabled = true;
+    signOutButton.classList.add("hidden");
+    signInButton.classList.remove("hidden");
+    startButton.textContent = "Start Monitoring";
+    inputError.textContent = message || ""; // nothing of the last session's errors stays
+  }
+
+  function headers(extra = {}) {
+    const token = auth.token();
+    return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
+  }
+
+  function call(url, options = {}) {
+    return win.fetch(url, { ...options, headers: headers(options.headers) }).then((res) => {
+      if (res.status === 401 && auth.enabled) {
+        if (!stillSignedIn()) throw new SignedOut(""); // signed out on purpose: say nothing
+        auth.forget();
+        showSignedOut(SESSION_ENDED);
+        throw new SignedOut(SESSION_ENDED);
+      }
+      return View.readJson(res);
+    });
+  }
+
+  function register(url) {
+    return call(`${api}/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+  }
+
+  function poll(url) {
+    return call(`${api}/checks?url=${encodeURIComponent(url)}`);
+  }
+
+  signInButton.addEventListener("click", () => {
+    auth.signIn().catch((err) => {
+      inputError.textContent = `Could not start the sign-in: ${err.message}`;
+    });
+  });
+
+  signOutButton.addEventListener("click", () => {
+    showSignedOut();
+    auth.signOut();
+  });
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    inputError.textContent = "";
+
+    const value = urlInput.value.trim();
+    if (!View.isValidHttpUrl(value)) {
+      inputError.textContent = "Please enter a valid http/https URL.";
+      return;
+    }
+
+    urlInput.disabled = true;
+    startButton.disabled = true;
+    startButton.textContent = "Starting...";
+    poller.stop();
+
+    return register(value)
+      .then((data) => {
+        if (!stillSignedIn()) return; // signed out while the request was in flight
+        View.updateView(doc, data);
+        setIdle("Monitor another URL");
+        // Poll with the canonical URL the API stored.
+        poller.start(() => {
+          poll(data.url)
+            .then((latest) => {
+              if (stillSignedIn()) View.updateView(doc, latest);
+            })
+            .catch((err) => {
+              if (!(err instanceof SignedOut)) console.error("Poll error:", err);
+            });
+        });
+      })
+      .catch((err) => {
+        if (err instanceof SignedOut || !stillSignedIn()) return; // signed out, reason shown
+        console.error(err);
+        inputError.textContent = `Could not start monitoring: ${err.message}`;
+        setIdle("Start Monitoring");
+      });
+  });
+
+  // The local stack has no sign-in: the page is open, with no session buttons.
+  if (!auth.enabled) return Promise.resolve();
 
   urlInput.disabled = true;
   startButton.disabled = true;
-  startButton.textContent = "Starting...";
-
-  statusEmpty.classList.add("hidden");
-  latencyEmpty.classList.add("hidden");
-
-  //load backend
-  fetchInitial(url)
-    .then((data) => {
-      updateView(data);
-      startButton.textContent = "Monitoring...";
-    })
-    .catch((err) => {
-      console.error(err);
-      inputError.textContent =
-        "Could not start monitoring. Please try again or check the API.";
-      urlInput.disabled = false;
-      startButton.disabled = false;
-      startButton.textContent = "Start Monitoring";
-    });
-
-  //clear previous intervals
-  if (pollId) clearInterval(pollId);
-
-  //poll every 15s
-  pollId = setInterval(() => {
-    if (!currentUrl) return;
-    fetchPoll(currentUrl)
-      .then(updateView)
-      .catch((err) => {
-        console.error("Poll error:", err);
-      });
-  }, 15000);
-}
-
-function updateView(data) {
-  statusGrid.classList.remove("hidden");
-  setStatusPill(data.status || "UNKNOWN");
-
-  if (typeof data.uptime_30d === "number") {
-    metricUptime.textContent = data.uptime_30d.toFixed(2) + "%";
-  } else {
-    metricUptime.textContent = "–";
-  }
-
-  if (typeof data.latest_latency_ms === "number") {
-    metricLatency.textContent = Math.round(data.latest_latency_ms) + " ms";
-  } else {
-    metricLatency.textContent = "–";
-  }
-
-  if (data.last_check) {
-    metricLastCheck.textContent = new Date(data.last_check).toLocaleString();
-  } else {
-    metricLastCheck.textContent = "–";
-  }
-
-  //latency chart
-  latencyPanel.classList.remove("hidden");
-  renderLatency(data.recent_latencies || []);
-
-  //incidents
-  const incidents = data.incidents || [];
-  if (incidents.length === 0) {
-    incidentsPanel.classList.add("hidden");
-    incidentsEmpty.classList.remove("hidden");
-  } else {
-    incidentsEmpty.classList.add("hidden");
-    incidentsPanel.classList.remove("hidden");
-    renderIncidents(incidents);
-  }
-
-  //alerts
-  if (data.last_alert_sent) {
-    alertLast.textContent = new Date(data.last_alert_sent).toLocaleString();
-  } else {
-    alertLast.textContent = "No alerts sent yet";
-  }
-}
-
-function setStatusPill(status) {
-  statusPill.className = "pill pill-unknown";
-
-  if (status === "UP") {
-    statusPill.className = "pill pill-up";
-    statusPill.textContent = "Up";
-  } else if (status === "DEGRADED") {
-    statusPill.className = "pill pill-degraded";
-    statusPill.textContent = "Degraded";
-  } else if (status === "DOWN") {
-    statusPill.className = "pill pill-down";
-    statusPill.textContent = "Down";
-  } else {
-    statusPill.textContent = "Unknown";
-  }
-}
-
-function renderLatency(points) {
-  if (!points || points.length === 0) {
-    latencyBars.innerHTML = "";
-    latencyRange.textContent = "No latency data";
-    return;
-  }
-
-  const maxMs = Math.max(...points.map((p) => p.ms || 0));
-  const top = Math.max(100, Math.ceil(maxMs / 50) * 50);
-  latencyRange.textContent = `0–${top} ms (last ${points.length} checks)`;
-
-  latencyBars.innerHTML = "";
-  points.forEach((p) => {
-    const ms = p.ms || 0;
-    const h = Math.max(10, (ms / top) * 100);
-
-    const bar = document.createElement("div");
-    bar.classList.add("bar");
-
-    if (p.status === "UP") bar.classList.add("ok");
-    else if (p.status === "DEGRADED") bar.classList.add("warn");
-    else bar.classList.add("err");
-
-    bar.style.height = h + "%";
-    latencyBars.appendChild(bar);
-  });
-}
-
-function renderIncidents(list) {
-  incidentsBody.innerHTML = "";
-  list.forEach((inc) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${inc.start_time ? fmt(inc.start_time) : "—"}</td>
-      <td>${inc.end_time ? fmt(inc.end_time) : "—"}</td>
-      <td>${inc.duration || "—"}</td>
-      <td>${inc.resolved ? "Resolved" : "Open"}</td>
-    `;
-    incidentsBody.appendChild(tr);
-  });
-}
-
-function fmt(iso) {
-  return new Date(iso).toLocaleString();
-}
-
-//backend calls
-
-function fetchInitial(url) {
-  return fetch(`${API_BASE}/register`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ url }),
-  }).then(checkResponseJson);
-}
-
-function fetchPoll(url) {
-  const encoded = encodeURIComponent(url);
-  return fetch(`${API_BASE}/checks?url=${encoded}`).then(checkResponseJson);
-}
-
-function checkResponseJson(res) {
-  if (!res.ok) {
-    return res.text().then((t) => {
-      throw new Error(`HTTP ${res.status}: ${t}`);
-    });
-  }
-  return res.json();
-}
+  return auth
+    .handleRedirect()
+    .then((signedIn) => (signedIn ? showSignedIn() : showSignedOut()))
+    .catch((err) => showSignedOut(err.message));
+});
