@@ -322,7 +322,8 @@ jobs:
           echo "dashboard_url=$(terraform output -raw dashboard_url)" >> "$GITHUB_OUTPUT"
           echo "api_base_url=$(terraform output -raw api_base_url)" >> "$GITHUB_OUTPUT"
           echo "distribution_id=$(terraform output -raw cloudfront_distribution_id)" >> "$GITHUB_OUTPUT"
-          echo "smoke_client_id=$(terraform output -raw smoke_client_id)" >> "$GITHUB_OUTPUT"
+          # Releases from before sign-in have no such output; a rollback must still apply.
+          echo "smoke_client_id=$(terraform output -json | jq -r '.smoke_client_id.value // empty')" >> "$GITHUB_OUTPUT"
           echo "Dashboard: $(terraform output -raw dashboard_url)" >> "$GITHUB_STEP_SUMMARY"
       - name: Invalidate CloudFront cache
         env:

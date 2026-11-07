@@ -77,6 +77,7 @@
   function call(url, options = {}) {
     return win.fetch(url, { ...options, headers: headers(options.headers) }).then((res) => {
       if (res.status === 401 && auth.enabled) {
+        if (!stillSignedIn()) throw new SignedOut(""); // signed out on purpose: say nothing
         auth.forget();
         showSignedOut(SESSION_ENDED);
         throw new SignedOut(SESSION_ENDED);

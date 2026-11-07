@@ -263,10 +263,15 @@ class EndpointRepository:
                     # cancellation (a conflict with another transaction) is simply retried.
                     if not (global_full or owner_full):
                         continue
-                    if (not global_full or self._reconcile(max_endpoints)) and (
-                        not owner_full or self._reconcile(max_per_owner, owner)
-                    ):
+                    global_repaired = not global_full or self._reconcile(max_endpoints)
+                    owner_repaired = not owner_full or self._reconcile(max_per_owner, owner)
+                    if global_repaired and owner_repaired:
                         continue
+                    # blame only the cap that is still full once the drifted one is repaired
+                    global_full, owner_full = (
+                        global_full and not global_repaired,
+                        owner_full and not owner_repaired,
+                    )
                 if global_full:  # the shared cap is named first: deleting one's own would not help
                     raise EndpointLimitReached(max_endpoints) from exc
                 if owner_full:

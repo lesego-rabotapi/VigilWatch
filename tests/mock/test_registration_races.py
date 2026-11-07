@@ -103,7 +103,7 @@ def test_the_per_user_limit_is_worded_as_a_sentence():
 
 
 def test_a_repaired_shared_counter_does_not_hide_the_users_own_full_cap(repo, monkeypatch):
-    """Both checks failed, the shared counter had only drifted: the user's own cap is the blocker."""
+    """Both checks failed but the shared counter had only drifted: the user own cap blocks."""
     monkeypatch.setattr(
         repo,
         "_create",
