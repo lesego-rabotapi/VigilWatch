@@ -42,6 +42,14 @@ def test_each_extra_metric_per_url_multiplies_the_bill():
     assert cardinality_cost.per_endpoint_cost(100, metrics_per_url=3) == Decimal("87.00")
 
 
+def test_the_table_shows_the_worst_case_with_every_checker_metric_per_url():
+    seven = cardinality_cost.FIXED_METRICS
+    assert cardinality_cost.per_endpoint_cost(100, metrics_per_url=seven) == Decimal("207.00")
+    assert cardinality_cost.per_endpoint_cost(1000, metrics_per_url=seven) == Decimal("2097.00")
+    table = cardinality_cost.markdown_table()
+    assert "$207.00" in table and "$2097.00" in table and "$27.00" in table
+
+
 def test_the_fixed_dimension_costs_nothing_however_many_urls_are_monitored():
     assert cardinality_cost.fixed_dimension_cost() == Decimal("0.00")
     assert cardinality_cost.FIXED_METRICS <= cardinality_cost.FREE_METRICS

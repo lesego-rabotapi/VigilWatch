@@ -2,10 +2,13 @@
 
 import io
 
-import measure_cold_start as mcs
 import pytest
 
+import measure_cold_start as mcs
+
 pytestmark = pytest.mark.req("VW-020")
+
+NL = chr(10)
 
 COLD = (
     "REPORT RequestId: 11111111-aaaa Duration: 120.50 ms\tBilled Duration: 121 ms\t"
@@ -85,3 +88,29 @@ def test_the_command_prints_a_row_for_the_performance_table(capsys):
     assert mcs.main(["--markdown"], stdin=io.StringIO(log)) == 0
     out = capsys.readouterr().out
     assert out.count("|") >= 8 and "231.56" in out and "8.25" in out
+
+
+def test_values_are_printed_in_full_never_in_exponent_or_six_digit_form(capsys):
+    log = COLD.replace("231.56", "1234567.891")
+    mcs.main(["--markdown"], stdin=io.StringIO(log))
+    out = capsys.readouterr().out
+    assert "1234567.891" in out and "e+" not in out
+
+
+def test_input_mixing_memory_sizes_is_refused_not_blended():
+    other = COLD.replace("128 MB", "256 MB")
+    with pytest.raises(SystemExit, match="memory"):
+        mcs.main([], stdin=io.StringIO(NL.join([COLD, other])))
+
+
+def test_a_report_line_that_cannot_be_parsed_is_counted_not_dropped(capsys):
+    odd = "REPORT RequestId: 3333 Duration: 5.00 ms Status: timeout"
+    mcs.main([], stdin=io.StringIO(NL.join([COLD, odd])))
+    assert "skipped_report_lines: 1" in capsys.readouterr().out
+
+
+def test_a_utf16_log_file_from_powershell_is_read(tmp_path, capsys):
+    path = tmp_path / "logs.txt"
+    path.write_bytes((NL.join([COLD, WARM]) + NL).encode("utf-16"))
+    assert mcs.main([str(path)]) == 0
+    assert "invocations: 2" in capsys.readouterr().out

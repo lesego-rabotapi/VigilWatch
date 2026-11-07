@@ -146,3 +146,26 @@ def test_each_interview_answer_is_short_and_points_at_evidence():
         assert 3 <= len(lines) <= 5, f"{title}: {len(lines)} lines"
         assert LINK.search("\n".join(lines)), f"{title}: no link to evidence"
     assert broken_links(text, ROOT / "docs") == []
+
+
+def test_every_asset_type_the_dashboard_ships_is_served_with_its_own_content_type():
+    """With nosniff, a logo served as octet-stream does not render."""
+    main = (ROOT / "terraform" / "modules" / "frontend" / "main.tf").read_text(encoding="utf-8")
+    for suffix in {p.suffix.lstrip(".") for p in (ROOT / "frontend" / "assets").iterdir()}:
+        assert re.search(rf"{suffix}\s*=\s*\"image/", main), f"no content type for .{suffix}"
+
+
+def test_the_cold_start_method_forces_a_new_environment_for_every_sample():
+    text = (ROOT / "docs" / "performance.md").read_text(encoding="utf-8")
+    assert "before every cold sample" in text
+    assert "a new execution environment per invocation" not in text
+
+
+def test_the_lesson_dates_are_the_dates_of_their_evidence():
+    """Each date is when the evidence landed in git, not when the lesson was written down."""
+    lessons = bullets(section(README, "Lessons learned"))
+    by_start = {
+        m.group(1): lesson for lesson in lessons if (m := re.match(r"- \*\*([\d-]+)\*\*", lesson))
+    }
+    assert "2026-10-27" in by_start and "free_tier_budget" in by_start["2026-10-27"]
+    assert not any("verify_package" in v for k, v in by_start.items() if k < "2026-10-27")
