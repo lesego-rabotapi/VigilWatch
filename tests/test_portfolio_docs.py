@@ -21,7 +21,14 @@ def section(text: str, heading: str) -> str:
 
 
 def bullets(text: str) -> list[str]:
-    return [line for line in text.splitlines() if line.startswith("- ")]
+    """Each top-level bullet with its wrapped continuation lines joined."""
+    items: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("- "):
+            items.append(line)
+        elif items and line.startswith("  "):
+            items[-1] += " " + line.strip()
+    return items
 
 
 def broken_links(text: str, base: Path) -> list[str]:
