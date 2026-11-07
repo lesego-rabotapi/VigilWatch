@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="t">
+  <title id="t">VigilWatch</title>
+  <path d="M32 4 56 13v17c0 14.5-9.8 25.2-24 30C17.8 55.200 8 44.500 8 30V13z" fill="#0b1020" stroke="#26d3c4" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M14 33h9l4-9 6 17 4-8h13" fill="none" stroke="#42d47b" stroke-width="3.500" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="32" cy="14" r="2.500" fill="#26d3c4"/>
+</svg>
