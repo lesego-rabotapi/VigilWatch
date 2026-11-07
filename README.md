@@ -99,7 +99,7 @@ Measured performance: [docs/performance.md](docs/performance.md). What a reviewe
 - **Provisioned DynamoDB.** It is free but can throttle under bursts. Daily rollups keep the
   30-day uptime query at no more than 30 items ([ADR 0002](docs/adr/0002-provisioned-dynamodb-with-rollups.md)).
 - **Low-cardinality metrics.** One dimension value per environment fixes the number of custom metrics at seven;
-  a per-URL dimension would cost $27.00 a month at 100 URLs, computed ([ADR 0003](docs/adr/0003-emf-metrics-without-per-endpoint-dimensions.md)).
+  a per-URL dimension would cost at least $27.00 a month at 100 URLs, and $207.00 with every metric carrying it (computed; [ADR 0003](docs/adr/0003-emf-metrics-without-per-endpoint-dimensions.md)).
 - **One region, one probe location.** A check from one region cannot tell "site down" from "network path down";
   control URLs catch a blind checker, not a broken route to one site ([ADR 0006](docs/adr/0006-checker-honesty.md)).
 - **No point-in-time recovery.** It is billed, so the endpoints table has deletion protection and a logical backup,
@@ -188,17 +188,18 @@ ruff check . && ruff format --check .
 - **2026-10-02** A metric dimension per URL looks harmless and is not: every value is a billed metric, so the cost
   grows with other people's input. The checker uses one dimension and the arithmetic is a script
   ([ADR 0003](docs/adr/0003-emf-metrics-without-per-endpoint-dimensions.md)). `REPO`
-- **2026-10-25** Two environments in one account share one free tier, so each passing its own checks proves nothing.
-  A script adds both up and CI fails when the total is over ([free_tier_budget.py](scripts/free_tier_budget.py)). `CI`
 - **2026-10-25** A monitor that cannot reach the internet reports everything as down. Telling a failed check from a
   failed checker needed a decision table, control probes and an alarm of its own ([ADR 0006](docs/adr/0006-checker-honesty.md)). `MOCK`
+- **2026-10-27** Two environments in one account share one free tier, so each passing its own checks proves nothing.
+  A script adds both up and CI fails when the total is over ([free_tier_budget.py](scripts/free_tier_budget.py)). `CI`
 - **2026-11-01** A transaction conflict is not a full quota. Reporting one as the other would have told users they were out of
   endpoints when two requests had only collided; it is retried, and a persistent conflict is a 503
   ([registration race tests](tests/mock/test_registration_races.py)). `MOCK`
 - **2026-11-03** An asynchronous reply can arrive after the user has signed out. Every late reply now checks that the
   session still exists before touching the page ([dashboard tests](frontend/tests/app.test.js)). `CI`
-- **2026-11-07** Two reverts left a Lambda file that did not even parse, and main stayed red. The pipeline now
-  imports every handler from the built bundle inside the Lambda runtime image ([verify_package.py](scripts/verify_package.py)). `CI`
+- **2026-11-07** Two reverts in January left a Lambda file that did not even parse, and main stayed red until this was
+  found. The pipeline's package job (added 2026-10-27) imports every handler from the built bundle inside the Lambda
+  runtime image, so a bundle like that cannot be deployed ([verify_package.py](scripts/verify_package.py)). `CI`
 - **2026-11-07** A rollback that needs a value the old release never produced fails after the infrastructure has already
   changed. The apply step now tolerates the missing value, and a test pins it ([workflow tests](tests/test_workflows.py)). `CI`
 

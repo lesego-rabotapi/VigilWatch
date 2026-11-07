@@ -14,6 +14,7 @@ PRICE_PER_METRIC_MONTH = Decimal("0.30")  # USD, first 10,000 metrics, us-east-1
 FREE_METRICS = 10
 FIXED_METRICS = 7  # what lambda/uptime_check.py _emf emits under its one FunctionName value
 EXAMPLE_URLS = (10, 100, 1000)
+WORST_CASE_URLS = (100, 1000)
 
 _CENTS = Decimal("0.01")
 
@@ -33,16 +34,21 @@ def fixed_dimension_cost() -> Decimal:
 
 def markdown_table() -> str:
     rows = [
-        "| Design | URLs monitored | Custom metrics | Monthly cost (USD, computed) |",
-        "|---|---|---|---|",
+        "| Design | URLs monitored | Metrics per URL | Custom metrics "
+        "| Monthly cost (USD, computed) |",
+        "|---|---|---|---|---|",
     ]
-    for urls in EXAMPLE_URLS:
-        rows.append(
-            f"| `Endpoint` dimension, 1 metric per URL | {urls:,} | {urls:,} "
-            f"| ${per_endpoint_cost(urls)} |"
-        )
+    for label, per_url, counts in (
+        ("`Endpoint` dimension, one metric per URL (lower bound)", 1, EXAMPLE_URLS),
+        ("`Endpoint` dimension on every checker metric", FIXED_METRICS, WORST_CASE_URLS),
+    ):
+        for urls in counts:
+            rows.append(
+                f"| {label} | {urls:,} | {per_url} | {urls * per_url:,} "
+                f"| ${per_endpoint_cost(urls, per_url)} |"
+            )
     rows.append(
-        "| Fixed `FunctionName` dimension (this project) | any "
+        "| Fixed `FunctionName` dimension (this project) | any | n/a "
         f"| {FIXED_METRICS} | ${fixed_dimension_cost()} |"
     )
     return "\n".join(rows)

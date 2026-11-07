@@ -7,9 +7,10 @@ figure quoted anywhere else (a CV, a talk) has to carry the method below or it d
 ## Method
 
 1. Deploy the commit to dev ([runbook](RUNBOOK.md)), with the function at its configured memory and runtime.
-2. Force cold starts: change an environment variable (a new execution environment per invocation after a
-   configuration change), then invoke the function, repeating until there are at least 30 cold samples.
-   Also invoke it repeatedly without changing anything, to collect warm samples.
+2. Force cold starts: a configuration change gives one new execution environment, and only one. Change
+   an environment variable (for example a dummy counter) before every cold sample, then invoke the function
+   once, and repeat until there are at least 30 cold samples. Collect warm samples in a separate window, by
+   invoking the function repeatedly without changing anything. Summarise each window on its own.
 3. Collect Lambda's own `REPORT` lines and summarise them:
 
    ```bash

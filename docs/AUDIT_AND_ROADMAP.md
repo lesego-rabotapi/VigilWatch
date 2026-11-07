@@ -91,7 +91,7 @@ in this repository.
 | F4 | The endpoint cap is check-then-write, so simultaneous registrations can exceed it by a few | Low | Make it atomic with a counter item and a conditional write. Task 4.6 |
 | F5 | The first merge to `main` will fail the deploy workflow until repository variables exist | Medium, certain | A red run on `main` on day one looks bad. Task 0.2 guards the jobs on the variable being set |
 | F6 | The old state file is in git history, and `main` still tracks it | Low | Holds resource IDs and the account ID, not credentials. Merging PR #4 stops tracking it. Back it up first (runbook section 2) |
-| F7 | `frontend/assets/vigilwatch_logo.png` is an empty (0 byte) file, on `main` too | Low, very visible | The dashboard header shows alt text; a reviewer sees this first. Task 7.1 |
+| F7 | **Fixed in Stage 9** (replaced by `vigilwatch_logo.svg`). `frontend/assets/vigilwatch_logo.png` was an empty (0 byte) file, on `main` too | Low, very visible | The dashboard header shows alt text; a reviewer sees this first. Task 7.1 |
 | F8 | `.trivyignore` lists IDs chosen up front, not from observed findings | Low | Unused suppressions look careless. Task 3.5 trims it to what trivy actually reports |
 | F9 | Coverage counts only `lambda/`; the frontend has no coverage figure | Low | Add `node --experimental-test-coverage` to CI |
 

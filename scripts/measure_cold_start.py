@@ -64,7 +64,19 @@ def summarise(records: list[dict]) -> dict:
 
 
 def _cell(value) -> str:
-    return "n/a" if value is None else f"{value:g}"
+    """The value exactly as parsed: no significant-digit cut-off, no exponent form."""
+    return "n/a" if value is None else str(value)
+
+
+def _read(path: str | None, stdin) -> str:
+    """Log text from a file or standard input; Windows PowerShell redirects write UTF-16."""
+    if not path:
+        return (stdin or sys.stdin).read()
+    with open(path, "rb") as handle:
+        raw = handle.read()
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return raw.decode("utf-16")
+    return raw.decode("utf-8-sig", errors="replace")
 
 
 def markdown_row(summary: dict, label: str, when: str, region: str, runtime: str) -> str:
@@ -94,19 +106,26 @@ def main(argv=None, stdin=None) -> int:
     parser.add_argument("--runtime", default="")
     args = parser.parse_args(argv)
 
-    if args.logs:
-        with open(args.logs, encoding="utf-8") as handle:
-            text = handle.read()
-    else:
-        text = (stdin or sys.stdin).read()
-    records = [r for r in map(parse_report, text.splitlines()) if r]
+    lines = _read(args.logs, stdin).splitlines()
+    records = [r for r in map(parse_report, lines) if r]
     if not records:
         raise SystemExit("no Lambda REPORT lines found in the input; nothing to summarise")
+    sizes = sorted({r["memory_mb"] for r in records})
+    if len(sizes) > 1:
+        raise SystemExit(
+            f"the input mixes memory sizes {sizes} MB; summarise one configuration at a time"
+        )
+    skipped = sum("REPORT RequestId:" in line for line in lines) - len(records)
     summary = summarise(records)
     if args.markdown:
         print(markdown_row(summary, args.label, args.date, args.region, args.runtime))
+        if skipped:
+            print(
+                f"warning: {skipped} REPORT line(s) could not be parsed and were left out",
+                file=sys.stderr,
+            )
     else:
-        for key, value in summary.items():
+        for key, value in {**summary, "skipped_report_lines": skipped}.items():
             print(f"{key}: {_cell(value)}")
     return 0
 

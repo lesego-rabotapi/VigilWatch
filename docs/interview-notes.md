@@ -18,7 +18,7 @@ See [free_tier_budget.py](../scripts/free_tier_budget.py) and the cost table in 
 
 ### Why not tag every metric with the URL being checked?
 Each distinct dimension value is a separate billed metric, so the bill would grow with every URL anyone registers.
-With one dimension the count is fixed at seven. At 100 URLs the other design costs $27.00 a month, at 1,000 it costs $297.00.
+With one dimension the count is fixed at seven. At 100 URLs the other design costs at least $27.00 a month, and $207.00 if all seven metrics carried it.
 Those figures are computed from the list price, not measured. `REPO`
 See [ADR 0003](adr/0003-emf-metrics-without-per-endpoint-dimensions.md) and [cardinality_cost.py](../scripts/cardinality_cost.py).
 
