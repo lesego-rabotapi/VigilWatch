@@ -85,8 +85,12 @@ def test_every_collected_test_has_exactly_one_layer_marker(request):
 def test_moto_based_tests_live_in_the_mock_layer():
     for name in ("test_repo.py", "test_uptime_check.py", "test_register_endpoint.py"):
         assert (ROOT / "tests" / "mock" / name).exists(), name
-    leftovers = list((ROOT / "tests" / "integration").glob("test_*.py"))
-    assert leftovers == [], "tests/integration is reserved for real or emulated backends"
+    in_process = [
+        path.name
+        for path in (ROOT / "tests" / "integration").glob("test_*.py")
+        if "mock_aws" in path.read_text(encoding="utf-8")
+    ]
+    assert in_process == [], "tests/integration talks to a backend over HTTP, not to mock_aws"
 
 
 def test_unit_layer_runs_without_importing_moto():
