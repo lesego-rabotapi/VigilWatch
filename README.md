@@ -77,6 +77,7 @@ Measured performance: [docs/performance.md](docs/performance.md). What a reviewe
 | [ADR 0007](docs/adr/0007-authentication.md) | Cognito sign-in with a JWT authorizer | `MOCK` `NEEDS-AWS` |
 | [ADR 0008](docs/adr/0008-runtime-patterns.md) | Reused clients and structured logs; what was not adopted | `MOCK` `NEEDS-AWS` |
 | [ADR 0009](docs/adr/0009-pipeline-and-promotion.md) | Build once, promote, roll back, detect drift | `CI` `NEEDS-AWS` |
+| [ADR 0010](docs/adr/0010-integration-backend.md) | Integration tests against a moto server, not LocalStack | `CI` |
 
 ## Why these technologies?
 
@@ -170,6 +171,7 @@ coverage gate is 90%.
 | Unit (status, SSRF guard, probe) | pytest | `pytest -m unit` |
 | Mock (DynamoDB, SNS, handlers, IAM) | pytest + moto | `pytest -m mock` |
 | API contract (shared JSON Schema) | pytest + jsonschema, node:test | `pytest tests/contract` |
+| Integration (handlers over HTTP, real tables, SNS to SQS) | pytest + moto server | `pytest -m integration` |
 | Behaviour (Gherkin scenarios) | pytest-bdd | `pytest -m bdd` |
 | Infrastructure | `terraform test` with a mocked AWS provider | `for d in terraform/modules/* terraform/envs/*; do (cd $d && terraform init -backend=false && terraform test); done` |
 | Frontend (rendering, XSS, sign-in) | node:test + jsdom | `cd frontend && npm ci && npm test` |

@@ -82,7 +82,7 @@ Lesson 5 "deploy despite failing tests" (gates stay strict); HATEOAS (two routes
 | 8 | Authentication (Cognito) | 3, 5 | L | partly (login) | ✅ COMPLETE offline (sign-in is `NEEDS-AWS`) |
 | 9 | Documentation and portfolio packaging | 4 to 8 | M | no | ⏳ PENDING |
 | 10 | AWS day: deploy, integration test, UAT, ship | 5 to 9 | M | **yes** | ⏳ PENDING |
-| 11 | Optional: integration layer (LocalStack or moto server) | 3 | M | no | ⏳ PENDING |
+| 11 | Optional: integration layer (LocalStack or moto server) | 3 | M | no | ✅ COMPLETE (moto server; CI run pending) |
 | 12 | Optional: canary deploy (Lambda alias + CodeDeploy) | 10 | M | **yes** | ⏳ PENDING |
 
 Stages 4 and 5 can run in parallel after Stage 3. Stages 11 and 12 come last and can be dropped.
@@ -418,3 +418,4 @@ prove that the policy, package-verification and gate-integrity checks fail when 
 | 2026-10-31 | 8.4 | `frontend/auth.js`: code flow with PKCE, checked state, token in memory only; the dashboard's signed-in and signed-out states and a 401 that signs out; off on the local stack | `frontend/tests/auth.test.js`, `frontend/tests/app.test.js` |
 | 2026-10-31 | 8.4b | Smoke tests sign in as a test user through Cognito's public endpoint (no AWS credentials); a prod-safe 401 smoke test; the smoke job gets `E2E_USERNAME` and the `E2E_PASSWORD` secret | `tests/unit/test_e2e_harness.py`, `tests/test_workflows.py`, `tests/test_pipeline_scripts.py` |
 | 2026-10-31 | 8.5 | `docs/security.md`: threat model, controls tied to their tests, accepted risks; the runbook's user and smoke-user setup | `tests/test_security_docs.py` |
+| 2026-11-13 | 11 | Integration layer on a moto server (LocalStack not evaluated, ADR 0010): scheduled checker over real tables with SNS to SQS alerts, and the handlers behind the local HTTP adapter; skips on a laptop and fails in CI; own `integration` CI job held to no skips by `check_junit.py`. Full suite 1206 passed locally; the CI run is `NEEDS-AWS`-free but pending a push | `tests/integration`, `tests/test_integration_layer.py`, `docs/adr/0010-integration-backend.md` |
