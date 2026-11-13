@@ -65,7 +65,7 @@ def test_ci_runs_the_integration_layer_as_its_own_job():
     assert "integration" in jobs
     text = _run_text(jobs["integration"])
     assert "pip install -r requirements-dev.txt" in text
-    assert '-m integration' in text
+    assert "-m integration" in text
 
 
 def test_the_integration_job_fails_on_any_skip_or_a_short_run():
@@ -81,13 +81,16 @@ def test_the_integration_job_fails_on_any_skip_or_a_short_run():
 
 def test_the_python_job_leaves_integration_to_its_own_job():
     text = _run_text(_ci_jobs()["python"])
-    assert re.search(r'pytest .*-m "not integration"', text)
+    assert re.search(r'pytest .*-m "not integration and not e2e"', text)
 
 
 def test_the_integration_job_cannot_quietly_pass():
     job = _ci_jobs()["integration"]
     assert "continue-on-error" not in job
-    assert not any("continue-on-error" in step or "|| true" in str(step.get("run", "")) for step in job["steps"])
+    assert not any(
+        "continue-on-error" in step or "|| true" in str(step.get("run", ""))
+        for step in job["steps"]
+    )
     assert job.get("timeout-minutes")
 
 

@@ -30,7 +30,7 @@ env:
 
 jobs:
   python:
-    name: Python (lint, unit, integration, contract)
+    name: Python (lint, unit, mock, contract)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -54,9 +54,29 @@ jobs:
       - run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
       - run: ruff check .
       - run: ruff format --check .
-      - run: pytest --cov --cov-report=term --cov-report=xml
+      - run: pytest -m "not integration and not e2e" --cov --cov-report=term --cov-report=xml
       - name: Test mix summary
         run: python scripts/test_mix.py >> "$GITHUB_STEP_SUMMARY"
+
+  # Handlers over HTTP against a moto server. A skipped or missing test is a failure: pytest exits 0
+  # when everything skipped, so the JUnit report is held to every test the commit collects.
+  integration:
+    name: Integration (moto server)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - name: Run the integration layer and refuse skips
+        run: |
+          pytest --collect-only -q -m integration tests/integration > collected.txt
+          pytest -m integration tests/integration --junitxml=integration.xml
+          python scripts/check_junit.py integration.xml --collected collected.txt
 
   terraform:
     name: Terraform (fmt, validate, test, lint)
