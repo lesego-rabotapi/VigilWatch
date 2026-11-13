@@ -76,14 +76,14 @@ Lesson 5 "deploy despite failing tests" (gates stay strict); HATEOAS (two routes
 | 2 | Requirements, design and traceability | 1 | M | no | ✅ COMPLETE |
 | 3 | Quality foundation (taxonomy, SOLID, cold start, errors, E2E harness) | 2 | L | no | ✅ COMPLETE |
 | 4 | Honest checker, alert state machine, atomic cap | 3 | M | no | ✅ COMPLETE |
-| 5 | Terraform modules and environments | 3 | L | no | ✅ COMPLETE (CI run pending) |
+| 5 | Terraform modules and environments | 3 | L | no | ✅ COMPLETE (CI green) |
 | 6 | Pipeline, promotion, rollback, drift, gate integrity | 5 | L | partly (runs) | ✅ COMPLETE offline (runs are `NEEDS-AWS`) |
 | 7 | Resilience, observability, SLOs | 4, 5 | M | partly (drill) | ✅ COMPLETE offline (drill and dashboard are `NEEDS-AWS`) |
 | 8 | Authentication (Cognito) | 3, 5 | L | partly (login) | ✅ COMPLETE offline (sign-in is `NEEDS-AWS`) |
 | 9 | Documentation and portfolio packaging | 4 to 8 | M | no | ✅ COMPLETE offline (PR #6 merged 2026-11-07; cold-start and restore-drill figures are `NEEDS-AWS`) |
-| 10 | AWS day: deploy, integration test, UAT, ship | 5 to 9 | M | **yes** | ⏳ PENDING |
-| 11 | Optional: integration layer (LocalStack or moto server) | 3 | M | no | ✅ COMPLETE (moto server; CI run pending) |
-| 12 | Optional: canary deploy (Lambda alias + CodeDeploy) | 10 | M | **yes** | ⏳ PENDING |
+| 10 | AWS day: deploy, integration test, UAT, ship | 5 to 9 | M | **yes** | ⏸ OPTIONAL, not started (needs your AWS account) |
+| 11 | Optional: integration layer (LocalStack or moto server) | 3 | M | no | ✅ COMPLETE (moto server; PR #7 merged 2026-11-13, CI green) |
+| 12 | Optional: canary deploy (Lambda alias + CodeDeploy) | 10 | M | **yes** | ⏸ OPTIONAL, not started (needs Stage 10) |
 
 Stages 4 and 5 can run in parallel after Stage 3. Stages 11 and 12 come last and can be dropped.
 
