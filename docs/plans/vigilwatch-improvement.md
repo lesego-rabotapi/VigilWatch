@@ -72,7 +72,7 @@ Lesson 5 "deploy despite failing tests" (gates stay strict); HATEOAS (two routes
 | # | Stage | Depends on | Size | Needs AWS | Status |
 |---|---|---|---|---|---|
 | 0 | Toolchain install and baseline | none | S | no | ✅ COMPLETE |
-| 1 | Land PR #4 and repo guardrails | 0 | S | no | 🔄 IN PROGRESS (1.2, 1.3 done and pushed; 1.1, 1.4 need you) |
+| 1 | Land PR #4 and repo guardrails | 0 | S | no | 🔄 IN PROGRESS (1.2, 1.3 done; PR #4 merged 2026-11-07; **1.1 state-backup confirmation and optional branch protection need you**, see Stage 1) |
 | 2 | Requirements, design and traceability | 1 | M | no | ✅ COMPLETE |
 | 3 | Quality foundation (taxonomy, SOLID, cold start, errors, E2E harness) | 2 | L | no | ✅ COMPLETE |
 | 4 | Honest checker, alert state machine, atomic cap | 3 | M | no | ✅ COMPLETE |
@@ -80,7 +80,7 @@ Lesson 5 "deploy despite failing tests" (gates stay strict); HATEOAS (two routes
 | 6 | Pipeline, promotion, rollback, drift, gate integrity | 5 | L | partly (runs) | ✅ COMPLETE offline (runs are `NEEDS-AWS`) |
 | 7 | Resilience, observability, SLOs | 4, 5 | M | partly (drill) | ✅ COMPLETE offline (drill and dashboard are `NEEDS-AWS`) |
 | 8 | Authentication (Cognito) | 3, 5 | L | partly (login) | ✅ COMPLETE offline (sign-in is `NEEDS-AWS`) |
-| 9 | Documentation and portfolio packaging | 4 to 8 | M | no | ⏳ PENDING |
+| 9 | Documentation and portfolio packaging | 4 to 8 | M | no | ✅ COMPLETE offline (PR #6 merged 2026-11-07; cold-start and restore-drill figures are `NEEDS-AWS`) |
 | 10 | AWS day: deploy, integration test, UAT, ship | 5 to 9 | M | **yes** | ⏳ PENDING |
 | 11 | Optional: integration layer (LocalStack or moto server) | 3 | M | no | ✅ COMPLETE (moto server; CI run pending) |
 | 12 | Optional: canary deploy (Lambda alias + CodeDeploy) | 10 | M | **yes** | ⏳ PENDING |
@@ -124,6 +124,14 @@ Installs change your machine, so this runs only after you approve the plan. Wind
 
 **Acceptance:** `main` has the fixed repo; the first deploy run on `main` is green or skipped, never red.
 **Depends on:** 0. **Blocks:** everything.
+
+**Actions needed from you (Stage 1):**
+
+- [ ] **1.1 Confirm a copy of the old Terraform state exists.** PR #4 is merged and `terraform/terraform.tfstate` is gone from the working tree, so the backup this task asked for can no longer be made from `main`. If a copy was kept, tick this. If not, check your other checkout or the git history of the pre-merge branch. Stage 10 starts with state migration (runbook section 2) and needs to know whether any real infrastructure was ever applied from that state.
+- [ ] **Optional, only if you want it: branch protection on `main`** (require the CI jobs before merge). It changes repository settings, so it is yours to do or to ask me for. Until then nothing stops a red merge.
+
+Done and no longer waiting on you: 1.2 (deploy guards), 1.3 (plan and audit committed), 1.4 (PR #4 merged 2026-11-07).
+
 
 ## Stage 2: requirements, design and traceability (SDLC stages 1 to 3)
 
